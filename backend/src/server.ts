@@ -5,9 +5,40 @@ import { env } from './config/env.js';
 import { logger } from './config/logger.js';
 
 let server: Server | null = null;
+let reconnectTimer: NodeJS.Timeout | null = null;
+
+function scheduleDevReconnect(): void {
+  if (reconnectTimer) return;
+
+  reconnectTimer = setInterval(async () => {
+    try {
+      await connectDatabase();
+      if (reconnectTimer) {
+        clearInterval(reconnectTimer);
+        reconnectTimer = null;
+      }
+      logger.info('MongoDB connection restored');
+    } catch {
+      logger.debug('Waiting for MongoDB to become reachable...');
+    }
+  }, 15_000);
+  reconnectTimer.unref();
+}
 
 async function bootstrap(): Promise<void> {
-  await connectDatabase();
+  try {
+    await connectDatabase();
+  } catch (err) {
+    if (env.NODE_ENV !== 'development') {
+      throw err;
+    }
+
+    logger.warn(
+      { err: err instanceof Error ? err.message : err },
+      'MongoDB is not reachable. Starting CircleUp API in degraded dev mode — set a MongoDB Atlas URI or start local mongod in backend/.env.',
+    );
+    scheduleDevReconnect();
+  }
 
   const app = createApp();
   server = app.listen(env.PORT, () => {
@@ -17,6 +48,11 @@ async function bootstrap(): Promise<void> {
 
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, 'Shutdown signal received; closing HTTP server and DB pool');
+
+  if (reconnectTimer) {
+    clearInterval(reconnectTimer);
+    reconnectTimer = null;
+  }
 
   if (server) {
     await new Promise<void>((resolve, reject) => {
@@ -45,4 +81,3 @@ bootstrap().catch((err) => {
   logger.fatal({ err }, 'Failed to start CircleUp API');
   process.exit(1);
 });
-
