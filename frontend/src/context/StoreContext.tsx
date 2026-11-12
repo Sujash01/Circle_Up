@@ -50,6 +50,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [wishlistIds, setWishlistIds] = useState<string[]>(() => wishlistService.loadIds());
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [notice, setNotice] = useState<StoreNotice | null>(null);
+  const [, setCatalogVersion] = useState(0);
+
+  useEffect(() => {
+    return productService.subscribe(() => setCatalogVersion((v) => v + 1));
+  }, []);
 
   const showNotice = useCallback((text: string, tone: 'info' | 'error' = 'info') => {
     setNotice({ id: Date.now(), text, tone });

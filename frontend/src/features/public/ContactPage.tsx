@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { apiClient } from '@/services/apiClient';
 import { WHATSAPP_BUSINESS_NUMBER } from '@/services/cartService';
 import { contactService } from '@/services/communityServices';
 import type { ContactSubmission } from '@/types/storefront';
@@ -39,6 +40,7 @@ export function ContactPage() {
     const result = contactService.saveSubmission({ name, email, subject, message });
     setSavedEntry(result.submission);
     setHistory(contactService.getSubmissions());
+    void apiClient.post('/contact', { name, email, subject, message }).catch(() => {});
     setName('');
     setEmail('');
     setSubject('');

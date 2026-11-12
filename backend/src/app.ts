@@ -9,6 +9,9 @@ import { globalRateLimiter } from './middleware/rateLimiter.js';
 import { attachRequestId, httpLogger } from './middleware/requestContext.js';
 import { sanitizeRequest } from './middleware/sanitize.js';
 import { healthRouter } from './modules/health/health.routes.js';
+import { productRouter } from './modules/products/product.routes.js';
+import { orderRouter } from './modules/orders/order.routes.js';
+import { contactRouter } from './modules/contact/contact.routes.js';
 
 /**
  * Constructs and configures the modular Express application without binding a port,
@@ -32,8 +35,11 @@ export function createApp(): Express {
   app.use(sanitizeRequest);
   app.use('/api', globalRateLimiter);
 
-  // 3. Versioned API routes (M0: Health; M1-M7 modules mount here)
+  // 3. Versioned API routes
   app.use('/api/v1/health', healthRouter);
+  app.use('/api/v1/products', productRouter);
+  app.use('/api/v1/orders', orderRouter);
+  app.use('/api/v1/contact', contactRouter);
 
   // 4. 404 fallback & global error serialization
   app.use((_req, _res, next) => {

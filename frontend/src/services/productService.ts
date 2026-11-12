@@ -1,5 +1,6 @@
 import { CATEGORIES, CATEGORY_MAP } from '@/data/categories';
 import { PRODUCTS } from '@/data/products';
+import { apiClient } from '@/services/apiClient';
 import type {
   CategoryMeta,
   GenderTag,
@@ -27,7 +28,75 @@ function normalizeToken(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
 }
 
+// Tracks whether a live MongoDB database is connected
+let liveDatabaseConnected = false;
+
+// In-memory reactive product cache initialized with curated seed data for offline preview
+let productCache: Product[] = PRODUCTS.map((p) => ({
+  ...p,
+  serialNumber: p.serialNumber || p.id.toUpperCase(),
+}));
+
+// Listeners for catalog state updates
+const listeners = new Set<() => void>();
+function notifyListeners() {
+  listeners.forEach((fn) => fn());
+}
+
 export const productService = {
+  subscribe(callback: () => void): () => void {
+    listeners.add(callback);
+    return () => listeners.delete(callback);
+  },
+
+  isDatabaseLive(): boolean {
+    return liveDatabaseConnected;
+  },
+
+  async initLiveSync(): Promise<void> {
+    try {
+      // 1. Check if backend database is connected
+      const healthRes = await apiClient.get<{
+        success: true;
+        data: { db: string };
+      }>('/health').catch(() => null);
+
+      const isDbLive = healthRes?.data?.data?.db === 'connected';
+
+      // 2. Query products from API
+      const response = await apiClient.get<{ success: true; data: Product[] }>('/products?limit=100');
+
+      if (response.data?.success && Array.isArray(response.data.data)) {
+        if (isDbLive) {
+          // Live database connected! Replace demo cache with database items (even if empty [])
+          // This ensures demo products disappear to make space for the user's actual items.
+          productCache = response.data.data.map((item) => ({
+            ...item,
+            id: item.id || item.serialNumber || (item as unknown as { _id?: string })._id || 'cu-unknown',
+            serialNumber: item.serialNumber || item.id?.toUpperCase() || 'CU-UNKNOWN',
+          }));
+          liveDatabaseConnected = true;
+          notifyListeners();
+        } else if (response.data.data.length > 0) {
+          productCache = response.data.data.map((item) => ({
+            ...item,
+            id: item.id || item.serialNumber || (item as unknown as { _id?: string })._id || 'cu-unknown',
+            serialNumber: item.serialNumber || item.id?.toUpperCase() || 'CU-UNKNOWN',
+          }));
+          notifyListeners();
+        }
+      }
+    } catch {
+      // Offline fallback
+    }
+  },
+
+  clearDemoCatalog(): void {
+    productCache = [];
+    liveDatabaseConnected = true;
+    notifyListeners();
+  },
+
   getCategories(): CategoryMeta[] {
     return CATEGORIES;
   },
@@ -37,25 +106,35 @@ export const productService = {
   },
 
   getAllProducts(): Product[] {
-    return PRODUCTS;
+    return productCache;
   },
 
   getProductBySlug(slug: string): Product | undefined {
-    return PRODUCTS.find((item) => item.slug === slug);
+    const slugLower = slug.toLowerCase();
+    return productCache.find(
+      (item) =>
+        item.slug.toLowerCase() === slugLower ||
+        item.serialNumber?.toLowerCase() === slugLower ||
+        item.id.toLowerCase() === slugLower,
+    );
   },
 
   getProductById(id: string): Product | undefined {
-    return PRODUCTS.find((item) => item.id === id);
+    return productCache.find(
+      (item) =>
+        item.id === id ||
+        item.serialNumber?.toUpperCase() === id.toUpperCase(),
+    );
   },
 
   getRelatedProducts(product: Product, limit = 4): Product[] {
-    const sameCategory = PRODUCTS.filter(
+    const sameCategory = productCache.filter(
       (item) => item.id !== product.id && item.category === product.category,
     );
     if (sameCategory.length >= limit) {
       return sameCategory.slice(0, limit);
     }
-    const others = PRODUCTS.filter(
+    const others = productCache.filter(
       (item) => item.id !== product.id && item.category !== product.category,
     );
     return [...sameCategory, ...others].slice(0, limit);
@@ -78,7 +157,7 @@ export const productService = {
     const searchLower = search.trim().toLowerCase();
     const subToken = subcategory !== 'all' ? normalizeToken(subcategory) : '';
 
-    const filtered = PRODUCTS.filter((product) => {
+    const filtered = productCache.filter((product) => {
       if (category !== 'all' && product.category !== category) {
         return false;
       }
@@ -99,7 +178,6 @@ export const productService = {
         return false;
       }
       if (gender !== 'all') {
-        // Unisex pieces appear under both Women and Men filters unless explicitly excluding
         if (product.gender !== gender && product.gender !== 'Unisex') {
           return false;
         }
@@ -112,6 +190,7 @@ export const productService = {
       }
       if (searchLower) {
         const haystack = [
+          product.serialNumber,
           product.name,
           product.categoryLabel,
           product.subcategory,
@@ -133,5 +212,25 @@ export const productService = {
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
   },
+
+  async addProduct(newProduct: Partial<Product>): Promise<Product> {
+    const response = await apiClient.post<{ success: true; data: Product }>('/products', newProduct);
+    const saved = response.data.data;
+    productCache = [saved, ...productCache];
+    notifyListeners();
+    return saved;
+  },
+
+  async updateProduct(serialNumber: string, updates: Partial<Product>): Promise<Product> {
+    const response = await apiClient.put<{ success: true; data: Product }>(`/products/${serialNumber}`, updates);
+    const updated = response.data.data;
+    productCache = productCache.map((p) => (p.serialNumber === serialNumber ? updated : p));
+    notifyListeners();
+    return updated;
+  },
 };
 
+// Initial sync triggered upon client load (skipped during unit tests)
+if (typeof window !== 'undefined' && import.meta.env.MODE !== 'test') {
+  void productService.initLiveSync();
+}

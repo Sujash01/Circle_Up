@@ -35,6 +35,7 @@ export interface ProductVariant {
 
 export interface Product {
   id: string;
+  serialNumber?: string;
   name: string;
   slug: string;
   description: string;

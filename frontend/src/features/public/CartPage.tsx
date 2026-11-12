@@ -1,13 +1,42 @@
-import { Copy, ExternalLink, Minus, Plus, Trash2 } from 'lucide-react';
+import { CheckCircle2, Copy, ExternalLink, Minus, Package, Plus, Trash2, X } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { EmptyState } from '@/components/storefront/EmptyState';
 import { useStore } from '@/context/StoreContext';
+import { apiClient } from '@/services/apiClient';
 import {
   cartService,
   formatInr,
   WHATSAPP_BUSINESS_NUMBER,
 } from '@/services/cartService';
+
+interface PlacedOrderDetails {
+  orderNumber: string;
+  customer: {
+    name: string;
+    email: string;
+    phone: string;
+  };
+  shippingAddress: {
+    addressLine: string;
+    city: string;
+    state: string;
+    postalCode: string;
+  };
+  items: Array<{
+    serialNumber: string;
+    name: string;
+    price: number;
+    quantity: number;
+    size?: string;
+  }>;
+  subtotal: number;
+  discount: number;
+  deliveryFee: number;
+  totalAmount: number;
+  paymentMethod: string;
+  createdAt: string;
+}
 
 export function CartPage() {
   const {
@@ -24,6 +53,90 @@ export function CartPage() {
   const [promoError, setPromoError] = useState('');
   const [customerNote, setCustomerNote] = useState('');
   const [whatsappOpened, setWhatsappOpened] = useState(false);
+
+  // Direct Online Checkout state
+  const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
+  const [orderError, setOrderError] = useState('');
+  const [placedOrder, setPlacedOrder] = useState<PlacedOrderDetails | null>(null);
+
+  // Checkout Form State
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    addressLine: '',
+    city: '',
+    state: '',
+    postalCode: '',
+    paymentMethod: 'WHATSAPP_UPI' as 'WHATSAPP_UPI' | 'CASH_ON_DELIVERY' | 'ONLINE_UPI',
+  });
+
+  if (placedOrder) {
+    return (
+      <div className="max-w-2xl mx-auto py-12 px-4 space-y-8">
+        <div className="border border-foreground/15 bg-card p-8 sm:p-10 space-y-6 shadow-sm">
+          <div className="flex items-center gap-3 text-primary">
+            <CheckCircle2 className="size-8" />
+            <div>
+              <p className="text-xs uppercase tracking-widest text-terracotta font-semibold">Order Confirmed</p>
+              <h1 className="font-display text-3xl text-cocoa">Thank you, {placedOrder.customer.name}!</h1>
+            </div>
+          </div>
+
+          <div className="border-y border-foreground/15 py-4 space-y-2 text-sm text-foreground/80">
+            <p>
+              Your order <strong className="font-mono text-cocoa">{placedOrder.orderNumber}</strong> has been saved directly to the database.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              A confirmation email will be sent to <strong>{placedOrder.customer.email}</strong>.
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            <h2 className="font-semibold text-xs uppercase tracking-wider text-cocoa">Itemized Summary</h2>
+            <div className="divide-y divide-foreground/10 text-xs">
+              {placedOrder.items.map((it, idx) => (
+                <div key={idx} className="py-2.5 flex justify-between items-center">
+                  <div>
+                    <span className="font-medium text-cocoa">{it.name}</span>
+                    <span className="ml-2 font-mono text-[0.7rem] bg-secondary px-1.5 py-0.5 text-cocoa">
+                      {it.serialNumber}
+                    </span>
+                    {it.size && <span className="ml-2 text-muted-foreground">Size: {it.size}</span>}
+                  </div>
+                  <span className="font-semibold text-cocoa">
+                    {formatInr(it.price * it.quantity)}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="pt-3 border-t border-foreground/15 flex justify-between text-sm font-bold text-cocoa">
+              <span>Total Paid / Payable</span>
+              <span className="text-primary">{formatInr(placedOrder.totalAmount)}</span>
+            </div>
+          </div>
+
+          <div className="bg-secondary/60 p-4 border border-foreground/10 text-xs space-y-1">
+            <p className="font-semibold uppercase tracking-wider text-cocoa">Shipping Address</p>
+            <p className="text-foreground/80">{placedOrder.shippingAddress.addressLine}, {placedOrder.shippingAddress.city}, {placedOrder.shippingAddress.state} - {placedOrder.shippingAddress.postalCode}</p>
+            <p className="text-foreground/80">Phone: {placedOrder.customer.phone}</p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3 pt-4">
+            <Link
+              to="/new-arrivals"
+              onClick={() => setPlacedOrder(null)}
+              className="flex-1 bg-primary py-3 text-center text-xs font-semibold uppercase tracking-widest text-primary-foreground hover:bg-forest-deep"
+            >
+              Continue Shopping
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (cart.items.length === 0) {
     return (
@@ -54,6 +167,57 @@ export function CartPage() {
       showNotice('WhatsApp order summary copied to clipboard.');
     } catch {
       showNotice('Could not access clipboard automatically; select and copy the preview below.', 'error');
+    }
+  };
+
+  const handleDirectOrderSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setOrderError('');
+
+    if (!formData.name || !formData.email || !formData.phone) {
+      setOrderError('Please provide your name, email, and mobile phone number.');
+      return;
+    }
+    if (!formData.addressLine || !formData.city || !formData.state || !formData.postalCode) {
+      setOrderError('Please complete your full delivery address.');
+      return;
+    }
+
+    try {
+      setIsSubmittingOrder(true);
+      const payload = {
+        customer: {
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+        },
+        shippingAddress: {
+          addressLine: formData.addressLine,
+          city: formData.city,
+          state: formData.state,
+          postalCode: formData.postalCode,
+        },
+        items: cart.items.map((item) => ({
+          serialNumber: item.productId.toUpperCase(),
+          quantity: item.quantity,
+          size: item.size,
+        })),
+        promoCode: cart.promoCode,
+        paymentMethod: formData.paymentMethod,
+        notes: customerNote,
+      };
+
+      const res = await apiClient.post<{ success: true; data: PlacedOrderDetails }>('/orders', payload);
+      if (res.data?.success && res.data.data) {
+        setPlacedOrder(res.data.data);
+        clearCart();
+        setIsCheckoutModalOpen(false);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to place order. Please check item availability.';
+      setOrderError(msg);
+    } finally {
+      setIsSubmittingOrder(false);
     }
   };
 
@@ -96,108 +260,130 @@ export function CartPage() {
 
               <div className="flex-1 min-w-0 space-y-1.5">
                 <div className="flex items-start justify-between gap-4">
-                  <Link
-                    to={`/product/${item.slug}`}
-                    className="font-medium text-cocoa hover:text-primary"
-                  >
-                    {item.name}
-                  </Link>
+                  <div>
+                    <Link
+                      to={`/product/${item.slug}`}
+                      className="font-medium text-cocoa hover:text-primary block"
+                    >
+                      {item.name}
+                    </Link>
+                    <span className="font-mono text-[0.68rem] text-terracotta font-semibold uppercase">
+                      SERIAL: {item.productId.toUpperCase()}
+                    </span>
+                  </div>
                   <span className="font-bold text-primary tabular-nums shrink-0">
                     {formatInr(item.unitPrice * item.quantity)}
                   </span>
                 </div>
 
                 <p className="text-xs text-terracotta">
-                  {item.variantLabel} · Unit price: {formatInr(item.unitPrice)}
+                  Option: <span className="font-medium text-cocoa">{item.variantLabel}</span>
+                  {item.size && <span> · Size {item.size}</span>}
                 </p>
 
-                <div className="pt-3 flex flex-wrap items-center justify-between gap-4">
-                  <div className="inline-flex items-center border border-foreground/30">
+                <p className="text-xs text-muted-foreground">
+                  Price: {formatInr(item.unitPrice)} each
+                </p>
+
+                <div className="flex items-center gap-4 pt-2">
+                  <div className="inline-flex items-center border border-foreground/20">
                     <button
                       type="button"
-                      aria-label={`Decrease quantity of ${item.name}`}
+                      aria-label="Decrease quantity"
                       onClick={() => updateCartQuantity(item.key, item.quantity - 1)}
-                      className="p-1.5 text-cocoa hover:text-primary"
+                      className="px-2 py-1 text-cocoa hover:bg-secondary/60"
                     >
-                      <Minus className="size-3.5" />
+                      <Minus className="size-3" />
                     </button>
-                    <span className="px-3 text-xs font-medium tabular-nums">{item.quantity}</span>
+                    <span className="px-3 text-xs font-semibold tabular-nums text-cocoa">
+                      {item.quantity}
+                    </span>
                     <button
                       type="button"
-                      aria-label={`Increase quantity of ${item.name}`}
+                      aria-label="Increase quantity"
                       disabled={item.quantity >= item.maxStock}
                       onClick={() => updateCartQuantity(item.key, item.quantity + 1)}
-                      className="p-1.5 text-cocoa disabled:opacity-35 hover:text-primary"
+                      className="px-2 py-1 text-cocoa hover:bg-secondary/60 disabled:opacity-40"
                     >
-                      <Plus className="size-3.5" />
+                      <Plus className="size-3" />
                     </button>
                   </div>
 
                   <button
                     type="button"
                     onClick={() => removeFromCart(item.key)}
-                    className="inline-flex items-center gap-1.5 text-xs text-terracotta hover:text-destructive"
+                    className="inline-flex items-center gap-1 text-xs text-destructive hover:underline"
                   >
-                    <Trash2 className="size-3.5" />
+                    <Trash2 className="size-3" />
                     <span>Remove</span>
                   </button>
+
+                  {item.maxStock === 1 && (
+                    <span className="text-[0.68rem] font-medium text-terracotta italic">
+                      Single piece curated find
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
           ))}
-
-          <div className="pt-6">
-            <Link
-              to="/new-arrivals"
-              className="text-xs font-semibold uppercase tracking-wider text-primary underline underline-offset-4"
-            >
-              ← Continue Shopping
-            </Link>
-          </div>
         </div>
 
-        {/* Summary & WhatsApp checkout */}
-        <aside className="bg-card/85 border border-foreground/15 p-6 sm:p-8 space-y-6">
-          <div className="border-b border-foreground/15 pb-4">
-            <h2 className="font-display text-2xl text-cocoa">Order Summary</h2>
-            <p className="mt-1 text-xs text-terracotta">Cart Reference: {cart.cartId}</p>
-          </div>
+        {/* Order Summary & Actions */}
+        <aside className="border border-foreground/15 bg-card p-6 space-y-6 shadow-sm">
+          <h2 className="font-display text-xl text-cocoa border-b border-foreground/15 pb-3">
+            Bag Summary
+          </h2>
 
           {/* Promo code */}
           <form onSubmit={handlePromoSubmit} className="space-y-2">
-            <label htmlFor="promo-code" className="block text-xs font-semibold uppercase tracking-wider text-cocoa">
-              Promo Code (try THRIFT10 or CIRCLE20)
+            <label htmlFor="promo-input" className="block text-xs font-semibold uppercase tracking-wider text-cocoa">
+              Promo Code
             </label>
             <div className="flex gap-2">
               <input
-                id="promo-code"
+                id="promo-input"
                 type="text"
                 value={promoInput}
-                onChange={(e) => setPromoInput(e.target.value)}
-                placeholder="Enter code"
-                className="flex-1 border-b border-foreground/30 bg-transparent py-1.5 text-sm text-cocoa uppercase focus:border-primary focus:outline-none"
+                onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
+                placeholder="CIRCLEUP10"
+                className="flex-1 border-b border-foreground/30 bg-transparent py-1.5 text-xs uppercase tracking-wider text-cocoa focus:border-primary focus:outline-none"
               />
               <button
                 type="submit"
-                className="border border-foreground/30 px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-cocoa hover:border-primary"
+                className="bg-secondary px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-cocoa hover:bg-secondary/80"
               >
                 Apply
               </button>
             </div>
-            {promoError && <p className="text-xs text-destructive">{promoError}</p>}
+            {promoError && <p className="text-[0.72rem] text-destructive">{promoError}</p>}
+            {cart.promoCode && (
+              <p className="text-[0.72rem] text-primary">Promo &lsquo;{cart.promoCode}&rsquo; applied</p>
+            )}
           </form>
 
-          {/* Totals */}
-          <div className="space-y-2 text-sm border-y border-foreground/15 py-4">
+          {/* Price breakdowns */}
+          <div className="space-y-2 border-y border-foreground/15 py-4 text-xs text-cocoa">
             <div className="flex justify-between">
               <span className="text-terracotta">Subtotal</span>
-              <span className="tabular-nums text-cocoa">{formatInr(totals.subtotal)}</span>
+              <span className="tabular-nums font-medium">{formatInr(totals.subtotal)}</span>
             </div>
             {totals.discount > 0 && (
               <div className="flex justify-between text-primary">
-                <span>Discount ({totals.discountLabel})</span>
-                <span className="tabular-nums">-{formatInr(totals.discount)}</span>
+                <span>Discount ({totals.discountLabel || cart.promoCode})</span>
+                <span className="tabular-nums font-medium">-{formatInr(totals.discount)}</span>
               </div>
+            )}
+            <div className="flex justify-between">
+              <span className="text-terracotta">Estimated Shipping</span>
+              <span className="tabular-nums font-medium">
+                {totals.subtotal >= 1999 ? 'Complimentary' : 'Calculated at Checkout'}
+              </span>
+            </div>
+            {totals.subtotal < 1999 && (
+              <p className="text-[0.68rem] text-muted-foreground">
+                Complimentary shipping on orders over ₹1,999.
+              </p>
             )}
             <div className="flex justify-between pt-2 border-t border-foreground/10 font-bold text-base text-cocoa">
               <span>Estimated Total</span>
@@ -205,67 +391,187 @@ export function CartPage() {
             </div>
           </div>
 
-          {/* Optional note */}
-          <div>
-            <label htmlFor="checkout-note" className="block text-xs font-semibold uppercase tracking-wider text-cocoa mb-1">
-              Delivery / Fit Note (Optional)
-            </label>
-            <input
-              id="checkout-note"
-              type="text"
-              value={customerNote}
-              onChange={(e) => setCustomerNote(e.target.value)}
-              placeholder="City, preferred delivery window, etc."
-              className="w-full border-b border-foreground/30 bg-transparent py-1.5 text-sm text-cocoa focus:border-primary focus:outline-none"
-            />
-          </div>
+          {/* Primary Action: Direct Order Placement into Database */}
+          <button
+            type="button"
+            onClick={() => setIsCheckoutModalOpen(true)}
+            className="flex w-full items-center justify-center gap-2 bg-primary px-6 py-3.5 text-xs font-semibold uppercase tracking-widest text-primary-foreground transition-colors hover:bg-forest-deep cursor-pointer"
+          >
+            <Package className="size-4" />
+            <span>Place Order / Direct Checkout</span>
+          </button>
 
-          {/* WhatsApp message preview */}
-          <div className="space-y-2">
+          {/* WhatsApp option */}
+          <div className="pt-2 border-t border-foreground/10 space-y-3">
             <div className="flex items-center justify-between text-xs">
               <span className="font-semibold uppercase tracking-wider text-terracotta">
-                WhatsApp Message Preview
+                Or Checkout via WhatsApp
               </span>
               <button
                 type="button"
                 onClick={handleCopyMessage}
-                className="inline-flex items-center gap-1 text-primary hover:underline"
+                className="inline-flex items-center gap-1 text-primary hover:underline text-xs"
               >
-                <Copy className="size-3.5" />
+                <Copy className="size-3" />
                 <span>Copy</span>
               </button>
             </div>
-            <pre className="whitespace-pre-wrap bg-secondary/80 p-3 text-[0.72rem] leading-relaxed text-cocoa font-mono max-h-48 overflow-y-auto border border-foreground/10">
-              {whatsapp.message}
-            </pre>
+
+            <a
+              href={whatsapp.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => setWhatsappOpened(true)}
+              className="flex w-full items-center justify-center gap-2 border border-primary px-6 py-3 text-xs font-semibold uppercase tracking-widest text-primary transition-colors hover:bg-primary/10"
+            >
+              <span>Enquire on WhatsApp</span>
+              <ExternalLink className="size-3.5" />
+            </a>
           </div>
-
-          <a
-            href={whatsapp.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={() => setWhatsappOpened(true)}
-            className="flex w-full items-center justify-center gap-2 bg-primary px-6 py-3.5 text-xs font-semibold uppercase tracking-widest text-primary-foreground transition-colors hover:bg-forest-deep"
-          >
-            <span>Checkout via WhatsApp</span>
-            <ExternalLink className="size-4" />
-          </a>
-
-          <p className="text-[0.72rem] leading-relaxed text-terracotta">
-            Important: Opening WhatsApp ({WHATSAPP_BUSINESS_NUMBER} placeholder) does{' '}
-            <strong>not</strong> confirm your order or save it to a backend. You must send the
-            prefilled message and await manual confirmation from CircleUp.
-          </p>
-
-          {whatsappOpened && (
-            <div className="border border-primary/35 bg-accent/60 p-3 text-xs text-cocoa">
-              WhatsApp link opened for Cart ID <strong>{cart.cartId}</strong>. Your bag remains
-              saved in this browser until you choose to clear it.
-            </div>
-          )}
         </aside>
       </div>
+
+      {/* Direct Order Checkout Modal */}
+      {isCheckoutModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 overflow-y-auto">
+          <div className="relative w-full max-w-lg bg-card border border-foreground/20 p-6 sm:p-8 space-y-6 shadow-xl my-8">
+            <button
+              type="button"
+              onClick={() => setIsCheckoutModalOpen(false)}
+              className="absolute top-4 right-4 text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-5" />
+            </button>
+
+            <div>
+              <p className="text-[0.72rem] uppercase tracking-widest text-terracotta font-semibold">CircleUp Thrift Store</p>
+              <h2 className="font-display text-2xl text-cocoa">Complete Your Order</h2>
+              <p className="text-xs text-muted-foreground mt-1">
+                Your order will be reserved and saved in our MongoDB store database.
+              </p>
+            </div>
+
+            {orderError && (
+              <div className="p-3 text-xs bg-destructive/10 text-destructive border border-destructive/20">
+                {orderError}
+              </div>
+            )}
+
+            <form onSubmit={handleDirectOrderSubmit} className="space-y-4 text-xs">
+              <div className="space-y-1">
+                <label className="font-semibold uppercase tracking-wider text-cocoa">Full Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="e.g. Aanya Sharma"
+                  className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-semibold uppercase tracking-wider text-cocoa">Email Address *</label>
+                  <input
+                    type="email"
+                    required
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    placeholder="aanya@example.com"
+                    className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="font-semibold uppercase tracking-wider text-cocoa">Mobile Number *</label>
+                  <input
+                    type="tel"
+                    required
+                    value={formData.phone}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    placeholder="+91 98201 12233"
+                    className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-semibold uppercase tracking-wider text-cocoa">Delivery Street Address *</label>
+                <input
+                  type="text"
+                  required
+                  value={formData.addressLine}
+                  onChange={(e) => setFormData({ ...formData, addressLine: e.target.value })}
+                  placeholder="House/Flat No., Building, Street"
+                  className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <label className="font-semibold uppercase tracking-wider text-cocoa">City *</label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.city}
+                    onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                    placeholder="Mumbai"
+                    className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="font-semibold uppercase tracking-wider text-cocoa">State *</label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.state}
+                    onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+                    placeholder="Maharashtra"
+                    className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="font-semibold uppercase tracking-wider text-cocoa">PIN Code *</label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.postalCode}
+                    onChange={(e) => setFormData({ ...formData, postalCode: e.target.value })}
+                    placeholder="400050"
+                    className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-semibold uppercase tracking-wider text-cocoa">Payment Option</label>
+                <select
+                  value={formData.paymentMethod}
+                  onChange={(e) => setFormData({ ...formData, paymentMethod: e.target.value as any })}
+                  className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
+                >
+                  <option value="WHATSAPP_UPI">WhatsApp UPI / Pay on Chat</option>
+                  <option value="CASH_ON_DELIVERY">Cash on Delivery (COD)</option>
+                  <option value="ONLINE_UPI">Direct UPI Transfer</option>
+                </select>
+              </div>
+
+              <div className="border-t border-foreground/15 pt-3 flex justify-between font-bold text-sm text-cocoa">
+                <span>Total Amount Due</span>
+                <span className="text-primary">{formatInr(totals.estimatedTotal)}</span>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmittingOrder}
+                className="w-full bg-primary py-3 text-center text-xs font-semibold uppercase tracking-widest text-primary-foreground hover:bg-forest-deep disabled:opacity-50 cursor-pointer"
+              >
+                {isSubmittingOrder ? 'Processing Order...' : 'Confirm & Place Thrift Order'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-

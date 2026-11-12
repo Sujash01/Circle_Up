@@ -120,9 +120,14 @@ export function ProductDetailPage() {
         {/* Product storytelling & controls */}
         <div className="lg:pl-4 space-y-6">
           <div className="space-y-2 border-b border-foreground/15 pb-5">
-            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.2em] text-terracotta">
-              {product.categoryLabel} · {product.subcategory}
-            </p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.2em] text-terracotta">
+                {product.categoryLabel} · {product.subcategory}
+              </p>
+              <span className="font-mono text-[0.7rem] bg-secondary px-2 py-0.5 text-cocoa font-medium tracking-wide border border-foreground/10">
+                SERIAL: {product.serialNumber || product.id.toUpperCase()}
+              </span>
+            </div>
             <h1 className="font-display text-3xl sm:text-4xl text-cocoa leading-tight">
               {product.name}
             </h1>
@@ -142,6 +147,9 @@ export function ProductDetailPage() {
           <p className="text-sm leading-relaxed text-foreground/85">{product.description}</p>
 
           <dl className="grid grid-cols-2 gap-y-2 text-xs border-y border-foreground/15 py-4">
+            <dt className="uppercase tracking-wider text-terracotta">Item Serial No.</dt>
+            <dd className="font-mono font-medium text-cocoa">{product.serialNumber || product.id.toUpperCase()}</dd>
+
             <dt className="uppercase tracking-wider text-terracotta">Condition</dt>
             <dd className="font-medium text-cocoa">{product.condition}</dd>
 

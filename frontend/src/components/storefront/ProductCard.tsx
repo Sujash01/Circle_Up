@@ -72,6 +72,8 @@ export function ProductCard({
         </div>
 
         <p className="text-[0.74rem] text-terracotta">
+          <span className="font-mono text-[0.68rem] text-cocoa/70 font-semibold">{product.serialNumber || product.id.toUpperCase()}</span>
+          {' · '}
           {showSubcategory ? `${product.subcategory} · ` : ''}
           {product.condition}
           {product.stock === 1 ? ' · Only 1 piece' : ''}

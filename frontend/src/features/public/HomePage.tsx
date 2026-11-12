@@ -29,6 +29,8 @@ import {
 } from '@/components/storefront/StorefrontChrome';
 import { useStore } from '@/context/StoreContext';
 import { cn } from '@/lib/utils';
+import { formatInr } from '@/services/cartService';
+import { productService } from '@/services/productService';
 
 interface ProductPreview {
   id: string;
@@ -377,11 +379,17 @@ function ProductSection({
   return (
     <section id={id} className={cn('scroll-mt-6 py-10 lg:py-12', pad)}>
       <SectionHeading title={title} to={to} />
-      <div className="mt-7 grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-4">
-        {products.map((product) => (
-          <ProductCard key={product.name} product={product} />
-        ))}
-      </div>
+      {products.length === 0 ? (
+        <div className="mt-7 border border-dashed border-foreground/20 p-8 text-center text-xs text-muted-foreground">
+          No items listed yet in this section. Real items added to your database will appear here automatically.
+        </div>
+      ) : (
+        <div className="mt-7 grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-4">
+          {products.map((product) => (
+            <ProductCard key={product.name} product={product} />
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -525,6 +533,39 @@ function CommunitySection() {
 
 export function HomePage() {
   const mainRef = useRef<HTMLElement>(null);
+  const allProducts = productService.getAllProducts();
+  const isDbLive = productService.isDatabaseLive();
+
+  const liveReadyToWear: ProductPreview[] = allProducts
+    .filter((p) => p.category === 'womens-one-piece' || p.category === 'womens-upperwear')
+    .slice(0, 4)
+    .map((p) => ({
+      id: p.id,
+      img: p.images[0] || rtw1,
+      name: p.name,
+      price: formatInr(p.price),
+      width: 912,
+      height: 1200,
+      aspect: 'aspect-[4/5]',
+      to: `/product/${p.slug}`,
+    }));
+
+  const liveHandbags: ProductPreview[] = allProducts
+    .filter((p) => p.category === 'accessories' || p.tags.includes('bag') || p.category === 'thrifted-treasure')
+    .slice(0, 4)
+    .map((p) => ({
+      id: p.id,
+      img: p.images[0] || bag1,
+      name: p.name,
+      price: formatInr(p.price),
+      width: 1008,
+      height: 1008,
+      aspect: 'aspect-square',
+      to: `/product/${p.slug}`,
+    }));
+
+  const activeReadyToWear = isDbLive ? liveReadyToWear : (liveReadyToWear.length > 0 ? liveReadyToWear : readyToWear);
+  const activeHandbags = isDbLive ? liveHandbags : (liveHandbags.length > 0 ? liveHandbags : handbags);
 
   return (
     <div className="relative min-h-screen w-full frame-layered-bg p-2.5 sm:p-4 md:p-5 lg:p-6 overflow-x-hidden">
@@ -558,13 +599,13 @@ export function HomePage() {
                 <ProductSection
                   id="ready-to-wear"
                   title="Ready-To-Wear"
-                  products={readyToWear}
+                  products={activeReadyToWear}
                   to="/womens-one-piece"
                 />
                 <ProductSection
                   id="handbags"
                   title="Handbags Collection"
-                  products={handbags}
+                  products={activeHandbags}
                   to="/accessories"
                 />
                 <StorySection />
