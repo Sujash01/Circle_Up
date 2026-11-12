@@ -1,6 +1,14 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import { z } from 'zod';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const backendEnvPath = path.resolve(__dirname, '../../.env');
+
+// Load backend/.env regardless of whether the process is started from repo root or backend/.
+dotenv.config({ path: backendEnvPath });
 dotenv.config();
 
 const envSchema = z.object({
@@ -42,4 +50,3 @@ if (!parsed.success) {
 }
 
 export const env = parsed.data;
-

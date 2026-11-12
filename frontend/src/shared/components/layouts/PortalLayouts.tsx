@@ -1,61 +1,101 @@
 import { Link, Outlet } from 'react-router-dom';
 
-/**
- * Structural portal layouts (unopinionated markup ready for existing visual design integration).
- */
+interface NavItem {
+  label: string;
+  to: string;
+}
+
+function PortalFrameShell({
+  portalName,
+  navLabel,
+  links,
+}: {
+  portalName: string;
+  navLabel: string;
+  links: NavItem[];
+}) {
+  return (
+    <div className="min-h-screen w-full frame-layered-bg p-3 sm:p-5">
+      <div className="paper-sheet-3d mx-auto max-w-[1440px] rounded-[1.5rem] bg-[#f8f4e2] text-foreground overflow-hidden">
+        <header className="border-b-2 border-foreground/15 bg-[#f8f4e2]/95 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <Link to="/" className="font-body text-xl font-black tracking-tight text-cocoa">
+              CircleUp
+            </Link>
+            <span className="rounded-full bg-primary px-2.5 py-0.5 text-[0.68rem] font-bold uppercase tracking-wider text-primary-foreground">
+              {portalName}
+            </span>
+          </div>
+          <nav aria-label={navLabel} className="flex flex-wrap items-center gap-2 text-sm font-semibold text-cocoa">
+            {links.map((item) => (
+              <Link
+                key={item.to}
+                to={item.to}
+                className="rounded-full px-3 py-1.5 transition-colors hover:bg-primary/10 hover:text-primary"
+              >
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+        </header>
+        <main className="p-6 sm:p-10 min-h-[70vh]">
+          <Outlet />
+        </main>
+      </div>
+    </div>
+  );
+}
+
 export function PublicLayout() {
   return (
-    <div data-portal="public">
-      <header>
-        <nav aria-label="Primary Storefront">
-          <Link to="/">CircleUp</Link> | <Link to="/new-arrivals">New Arrivals</Link> |{' '}
-          <Link to="/rentals">Rentals</Link> | <Link to="/events">The Social Circle</Link> |{' '}
-          <Link to="/thrift-crew">#ThriftCrew</Link> | <Link to="/cart">Cart</Link> |{' '}
-          <Link to="/account">Account</Link>
-        </nav>
-      </header>
-      <main>
-        <Outlet />
-      </main>
-    </div>
+    <PortalFrameShell
+      portalName="Storefront"
+      navLabel="Primary Storefront"
+      links={[
+        { label: 'Home', to: '/' },
+        { label: 'New Arrivals', to: '/new-arrivals' },
+        { label: 'Rentals', to: '/rentals' },
+        { label: 'The Social Circle', to: '/events' },
+        { label: '#ThriftCrew', to: '/thrift-crew' },
+        { label: 'Cart', to: '/cart' },
+        { label: 'Account', to: '/account' },
+      ]}
+    />
   );
 }
 
 export function CustomerLayout() {
   return (
-    <div data-portal="customer-crm">
-      <header>
-        <nav aria-label="Customer CRM">
-          <Link to="/">Storefront</Link> | <Link to="/account">Profile</Link> |{' '}
-          <Link to="/account/addresses">Addresses</Link> |{' '}
-          <Link to="/account/orders">Orders</Link> | <Link to="/account/rentals">Rentals</Link> |{' '}
-          <Link to="/account/wishlist">Wishlist</Link> |{' '}
-          <Link to="/account/notifications">Notifications</Link>
-        </nav>
-      </header>
-      <main>
-        <Outlet />
-      </main>
-    </div>
+    <PortalFrameShell
+      portalName="Customer CRM"
+      navLabel="Customer CRM"
+      links={[
+        { label: 'Storefront', to: '/' },
+        { label: 'Profile', to: '/account' },
+        { label: 'Addresses', to: '/account/addresses' },
+        { label: 'Orders', to: '/account/orders' },
+        { label: 'Rentals', to: '/account/rentals' },
+        { label: 'Wishlist', to: '/account/wishlist' },
+        { label: 'Notifications', to: '/account/notifications' },
+      ]}
+    />
   );
 }
 
 export function AdminLayout() {
   return (
-    <div data-portal="owner-crm">
-      <header>
-        <nav aria-label="Owner CRM">
-          <Link to="/admin">Dashboard</Link> | <Link to="/admin/products">Products</Link> |{' '}
-          <Link to="/admin/inventory">Inventory</Link> |{' '}
-          <Link to="/admin/checkout-requests">Checkout Requests</Link> |{' '}
-          <Link to="/admin/orders">Orders</Link> | <Link to="/admin/rentals">Rentals</Link> |{' '}
-          <Link to="/admin/community">Community</Link>
-        </nav>
-      </header>
-      <main>
-        <Outlet />
-      </main>
-    </div>
+    <PortalFrameShell
+      portalName="Owner CRM"
+      navLabel="Owner CRM"
+      links={[
+        { label: 'Dashboard', to: '/admin' },
+        { label: 'Products', to: '/admin/products' },
+        { label: 'Inventory', to: '/admin/inventory' },
+        { label: 'Checkout Requests', to: '/admin/checkout-requests' },
+        { label: 'Orders', to: '/admin/orders' },
+        { label: 'Rentals', to: '/admin/rentals' },
+        { label: 'Community', to: '/admin/community' },
+      ]}
+    />
   );
 }
-

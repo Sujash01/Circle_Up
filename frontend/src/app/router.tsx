@@ -1,4 +1,5 @@
 import { createBrowserRouter } from 'react-router-dom';
+import { HomePage } from '../features/public/HomePage';
 import { PlaceholderPage } from '../features/shared/PlaceholderPage';
 import {
   AdminGuestOnly,
@@ -16,10 +17,12 @@ export const router = createBrowserRouter([
   // A. PUBLIC WEBSITE
   {
     path: '/',
+    element: <HomePage />,
+  },
+  {
     element: <PublicLayout />,
     children: [
-      { index: true, element: <PlaceholderPage title="Home" milestone="M2" showHealthProbe /> },
-      { path: 'new-arrivals', element: <PlaceholderPage title="New Arrivals" milestone="M2" /> },
+      { path: 'new-arrivals', element: <PlaceholderPage title="New Arrivals" milestone="M2" showHealthProbe /> },
       { path: 'shop/:categorySlug', element: <PlaceholderPage title="Category Catalog" milestone="M2" /> },
       { path: 'rentals', element: <PlaceholderPage title="Rental Section" milestone="M5" /> },
       { path: 'products/:slug', element: <PlaceholderPage title="Product Details" milestone="M2" /> },
@@ -106,4 +109,3 @@ export const router = createBrowserRouter([
     ],
   },
 ]);
-

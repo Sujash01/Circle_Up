@@ -1,0 +1,288 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * CircleUp design system — Deep Forest Olive-Green frame, Warm Vintage Cream canvas,
+ * Deep Forest Ink editorial serif (aligned to CircleUp store signage palette).
+ */
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* CircleUp Forest & Cream brand tokens */
+  --color-ink: var(--ink);
+  --color-forest: var(--forest);
+  --color-forest-deep: var(--forest-deep);
+  --color-sage-tint: var(--sage-tint);
+  --color-sage-glow: var(--sage-glow);
+  --color-footer: var(--footer);
+  --color-footer-foreground: var(--footer-foreground);
+  --color-cocoa: var(--cocoa);
+  --color-steel: var(--steel);
+  --color-terracotta: var(--terracotta);
+  --color-tile: var(--tile);
+  --color-frame: var(--frame);
+
+  /* Typography */
+  --font-display: "Young Serif", "Georgia", serif;
+  --font-body: "Lexend", ui-sans-serif, system-ui, sans-serif;
+
+  /* Motion */
+  --animate-float: float 7s ease-in-out infinite;
+  --animate-glow: glow-pulse 6s ease-in-out infinite;
+  --animate-marquee: marquee 26s linear infinite;
+
+  @keyframes float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-14px);
+    }
+  }
+
+  @keyframes glow-pulse {
+    0%,
+    100% {
+      opacity: 0.5;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.85;
+      transform: scale(1.07);
+    }
+  }
+
+  @keyframes marquee {
+    to {
+      transform: translateX(-50%);
+    }
+  }
+}
+
+:root {
+  --radius: 0.625rem;
+
+  /* Warm vintage cream canvas (from uploaded CircleUp signage card) */
+  --background: #f7f3e1;
+  --foreground: #26311f;
+  --card: #fcf9ed;
+  --card-foreground: #1e2618;
+  --popover: #fcf9ed;
+  --popover-foreground: #1e2618;
+
+  /* Deep Forest Olive-Green primary brand (from uploaded signage background) */
+  --primary: #2f3e24;
+  --primary-foreground: #f8f4e2;
+
+  --secondary: #ece7d2;
+  --secondary-foreground: #25311c;
+  --muted: #ebe6d1;
+  --muted-foreground: #5c6852;
+  --accent: #e1e6d2;
+  --accent-foreground: #222d1a;
+  --destructive: #a63a2b;
+  --destructive-foreground: #faf7ec;
+  --border: #d5d0b8;
+  --input: #d5d0b8;
+  --ring: #3d4f2f;
+
+  /* Brand tokens harmonized to Forest Green & Cream */
+  --ink: #1c2417;
+  --forest: #2f3e24;
+  --forest-deep: #202b18;
+  --sage-tint: #dde3cd;
+  --sage-glow: #c8d3b0;
+  --footer: #1d2716;
+  --footer-foreground: #f7f3e1;
+
+  /* Editorial accent tokens */
+  --cocoa: #222c1b;
+  --steel: #37482b;
+  --terracotta: #536445;
+  --tile: #ebe7d4;
+  --frame: #2e3d23;
+
+  --sidebar: #f7f3e1;
+  --sidebar-foreground: #1e2618;
+  --sidebar-primary: #2f3e24;
+  --sidebar-primary-foreground: #f8f4e2;
+  --sidebar-accent: #e7eadb;
+  --sidebar-accent-foreground: #222d1a;
+  --sidebar-border: #d5d0b8;
+  --sidebar-ring: #3d4f2f;
+}
+
+.dark {
+  --background: #171f12;
+  --foreground: #f2eedb;
+  --card: #1f2a18;
+  --card-foreground: #f2eedb;
+  --popover: #1f2a18;
+  --popover-foreground: #f2eedb;
+  --primary: #9eb386;
+  --primary-foreground: #171f12;
+  --secondary: #283520;
+  --secondary-foreground: #f2eedb;
+  --muted: #283520;
+  --muted-foreground: #b8c2aa;
+  --accent: #2d3c24;
+  --accent-foreground: #f2eedb;
+  --destructive: #c94e3d;
+  --destructive-foreground: #faf7ec;
+  --border: rgba(247, 243, 225, 0.14);
+  --input: rgba(247, 243, 225, 0.18);
+  --ring: #8ca374;
+
+  --ink: #f2eedb;
+  --forest: #9eb386;
+  --forest-deep: #788f60;
+  --sage-tint: #34432a;
+  --sage-glow: #455938;
+  --footer: #12190e;
+  --footer-foreground: #f2eedb;
+  --cocoa: #ece6cd;
+  --steel: #b9c9a5;
+  --terracotta: #a2b48e;
+  --tile: #26331e;
+  --frame: #202b18;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--color-frame);
+    color: var(--color-foreground);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background-color: var(--sage-tint);
+    color: var(--forest-deep);
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 400;
+    letter-spacing: -0.01em;
+  }
+
+  a:focus-visible,
+  button:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+}
+
+/* Woven olive-and-cream plaid strip that edges the story photo */
+.plaid {
+  background-color: #dde3d0;
+  background-image:
+    repeating-linear-gradient(0deg, rgb(47 62 36 / 0.55) 0 3px, transparent 3px 15px),
+    repeating-linear-gradient(90deg, rgb(47 62 36 / 0.55) 0 3px, transparent 3px 9px),
+    repeating-linear-gradient(0deg, rgb(29 39 22 / 0.35) 0 1px, transparent 1px 7px);
+}
+
+/* 3D Forest-Green Frame & Stacked Cream Paper Styling */
+.frame-layered-bg {
+  background-color: var(--color-frame);
+  background-image:
+    radial-gradient(ellipse at 50% 0%, #3a4c2d 0%, #24311b 82%),
+    linear-gradient(180deg, rgba(248, 244, 226, 0.08) 0%, transparent 20%, rgba(0, 0, 0, 0.25) 100%);
+  box-shadow:
+    inset 0 0 0 2px rgba(247, 243, 225, 0.28),
+    inset 0 0 0 6px rgba(47, 62, 36, 0.9),
+    inset 0 0 0 7px rgba(247, 243, 225, 0.16),
+    inset 0 4px 20px rgba(0, 0, 0, 0.42);
+}
+
+.paper-sheet-3d {
+  position: relative;
+  background-color: #f8f4e2;
+  box-shadow:
+    0 25px 60px -15px rgba(14, 20, 10, 0.55),
+    0 10px 24px -5px rgba(0, 0, 0, 0.28),
+    0 0 0 2px rgba(248, 244, 226, 0.85),
+    inset 0 0 0 1px rgba(47, 62, 36, 0.15),
+    inset 0 2px 4px rgba(255, 255, 255, 0.85),
+    inset 0 -3px 8px rgba(34, 46, 25, 0.06);
+}
+
+.paper-underlayer-1 {
+  background-color: #dcd4b9;
+  box-shadow:
+    0 22px 45px -10px rgba(12, 18, 9, 0.55),
+    0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.paper-underlayer-2 {
+  background-color: #ebe4cb;
+  box-shadow:
+    0 14px 28px -6px rgba(15, 22, 11, 0.38),
+    0 0 0 1px rgba(0, 0, 0, 0.05);
+}
+
+/* Delicate, gentle crumpled paper texture overlay */
+.paper-slight-crinkle {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-repeat: repeat;
+  background-size: 850px auto;
+  opacity: 0.16;
+  mix-blend-mode: multiply;
+  filter: contrast(0.85) brightness(1.05);
+}
+
+/* Soft ambient lighting across paper */
+.paper-ambient-sheen {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(ellipse at 35% 25%, rgba(255, 253, 244, 0.45) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 70%, rgba(36, 49, 27, 0.03) 0%, transparent 50%);
+}
+
