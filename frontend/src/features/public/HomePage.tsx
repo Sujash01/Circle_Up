@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { Heart, Search, ShoppingBag } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -20,6 +21,7 @@ import story1 from '@/assets/story-1.jpg';
 import story2 from '@/assets/story-2.jpg';
 import winter1 from '@/assets/winter-1.jpg';
 import { Reveal } from '@/components/landing/Reveal';
+import { ScrollIvyBranch } from '@/components/landing/ScrollIvyBranch';
 import { cn } from '@/lib/utils';
 
 interface ProductPreview {
@@ -666,6 +668,8 @@ function Footer() {
  * with Forest Olive-Green & Warm Cream store signage color scheme).
  */
 export function HomePage() {
+  const mainRef = useRef<HTMLElement>(null);
+
   return (
     <div className="relative min-h-screen w-full frame-layered-bg p-2.5 sm:p-4 md:p-5 lg:p-6 overflow-x-hidden">
       <div className="relative w-full">
@@ -691,23 +695,26 @@ export function HomePage() {
           <div className="relative z-20">
             <TopBanner />
             <Header />
-            <main>
-              <Hero />
-              <ProductSection
-                id="ready-to-wear"
-                title="Ready-To-Wear"
-                products={readyToWear}
-                to="/shop/womens-upperwear"
-              />
-              <ProductSection
-                id="handbags"
-                title="Handbags Collection"
-                products={handbags}
-                to="/shop/accessories"
-              />
-              <StorySection />
-              <WinterSection />
-              <CommunitySection />
+            <main ref={mainRef} className="relative">
+              <ScrollIvyBranch containerRef={mainRef} />
+              <div className="relative z-20">
+                <Hero />
+                <ProductSection
+                  id="ready-to-wear"
+                  title="Ready-To-Wear"
+                  products={readyToWear}
+                  to="/shop/womens-upperwear"
+                />
+                <ProductSection
+                  id="handbags"
+                  title="Handbags Collection"
+                  products={handbags}
+                  to="/shop/accessories"
+                />
+                <StorySection />
+                <WinterSection />
+                <CommunitySection />
+              </div>
             </main>
             <Footer />
           </div>
