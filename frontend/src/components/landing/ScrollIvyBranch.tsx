@@ -25,9 +25,6 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-/**
- * Generates a smooth, organic sinusoidal cubic-Bezier path in exact pixel coordinates.
- */
 function buildOrganicVinePath(width: number, height: number): string {
   const centerX = width * 0.52;
   const amplitude = Math.min(18, width * 0.17);
@@ -55,22 +52,32 @@ function buildOrganicVinePath(width: number, height: number): string {
 }
 
 /**
- * Renders a prominent, thick botanical English-ivy branch along the left paper
- * margin whose stem, tip bud, tendrils, and leaves grow in strict 1:1 sync with scroll.
+ * Renders a prominent botanical English-ivy branch along the left paper margin.
+ * All scroll-frame updates mutate SVG attributes directly via refs with cached
+ * geometry and zero React re-renders so scrolling remains silky smooth.
  */
 export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const stemPathRef = useRef<SVGPathElement>(null);
+  const tipGroupRef = useRef<SVGGElement>(null);
+  const leafGroupRefs = useRef<Array<SVGGElement | null>>([]);
+  const leafBloomRefs = useRef<Array<SVGGElement | null>>([]);
+
+  // Cached geometry & scroll metrics (avoids layout reflows and React renders on scroll)
+  const metricsRef = useRef({
+    totalLength: 1250,
+    containerDocTop: 0,
+    containerHeight: 1200,
+    tipLookup: [] as Array<{ x: number; y: number }>,
+    lastLeafGrow: [] as number[],
+  });
 
   const [size, setSize] = useState({ width: 108, height: 1200 });
-  const [totalLength, setTotalLength] = useState(1250);
   const [leaves, setLeaves] = useState<LeafSpec[]>([]);
-  const [progress, setProgress] = useState(0.1);
-  const [tipPoint, setTipPoint] = useState({ x: 56, y: 120 });
 
   const pathD = buildOrganicVinePath(size.width, size.height);
 
-  // Track exact rendered pixel dimensions of the vine overlay so SVG units === CSS pixels.
+  // Measure rendered container dimensions on mount / resize only.
   useLayoutEffect(() => {
     const el = wrapperRef.current;
     if (!el) return;
@@ -78,11 +85,16 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
     const measure = () => {
       const rect = el.getBoundingClientRect();
       if (rect.width > 10 && rect.height > 100) {
-        setSize((prev) =>
-          Math.abs(prev.width - rect.width) < 1 && Math.abs(prev.height - rect.height) < 1
-            ? prev
-            : { width: Math.round(rect.width), height: Math.round(rect.height) },
-        );
+        const w = Math.round(rect.width);
+        const h = Math.round(rect.height);
+        setSize((prev) => (prev.width === w && prev.height === h ? prev : { width: w, height: h }));
+      }
+
+      const mainEl = containerRef.current;
+      if (mainEl) {
+        const mainRect = mainEl.getBoundingClientRect();
+        metricsRef.current.containerDocTop = mainRect.top + window.scrollY;
+        metricsRef.current.containerHeight = Math.max(mainRect.height, 1);
       }
     };
 
@@ -91,14 +103,15 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
     if (typeof ResizeObserver !== 'undefined') {
       const ro = new ResizeObserver(measure);
       ro.observe(el);
+      if (containerRef.current) ro.observe(containerRef.current);
       return () => ro.disconnect();
     }
 
-    window.addEventListener('resize', measure);
+    window.addEventListener('resize', measure, { passive: true });
     return () => window.removeEventListener('resize', measure);
-  }, []);
+  }, [containerRef]);
 
-  // Recompute exact stem length and attach leaves directly onto sampled stem coordinates.
+  // Pre-compute stem length, leaf anchor coordinates, and 100-point tip lookup table.
   useLayoutEffect(() => {
     const pathEl = stemPathRef.current;
     if (!pathEl || typeof pathEl.getTotalLength !== 'function') {
@@ -107,9 +120,19 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
 
     const total = pathEl.getTotalLength();
     if (!Number.isFinite(total) || total <= 0) return;
-    setTotalLength(total);
 
-    const leafCount = Math.max(14, Math.min(28, Math.round(size.height / 145)));
+    metricsRef.current.totalLength = total;
+    pathEl.style.strokeDasharray = `${total}`;
+
+    const samples = 100;
+    const tipLookup: Array<{ x: number; y: number }> = [];
+    for (let s = 0; s <= samples; s++) {
+      const pt = pathEl.getPointAtLength((s / samples) * total);
+      tipLookup.push({ x: pt.x, y: pt.y });
+    }
+    metricsRef.current.tipLookup = tipLookup;
+
+    const leafCount = Math.max(14, Math.min(26, Math.round(size.height / 155)));
     const nextLeaves: LeafSpec[] = [];
 
     for (let i = 0; i < leafCount; i++) {
@@ -137,41 +160,96 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
       });
     }
 
+    metricsRef.current.lastLeafGrow = new Array(nextLeaves.length).fill(-1);
     setLeaves(nextLeaves);
   }, [pathD, size.height]);
 
-  // Synchronize stem tip and leaf growth instantaneously on scroll via rAF.
+  // Direct DOM/SVG scroll loop: zero React state updates, zero getBoundingClientRect() on scroll.
   useEffect(() => {
     const prefersReducedMotion =
       typeof window !== 'undefined' &&
       window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
+    const applyProgress = (progress: number) => {
+      const { totalLength, tipLookup, lastLeafGrow } = metricsRef.current;
+
+      const stemEl = stemPathRef.current;
+      if (stemEl) {
+        stemEl.style.strokeDashoffset = `${totalLength * (1 - progress)}`;
+      }
+
+      const tipEl = tipGroupRef.current;
+      if (tipEl && tipLookup.length > 0) {
+        if (progress > 0.02 && progress < 0.995) {
+          const idx = Math.min(
+            tipLookup.length - 1,
+            Math.max(0, Math.round(progress * (tipLookup.length - 1))),
+          );
+          const pt = tipLookup[idx];
+          if (pt) {
+            tipEl.setAttribute('transform', `translate(${pt.x.toFixed(1)}, ${pt.y.toFixed(1)})`);
+            tipEl.style.opacity = '1';
+          }
+        } else {
+          tipEl.style.opacity = '0';
+        }
+      }
+
+      for (let i = 0; i < leaves.length; i++) {
+        const leaf = leaves[i];
+        const groupEl = leafGroupRefs.current[i];
+        const bloomEl = leafBloomRefs.current[i];
+        if (!leaf || !groupEl || !bloomEl) continue;
+
+        const grow = clamp((progress - (leaf.t - 0.015)) / 0.045, 0, 1);
+        const prevGrow = lastLeafGrow[i] ?? -1;
+        // Skip DOM writes for leaves whose bloom state hasn't meaningfully changed.
+        if (Math.abs(grow - prevGrow) < 0.005 && !(grow === 0 && prevGrow !== 0) && !(grow === 1 && prevGrow !== 1)) {
+          continue;
+        }
+        lastLeafGrow[i] = grow;
+
+        if (grow <= 0.01) {
+          groupEl.style.opacity = '0';
+          continue;
+        }
+
+        const eased = 1 - (1 - grow) * (1 - grow);
+        const flipX = leaf.side === 'left' ? -1 : 1;
+        const activeScale = leaf.scale * (0.18 + 0.82 * eased);
+        const activeAngle = leaf.angleDeg * (0.4 + 0.6 * eased);
+
+        groupEl.style.opacity = (0.2 + 0.78 * eased).toFixed(2);
+        bloomEl.setAttribute(
+          'transform',
+          `rotate(${activeAngle.toFixed(1)}) scale(${(flipX * activeScale).toFixed(3)}, ${activeScale.toFixed(3)})`,
+        );
+      }
+    };
+
     if (prefersReducedMotion) {
-      setProgress(1);
+      applyProgress(1);
       return;
     }
 
     let rafId = 0;
 
-    const updateScroll = () => {
+    const computeAndApply = () => {
       rafId = 0;
-      const el = containerRef.current;
-      if (!el) return;
-
-      const rect = el.getBoundingClientRect();
+      const { containerDocTop, containerHeight } = metricsRef.current;
+      const currentRectTop = containerDocTop - window.scrollY;
       const startTop = window.innerHeight * 0.55;
-      const endTop = window.innerHeight * 0.85 - rect.height;
-      const raw = (startTop - rect.top) / Math.max(startTop - endTop, 1);
-      const next = clamp(raw, 0.07, 1);
-      setProgress(next);
+      const endTop = window.innerHeight * 0.85 - containerHeight;
+      const raw = (startTop - currentRectTop) / Math.max(startTop - endTop, 1);
+      applyProgress(clamp(raw, 0.07, 1));
     };
 
     const schedule = () => {
       if (rafId !== 0) return;
-      rafId = window.requestAnimationFrame(updateScroll);
+      rafId = window.requestAnimationFrame(computeAndApply);
     };
 
-    updateScroll();
+    computeAndApply();
     window.addEventListener('scroll', schedule, { passive: true });
     window.addEventListener('resize', schedule, { passive: true });
 
@@ -180,22 +258,13 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
       window.removeEventListener('scroll', schedule);
       window.removeEventListener('resize', schedule);
     };
-  }, [containerRef]);
-
-  // Keep the growing shoot tip locked to the exact current stroke endpoint.
-  useEffect(() => {
-    const pathEl = stemPathRef.current;
-    if (!pathEl || typeof pathEl.getPointAtLength !== 'function') return;
-    const pt = pathEl.getPointAtLength(clamp(progress, 0, 1) * totalLength);
-    setTipPoint({ x: pt.x, y: pt.y });
-  }, [progress, totalLength]);
-
-  const dashOffset = totalLength * (1 - progress);
+  }, [leaves]);
 
   return (
     <div
       ref={wrapperRef}
       aria-hidden="true"
+      style={{ contain: 'layout style', willChange: 'transform', transform: 'translateZ(0)' }}
       className={cn(
         'pointer-events-none select-none absolute top-4 bottom-6 left-1 sm:left-2 z-10 hidden sm:block w-20 md:w-24 lg:w-28',
         className,
@@ -205,7 +274,7 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
         viewBox={`0 0 ${size.width} ${size.height}`}
         className="h-full w-full overflow-visible"
       >
-        {/* Subtle faint root guide along full stem */}
+        {/* Subtle static root guide */}
         <path
           d={pathD}
           fill="none"
@@ -215,127 +284,77 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
           strokeLinecap="round"
         />
 
-        {/* Soft botanical drop-shadow behind active growing branch */}
-        <path
-          d={pathD}
-          fill="none"
-          stroke="#182212"
-          strokeOpacity="0.16"
-          strokeWidth="8.5"
-          strokeLinecap="round"
-          strokeDasharray={totalLength}
-          strokeDashoffset={dashOffset}
-          transform="translate(1.5, 2.5)"
-        />
-
-        {/* Primary thick woody ivy branch */}
+        {/* Single primary thick ivy branch (mutated directly via ref for 0-rerender scroll) */}
         <path
           ref={stemPathRef}
           d={pathD}
           fill="none"
           stroke="#2a391f"
           strokeOpacity="0.95"
-          strokeWidth="5.2"
+          strokeWidth="5.5"
           strokeLinecap="round"
-          strokeDasharray={totalLength}
-          strokeDashoffset={dashOffset}
         />
 
-        {/* Crisp inner botanical highlight for 3D stem volume */}
-        <path
-          d={pathD}
-          fill="none"
-          stroke="#6d8555"
-          strokeOpacity="0.55"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-          strokeDasharray={totalLength}
-          strokeDashoffset={dashOffset}
-          transform="translate(-0.8, 0)"
-        />
+        {/* Growing shoot bud at active tip */}
+        <g ref={tipGroupRef} style={{ opacity: 0 }}>
+          <circle r="4.5" fill="#465e33" />
+          <path d="M 0 0 C -5 6, -3 13, 0 16 C 3 13, 5 6, 0 0 Z" fill="#5d7845" />
+        </g>
 
-        {/* Growing shoot bud locked directly to the active tip of the branch */}
-        {progress > 0.02 && progress < 0.995 && (
-          <g transform={`translate(${tipPoint.x}, ${tipPoint.y})`}>
-            <circle r="4.5" fill="#465e33" />
-            <path
-              d="M 0 0 C -5 6, -3 13, 0 16 C 3 13, 5 6, 0 0 Z"
-              fill="#5d7845"
-            />
-          </g>
-        )}
+        {/* Pre-mounted leaves updated only while actively blooming */}
+        {leaves.map((leaf, index) => (
+          <g
+            key={leaf.id}
+            ref={(el) => {
+              leafGroupRefs.current[index] = el;
+            }}
+            transform={`translate(${leaf.x.toFixed(1)}, ${leaf.y.toFixed(1)})`}
+            style={{ opacity: 0 }}
+          >
+            {leaf.hasTendril && (
+              <path
+                d={
+                  leaf.side === 'right'
+                    ? 'M 0 0 C -10 -4, -18 5, -14 14 C -11 19, -5 16, -8 11'
+                    : 'M 0 0 C 10 -4, 18 5, 14 14 C 11 19, 5 16, 8 11'
+                }
+                fill="none"
+                stroke="#3b4e2d"
+                strokeOpacity="0.72"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              />
+            )}
 
-        {/* Synchronized English ivy leaves & curling tendrils growing continuously with stem */}
-        {leaves.map((leaf) => {
-          // Smooth continuous 0..1 unfurl locked directly to stem tip passing leaf.t
-          const grow = clamp((progress - (leaf.t - 0.015)) / 0.045, 0, 1);
-          if (grow <= 0.01) return null;
-
-          const eased = 1 - (1 - grow) * (1 - grow);
-          const flipX = leaf.side === 'left' ? -1 : 1;
-          const activeScale = leaf.scale * (0.18 + 0.82 * eased);
-          const activeAngle = leaf.angleDeg * (0.4 + 0.6 * eased);
-
-          return (
             <g
-              key={leaf.id}
-              transform={`translate(${leaf.x}, ${leaf.y})`}
-              opacity={0.2 + 0.76 * eased}
+              ref={(el) => {
+                leafBloomRefs.current[index] = el;
+              }}
             >
-              {/* Optional delicate curly tendril */}
-              {leaf.hasTendril && (
-                <path
-                  d={
-                    leaf.side === 'right'
-                      ? 'M 0 0 C -10 -4, -18 5, -14 14 C -11 19, -5 16, -8 11'
-                      : 'M 0 0 C 10 -4, 18 5, 14 14 C 11 19, 5 16, 8 11'
-                  }
-                  fill="none"
-                  stroke="#3b4e2d"
-                  strokeOpacity="0.72"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  transform={`scale(${eased})`}
-                />
-              )}
-
-              {/* Leaf anchored at exact petiole origin (0, 0) on the stem */}
-              <g transform={`rotate(${activeAngle}) scale(${flipX * activeScale}, ${activeScale})`}>
-                {/* Thick petiole connecting leaf cleanly into the branch */}
-                <path
-                  d="M -1 0 Q 6 -1 11 -1"
-                  fill="none"
-                  stroke="#2a391f"
-                  strokeWidth="2.6"
-                  strokeLinecap="round"
-                />
-                {/* Soft leaf shadow */}
-                <path
-                  d="M 10 -1 C 11 -12, 20 -16, 26 -10 C 29 -16, 37 -12, 44 -3 C 38 3, 36 10, 30 14 C 26 10, 20 17, 14 13 C 10 9, 9 4, 10 -1 Z"
-                  fill="#172111"
-                  fillOpacity="0.16"
-                  transform="translate(1.5, 2.5)"
-                />
-                {/* Lush 3-lobed English ivy leaf */}
-                <path
-                  d="M 10 -1 C 11 -12, 20 -16, 26 -10 C 29 -16, 37 -12, 44 -3 C 38 3, 36 10, 30 14 C 26 10, 20 17, 14 13 C 10 9, 9 4, 10 -1 Z"
-                  fill={leaf.tone}
-                  stroke="#1f2b16"
-                  strokeWidth="0.9"
-                />
-                {/* Cream-ivory botanical veins matching CircleUp palette */}
-                <path
-                  d="M 11 -1 L 37 -2 M 20 -1 L 25 -9 M 22 -1 L 29 9 M 16 0 L 18 8"
-                  fill="none"
-                  stroke="#f8f4e2"
-                  strokeOpacity="0.52"
-                  strokeWidth="1.15"
-                  strokeLinecap="round"
-                />
-              </g>
+              <path
+                d="M -1 0 Q 6 -1 11 -1"
+                fill="none"
+                stroke="#2a391f"
+                strokeWidth="2.6"
+                strokeLinecap="round"
+              />
+              <path
+                d="M 10 -1 C 11 -12, 20 -16, 26 -10 C 29 -16, 37 -12, 44 -3 C 38 3, 36 10, 30 14 C 26 10, 20 17, 14 13 C 10 9, 9 4, 10 -1 Z"
+                fill={leaf.tone}
+                stroke="#1f2b16"
+                strokeWidth="0.9"
+              />
+              <path
+                d="M 11 -1 L 37 -2 M 20 -1 L 25 -9 M 22 -1 L 29 9 M 16 0 L 18 8"
+                fill="none"
+                stroke="#f8f4e2"
+                strokeOpacity="0.52"
+                strokeWidth="1.15"
+                strokeLinecap="round"
+              />
             </g>
-          );
-        })}
+          </g>
+        ))}
       </svg>
     </div>
   );

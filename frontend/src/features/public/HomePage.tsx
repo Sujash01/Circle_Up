@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { Heart, Search, ShoppingBag } from 'lucide-react';
+import { Heart } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 import bag1 from '@/assets/bag-1.jpg';
@@ -22,9 +22,16 @@ import story2 from '@/assets/story-2.jpg';
 import winter1 from '@/assets/winter-1.jpg';
 import { Reveal } from '@/components/landing/Reveal';
 import { ScrollIvyBranch } from '@/components/landing/ScrollIvyBranch';
+import {
+  StorefrontFooter,
+  StorefrontHeader,
+  StorefrontTopBanner,
+} from '@/components/storefront/StorefrontChrome';
+import { useStore } from '@/context/StoreContext';
 import { cn } from '@/lib/utils';
 
 interface ProductPreview {
+  id: string;
   img: string;
   name: string;
   price: string;
@@ -36,79 +43,87 @@ interface ProductPreview {
 
 const readyToWear: ProductPreview[] = [
   {
+    id: 'cu-001',
     img: rtw1,
     name: 'Top & Skirt Co-Ord Set',
     price: '₹ 4,000.00',
     width: 912,
     height: 1200,
     aspect: 'aspect-[4/5]',
-    to: '/shop/womens-upperwear',
+    to: '/product/top-and-skirt-co-ord-set',
   },
   {
+    id: 'cu-002',
     img: rtw2,
     name: 'Denim Fit & Flare Co-Ord Set',
     price: '₹ 1,950.00',
     width: 912,
     height: 1200,
     aspect: 'aspect-[4/5]',
-    to: '/shop/womens-one-piece',
+    to: '/product/denim-fit-and-flare-co-ord-set',
   },
   {
+    id: 'cu-003',
     img: rtw3,
     name: 'Blazer With Skirt Co-Ord Set',
     price: '₹ 3,550.00',
     width: 912,
     height: 1200,
     aspect: 'aspect-[4/5]',
-    to: '/shop/womens-upperwear',
+    to: '/product/blazer-with-skirt-co-ord-set',
   },
   {
+    id: 'cu-004',
     img: rtw4,
     name: 'Denim Jumpsuit Co-Ord Set',
     price: '₹ 4,950.00',
     width: 912,
     height: 1200,
     aspect: 'aspect-[4/5]',
-    to: '/shop/womens-one-piece',
+    to: '/product/denim-jumpsuit-co-ord-set',
   },
 ];
 
 const handbags: ProductPreview[] = [
   {
+    id: 'cu-029',
     img: bag1,
     name: 'Textured Handheld Bag',
     price: '₹ 2,550.00',
     width: 1008,
     height: 1008,
     aspect: 'aspect-square',
-    to: '/shop/accessories',
+    to: '/product/textured-handheld-bag',
   },
   {
+    id: 'cu-030',
     img: bag2,
     name: 'Textured Bowling Sling Bag',
     price: '₹ 1,850.00',
     width: 1008,
     height: 1008,
     aspect: 'aspect-square',
-    to: '/shop/accessories',
+    to: '/product/textured-bowling-sling-bag',
   },
   {
+    id: 'cu-031',
     img: bag3,
     name: 'PU Structured Handheld Bag',
     price: '₹ 5,150.00',
     width: 1008,
     height: 1008,
     aspect: 'aspect-square',
-    to: '/shop/accessories',
+    to: '/product/pu-structured-handheld-bag',
   },
   {
+    id: 'cu-032',
     img: bag4,
     name: 'Design Structured Satchel Bag',
     price: '₹ 9,550.00',
     width: 1008,
     height: 1008,
     aspect: 'aspect-square',
-    to: '/shop/accessories',
+    to: '/product/design-structured-satchel-bag',
   },
 ];
 
@@ -120,89 +135,6 @@ const winterLooks = [
 ];
 
 const pad = 'px-6 sm:px-10 lg:px-14 xl:px-20 max-w-[1560px] mx-auto';
-
-function Logo({ className }: { className?: string }) {
-  return (
-    <Link
-      to="/"
-      className={cn(
-        'font-body text-2xl sm:text-[1.85rem] font-black tracking-tight text-cocoa transition-colors hover:text-primary flex items-center gap-2',
-        className,
-      )}
-    >
-      <span>CircleUp</span>
-      <span className="inline-block size-2.5 rounded-full bg-primary" />
-    </Link>
-  );
-}
-
-function TopBanner() {
-  return (
-    <div className="bg-footer px-4 py-2.5 text-center text-[0.72rem] font-medium tracking-wide text-footer-foreground border-b border-[#f7f3e1]/15">
-      Sign up and get 20% off new arrivals • Free sustainable packaging on all orders
-    </div>
-  );
-}
-
-function Header() {
-  const links = [
-    { label: 'Home', to: '/' },
-    { label: 'Browse Finds', to: '/new-arrivals' },
-    { label: 'Collections', to: '/shop/thrifted-treasure' },
-    { label: 'Rentals', to: '/rentals' },
-    { label: 'Store & Events', to: '/events' },
-  ];
-
-  return (
-    <header className="sticky top-0 z-40 border-b-2 border-foreground/15 bg-[#f8f4e2]/95 backdrop-blur-md shadow-xs transition-all">
-      <div className={cn('flex items-center justify-between py-4 sm:py-5', pad)}>
-        <Logo />
-
-        <nav className="hidden items-center gap-1 md:flex lg:gap-2" aria-label="Storefront">
-          {links.map((item) => (
-            <Link
-              key={item.label}
-              to={item.to}
-              className="rounded-full px-4 py-2 text-[0.92rem] lg:text-[1.02rem] font-bold text-cocoa/90 transition-all duration-200 hover:bg-primary/10 hover:text-primary tracking-wide"
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-
-        <div className="flex items-center gap-3 sm:gap-4">
-          <Link
-            to="/new-arrivals"
-            aria-label="Search"
-            className="hidden items-center gap-2.5 rounded-full border-2 border-foreground/30 bg-card/90 px-4 py-2 text-xs lg:text-sm font-semibold text-cocoa shadow-xs transition-all hover:border-primary hover:text-primary hover:shadow-sm sm:flex"
-          >
-            <Search className="size-4 text-primary" strokeWidth={2.4} />
-            <span>Search vintage finds...</span>
-          </Link>
-
-          <Link
-            to="/account/wishlist"
-            aria-label="Wishlist"
-            className="flex size-10 items-center justify-center rounded-full border-2 border-foreground/20 bg-card/90 text-cocoa shadow-xs transition-all hover:border-primary hover:text-primary hover:shadow-sm"
-          >
-            <Heart className="size-5" strokeWidth={2} />
-          </Link>
-
-          <Link
-            to="/cart"
-            aria-label="Shopping bag"
-            className="relative flex size-10 items-center justify-center rounded-full border-2 border-foreground/20 bg-card/90 text-cocoa shadow-xs transition-all hover:border-primary hover:text-primary hover:shadow-sm"
-          >
-            <ShoppingBag className="size-5" strokeWidth={2} />
-            <span className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-primary text-[0.62rem] font-bold text-primary-foreground shadow-xs">
-              2
-            </span>
-          </Link>
-        </div>
-      </div>
-    </header>
-  );
-}
 
 function SeeMore({
   to = '/new-arrivals',
@@ -287,6 +219,9 @@ function ProductCard({
   product: ProductPreview;
   badge?: string;
 }) {
+  const { isWishlisted, toggleWishlist } = useStore();
+  const saved = isWishlisted(product.id);
+
   return (
     <Link
       to={product.to}
@@ -298,14 +233,18 @@ function ProductCard({
 
       <button
         type="button"
-        aria-label="Save item"
-        className="absolute top-5 right-5 z-10 flex size-8 items-center justify-center rounded-full border border-foreground/15 bg-background/90 text-cocoa opacity-0 shadow-sm backdrop-blur-xs transition-all duration-200 hover:text-primary group-hover:opacity-100"
+        aria-label={saved ? `Remove ${product.name} from wishlist` : `Save ${product.name} to wishlist`}
+        className={cn(
+          'absolute top-5 right-5 z-10 flex size-8 items-center justify-center rounded-full border border-foreground/15 bg-background/90 text-cocoa shadow-sm backdrop-blur-xs transition-all duration-200 hover:text-primary',
+          saved ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+        )}
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
+          toggleWishlist(product.id, product.name);
         }}
       >
-        <Heart className="size-4" strokeWidth={2.2} />
+        <Heart className={cn('size-4', saved && 'fill-primary text-primary')} strokeWidth={2.2} />
       </button>
 
       <div className="overflow-hidden rounded-xl bg-[#efebd8] border border-foreground/10">
@@ -527,7 +466,7 @@ function WinterSection() {
                 />
               </div>
             </div>
-            <SeeMore to="/shop/thrifted-treasure" className="mt-4" />
+            <SeeMore to="/thrifted-treasure" className="mt-4" />
           </div>
         </div>
 
@@ -584,89 +523,6 @@ function CommunitySection() {
   );
 }
 
-function FooterCol({
-  title,
-  links,
-}: {
-  title: string;
-  links: { label: string; to: string }[];
-}) {
-  return (
-    <div>
-      <h3 className="font-body text-[0.78rem] font-semibold tracking-normal text-footer-foreground">
-        {title}
-      </h3>
-      <ul className="mt-5 space-y-3">
-        {links.map((link) => (
-          <li key={link.label}>
-            <Link
-              to={link.to}
-              className="text-[0.72rem] text-footer-foreground/75 transition-colors hover:text-footer-foreground"
-            >
-              {link.label}
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function Footer() {
-  return (
-    <footer className="bg-footer text-footer-foreground border-t-2 border-[#f7f3e1]/20">
-      <div
-        className={cn(
-          'grid gap-12 py-16 sm:grid-cols-3 lg:grid-cols-[1.5fr_repeat(3,minmax(0,0.8fr))] lg:py-20',
-          pad,
-        )}
-      >
-        <div className="sm:col-span-3 lg:col-span-1">
-          <p className="font-body text-[clamp(2.2rem,4vw,3.2rem)] leading-none font-extrabold tracking-tight text-[#d8e1c4]">
-            CircleUp
-          </p>
-          <p className="mt-4 font-display text-[1.5rem] leading-[1.15]">
-            Fashion
-            <br />
-            That Lasts!
-          </p>
-        </div>
-        <FooterCol
-          title="Community"
-          links={[
-            { label: 'The Social Circle', to: '/events' },
-            { label: '#ThriftCrew', to: '/thrift-crew' },
-            { label: 'Customer Reviews', to: '/reviews' },
-            { label: 'Rental Collection', to: '/rentals' },
-          ]}
-        />
-        <FooterCol
-          title="Company"
-          links={[
-            { label: 'About us', to: '/about' },
-            { label: 'Contact', to: '/contact' },
-            { label: 'Customer CRM', to: '/account' },
-            { label: 'Owner CRM', to: '/admin' },
-          ]}
-        />
-        <FooterCol
-          title="Policies"
-          links={[
-            { label: 'Fixed Pricing & Returns', to: '/about' },
-            { label: 'Rental Terms', to: '/rentals' },
-            { label: 'WhatsApp Checkout', to: '/checkout/whatsapp' },
-            { label: 'Privacy Policy', to: '/about' },
-          ]}
-        />
-      </div>
-    </footer>
-  );
-}
-
-/**
- * CircleUp editorial landing page (ported from circleup-landing-page-main
- * with Forest Olive-Green & Warm Cream store signage color scheme).
- */
 export function HomePage() {
   const mainRef = useRef<HTMLElement>(null);
 
@@ -693,8 +549,8 @@ export function HomePage() {
           <div aria-hidden className="paper-ambient-sheen" />
 
           <div className="relative z-20">
-            <TopBanner />
-            <Header />
+            <StorefrontTopBanner />
+            <StorefrontHeader preserveHomeHeader />
             <main ref={mainRef} className="relative">
               <ScrollIvyBranch containerRef={mainRef} />
               <div className="relative z-20">
@@ -703,20 +559,20 @@ export function HomePage() {
                   id="ready-to-wear"
                   title="Ready-To-Wear"
                   products={readyToWear}
-                  to="/shop/womens-upperwear"
+                  to="/womens-one-piece"
                 />
                 <ProductSection
                   id="handbags"
                   title="Handbags Collection"
                   products={handbags}
-                  to="/shop/accessories"
+                  to="/accessories"
                 />
                 <StorySection />
                 <WinterSection />
                 <CommunitySection />
               </div>
             </main>
-            <Footer />
+            <StorefrontFooter />
           </div>
         </div>
       </div>
