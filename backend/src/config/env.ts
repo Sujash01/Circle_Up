@@ -14,17 +14,15 @@ dotenv.config();
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'staging', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(5001),
-  MONGODB_URI: z.string().min(1, 'MONGODB_URI is required'),
-  JWT_ACCESS_SECRET: z.string().min(32, 'JWT_ACCESS_SECRET must be at least 32 characters'),
-  JWT_ADMIN_ACCESS_SECRET: z
-    .string()
-    .min(32, 'JWT_ADMIN_ACCESS_SECRET must be at least 32 characters'),
+  MONGODB_URI: z.string().default(''),
+  JWT_ACCESS_SECRET: z.string().default(''),
+  JWT_ADMIN_ACCESS_SECRET: z.string().default(''),
   JWT_ACCESS_TTL: z.string().default('15m'),
   JWT_ADMIN_ACCESS_TTL: z.string().default('10m'),
   COOKIE_DOMAIN: z.string().optional(),
   CORS_ALLOWED_ORIGINS: z
     .string()
-    .default('http://localhost:5173')
+    .default('http://localhost:5173,http://localhost:3000')
     .transform((value) =>
       value
         .split(',')

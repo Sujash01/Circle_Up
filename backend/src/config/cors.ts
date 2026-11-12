@@ -1,8 +1,25 @@
 import type { CorsOptions } from 'cors';
 import { env } from './env.js';
 
+function getAllowedOrigins(): Set<string> {
+  const allowed = new Set<string>(env.CORS_ALLOWED_ORIGINS);
+  if (env.FRONTEND_URL) {
+    allowed.add(env.FRONTEND_URL);
+  }
+  for (const host of [
+    process.env.VERCEL_URL,
+    process.env.VERCEL_BRANCH_URL,
+    process.env.VERCEL_PROJECT_PRODUCTION_URL,
+  ]) {
+    if (host) {
+      allowed.add(host.startsWith('http') ? host : `https://${host}`);
+    }
+  }
+  return allowed;
+}
+
 /**
- * Strict CORS configuration allowing only configured frontend origins with credentials.
+ * Strict CORS configuration allowing configured frontend & Vercel deployment origins with credentials.
  */
 export const corsOptions: CorsOptions = {
   origin(origin, callback) {
@@ -12,7 +29,7 @@ export const corsOptions: CorsOptions = {
       return;
     }
 
-    if (env.CORS_ALLOWED_ORIGINS.includes(origin)) {
+    if (getAllowedOrigins().has(origin)) {
       callback(null, true);
       return;
     }

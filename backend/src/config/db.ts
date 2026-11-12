@@ -5,22 +5,40 @@ import { logger } from './logger.js';
 mongoose.set('strictQuery', true);
 mongoose.set('sanitizeFilter', true);
 
+let pendingConnection: Promise<void> | null = null;
+
 /**
  * Connects Mongoose to MongoDB with tuned connection pool and selection timeouts.
+ * Reuses any in-flight connection attempt so concurrent serverless requests share one pool.
  */
 export async function connectDatabase(uri: string = env.MONGODB_URI): Promise<void> {
+  if (!uri) {
+    return;
+  }
+
   if (mongoose.connection.readyState === 1) {
     return;
   }
 
-  await mongoose.connect(uri, {
-    minPoolSize: env.NODE_ENV === 'test' ? 1 : 5,
-    maxPoolSize: env.NODE_ENV === 'test' ? 5 : 20,
-    serverSelectionTimeoutMS: 5000,
-    socketTimeoutMS: 45000,
-  });
+  if (pendingConnection) {
+    return pendingConnection;
+  }
 
-  logger.info('Connected to MongoDB');
+  pendingConnection = mongoose
+    .connect(uri, {
+      minPoolSize: env.NODE_ENV === 'test' || process.env.VERCEL ? 1 : 5,
+      maxPoolSize: env.NODE_ENV === 'test' || process.env.VERCEL ? 5 : 20,
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+    })
+    .then(() => {
+      logger.info('Connected to MongoDB');
+    })
+    .finally(() => {
+      pendingConnection = null;
+    });
+
+  await pendingConnection;
 }
 
 /**

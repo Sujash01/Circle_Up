@@ -25,22 +25,27 @@ function scheduleDevReconnect(): void {
   reconnectTimer.unref();
 }
 
-async function bootstrap(): Promise<void> {
-  try {
-    await connectDatabase();
-  } catch (err) {
-    if (env.NODE_ENV !== 'development') {
-      throw err;
-    }
+export const app = createApp();
 
-    logger.warn(
-      { err: err instanceof Error ? err.message : err },
-      'MongoDB is not reachable. Starting CircleUp API in degraded dev mode — set a MongoDB Atlas URI or start local mongod in backend/.env.',
-    );
-    scheduleDevReconnect();
+async function bootstrap(): Promise<void> {
+  if (env.MONGODB_URI) {
+    try {
+      await connectDatabase();
+    } catch (err) {
+      if (env.NODE_ENV !== 'development') {
+        throw err;
+      }
+
+      logger.warn(
+        { err: err instanceof Error ? err.message : err },
+        'MongoDB is not reachable. Starting CircleUp API in degraded dev mode — set a MongoDB Atlas URI or start local mongod in backend/.env.',
+      );
+      scheduleDevReconnect();
+    }
+  } else {
+    logger.info('MONGODB_URI not configured; running CircleUp API in degraded catalog mode.');
   }
 
-  const app = createApp();
   server = app.listen(env.PORT, () => {
     logger.info({ port: env.PORT, env: env.NODE_ENV }, 'CircleUp API listening');
   });
@@ -64,20 +69,24 @@ async function shutdown(signal: string): Promise<void> {
   process.exit(0);
 }
 
-process.on('SIGTERM', () => {
-  void shutdown('SIGTERM');
-});
+if (!process.env.VERCEL) {
+  process.on('SIGTERM', () => {
+    void shutdown('SIGTERM');
+  });
 
-process.on('SIGINT', () => {
-  void shutdown('SIGINT');
-});
+  process.on('SIGINT', () => {
+    void shutdown('SIGINT');
+  });
 
-process.on('unhandledRejection', (reason) => {
-  logger.fatal({ err: reason }, 'Unhandled promise rejection');
-  process.exit(1);
-});
+  process.on('unhandledRejection', (reason) => {
+    logger.fatal({ err: reason }, 'Unhandled promise rejection');
+    process.exit(1);
+  });
 
-bootstrap().catch((err) => {
-  logger.fatal({ err }, 'Failed to start CircleUp API');
-  process.exit(1);
-});
+  bootstrap().catch((err) => {
+    logger.fatal({ err }, 'Failed to start CircleUp API');
+    process.exit(1);
+  });
+}
+
+export default app;

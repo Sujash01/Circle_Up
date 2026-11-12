@@ -2,7 +2,10 @@ import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express, { type Express } from 'express';
 import helmet from 'helmet';
+import mongoose from 'mongoose';
 import { corsOptions } from './config/cors.js';
+import { connectDatabase } from './config/db.js';
+import { env } from './config/env.js';
 import { errorHandler } from './errors/errorHandler.js';
 import { NotFoundError } from './errors/AppError.js';
 import { globalRateLimiter } from './middleware/rateLimiter.js';
@@ -34,6 +37,14 @@ export function createApp(): Express {
   app.use(cookieParser());
   app.use(sanitizeRequest);
   app.use('/api', globalRateLimiter);
+
+  // Lazy MongoDB connection for serverless runtimes (falls back cleanly to degraded mode)
+  app.use(async (_req, _res, next) => {
+    if (env.NODE_ENV !== 'test' && env.MONGODB_URI && mongoose.connection.readyState === 0) {
+      await connectDatabase().catch(() => {});
+    }
+    next();
+  });
 
   // 3. Versioned API routes
   app.use('/api/v1/health', healthRouter);
