@@ -1,0 +1,851 @@
+/* Scoped styles for the interactive 3D Treasure Chest hero ported from hero (2).html */
+.tc-hero {
+  --tc-green-900: #14281a;
+  --tc-green-800: #1d3322;
+  --tc-green-700: #2f4a2c;
+  --tc-red-700: #a4262c;
+  --tc-red-900: #5e121a;
+  --tc-pink-200: #f7cfc6;
+  --tc-gold-100: #f1dc9c;
+  --tc-gold-300: #d9b04a;
+  --tc-gold-500: #c4932c;
+  --tc-gold-700: #8c6119;
+  --tc-gold-900: #5a3408;
+  --tc-ivy-900: #1f3320;
+  --tc-display: "Fraunces", "Young Serif", Georgia, serif;
+  --tc-body: "Lexend", system-ui, sans-serif;
+  --tc-nav-h: 76px;
+  --u: 1;
+
+  position: relative;
+  height: 235vh;
+  color: var(--tc-green-800);
+  font-family: var(--tc-body);
+}
+
+.tc-stage {
+  position: sticky;
+  top: var(--tc-nav-h);
+  height: calc(100svh - var(--tc-nav-h));
+  overflow: hidden;
+}
+
+.tc-copy {
+  position: absolute;
+  z-index: 6;
+  left: max(24px, 11vw);
+  top: calc(var(--u) * 58px);
+  pointer-events: none;
+}
+
+.tc-copy h1 {
+  font-family: var(--tc-display);
+  font-weight: 900;
+  font-size: max(40px, calc(var(--u) * 92px));
+  line-height: 0.92;
+  letter-spacing: -0.02em;
+  color: var(--tc-green-800);
+}
+
+.tc-copy p {
+  margin-top: calc(var(--u) * 30px);
+  font-size: calc(var(--u) * 12px);
+  line-height: 1.6;
+  font-weight: 500;
+  max-width: 260px;
+  color: #4a5a47;
+}
+
+.tc-aside {
+  position: absolute;
+  z-index: 6;
+  right: max(24px, 9vw);
+  top: calc(var(--u) * 34px);
+  width: 195px;
+  text-align: right;
+  font-family: var(--tc-display);
+  font-weight: 800;
+  font-size: calc(var(--u) * 23px);
+  line-height: 1.25;
+  color: var(--tc-green-800);
+}
+
+.tc-tagline {
+  position: absolute;
+  z-index: 6;
+  right: max(24px, 9vw);
+  bottom: calc(var(--u) * 56px);
+  text-align: right;
+  font-family: var(--tc-display);
+  font-weight: 800;
+  font-size: calc(var(--u) * 30px);
+  line-height: 1.15;
+  color: var(--tc-green-800);
+}
+
+.tc-btn {
+  position: absolute;
+  z-index: 6;
+  left: max(24px, 11vw);
+  bottom: calc(var(--u) * 44px);
+  background: var(--tc-green-700);
+  color: #f8f4e2;
+  font-weight: 600;
+  font-size: 13px;
+  padding: 13px 45px;
+  border-radius: 6px;
+  transition: background-color 0.2s ease;
+}
+
+.tc-btn:hover {
+  background: var(--tc-green-900);
+}
+
+/* hero vine — runs edge-to-edge to connect directly into ScrollIvyBranch below */
+.tc-vine {
+  position: absolute;
+  left: 2vw;
+  top: 0;
+  height: 100%;
+  width: 80px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.tc-vine path.tc-stem {
+  fill: none;
+  stroke: var(--tc-green-700);
+  stroke-width: 5.5;
+  stroke-linecap: round;
+}
+
+.tc-vine .tc-leaf {
+  fill: var(--tc-green-700);
+}
+
+/* scene anchor — bulkier chest proportions */
+.tc-scene {
+  position: absolute;
+  left: 50%;
+  top: 63%;
+  width: 0;
+  height: 0;
+  z-index: 3;
+  --w: calc(var(--u) * 440px);
+  --d: calc(var(--u) * 300px);
+  --h: calc(var(--u) * 208px);
+  --lh: calc(var(--u) * 124px);
+}
+
+.tc-sun {
+  position: absolute;
+  left: 0;
+  top: calc(var(--u) * -120px);
+  width: calc(var(--u) * 600px);
+  height: calc(var(--u) * 600px);
+  margin: calc(var(--u) * -300px) 0 0 calc(var(--u) * -300px);
+  border-radius: 50% 46% 52% 48%;
+  background: var(--tc-pink-200);
+  opacity: 0.72;
+  filter: blur(1px);
+}
+
+.tc-shadow {
+  position: absolute;
+  left: 0;
+  top: calc(var(--u) * 150px);
+  width: calc(var(--u) * 610px);
+  height: calc(var(--u) * 76px);
+  margin-left: calc(var(--u) * -305px);
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(20, 40, 26, 0.46), transparent);
+}
+
+.tc-underglow {
+  position: absolute;
+  left: 0;
+  top: calc(var(--u) * 146px);
+  width: calc(var(--u) * 700px);
+  height: calc(var(--u) * 126px);
+  margin-left: calc(var(--u) * -350px);
+  border-radius: 50%;
+  background: radial-gradient(
+    closest-side,
+    rgba(226, 180, 70, 0.56),
+    rgba(226, 180, 70, 0.16) 60%,
+    transparent
+  );
+  opacity: 0;
+}
+
+/* 2.5D chest layers (softer perspective for a clean slightly-2D illustrated depth) */
+.tc-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  perspective: 2600px;
+}
+
+.tc-rig {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  transform-style: preserve-3d;
+}
+
+.tc-f {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--fw);
+  height: var(--fh);
+  margin: calc(var(--fh) / -2) 0 0 calc(var(--fw) / -2);
+  backface-visibility: hidden;
+}
+
+.tc-f::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--ov, transparent);
+  pointer-events: none;
+}
+
+.tc-gold {
+  background-color: #a97822;
+  background-image:
+    /* Horizontal timber & bronze plank seams with upper bevel highlights */
+    repeating-linear-gradient(
+      0deg,
+      rgba(45, 22, 2, 0.52) 0 2px,
+      rgba(255, 232, 165, 0.18) 2px 4px,
+      transparent 4px calc(var(--u) * 40px)
+    ),
+    /* Vertical plank stave joints */
+    repeating-linear-gradient(90deg, rgba(60, 32, 0, 0.24) 0 2px, transparent 2px calc(var(--u) * 44px)),
+    linear-gradient(140deg, #dcba62 0%, #bf8e2d 36%, #966817 70%, #b88a2e 100%);
+}
+
+.tc-st {
+  background-image:
+    /* Outer corner bracket rivet rows (left & right corners) */
+    radial-gradient(
+      circle at 3.8% 50%,
+      var(--tc-gold-100) 0 calc(var(--u) * 1.8px),
+      #422204 calc(var(--u) * 2.2px) calc(var(--u) * 5px),
+      transparent calc(var(--u) * 5.6px)
+    ),
+    radial-gradient(
+      circle at 96.2% 50%,
+      var(--tc-gold-100) 0 calc(var(--u) * 1.8px),
+      #422204 calc(var(--u) * 2.2px) calc(var(--u) * 5px),
+      transparent calc(var(--u) * 5.6px)
+    ),
+    /* Main armored strap rivet rows */
+    radial-gradient(
+      circle at 17% 50%,
+      var(--tc-gold-100) 0 calc(var(--u) * 2px),
+      #3d1f03 calc(var(--u) * 2.5px) calc(var(--u) * 5.5px),
+      transparent calc(var(--u) * 6px)
+    ),
+    radial-gradient(
+      circle at 83% 50%,
+      var(--tc-gold-100) 0 calc(var(--u) * 2px),
+      #3d1f03 calc(var(--u) * 2.5px) calc(var(--u) * 5.5px),
+      transparent calc(var(--u) * 6px)
+    ),
+    /* Forged outer corner brackets + twin heavy inner vertical bands */
+    linear-gradient(
+      90deg,
+      #593409 0 1%,
+      #d8b55d 1% 3%,
+      #8e5e14 3% 6%,
+      #422204 6% 7%,
+      transparent 7% 13%,
+      #422204 13% 14%,
+      #7e5110 14% 16%,
+      #e2c16e 16% 18%,
+      #865812 18% 20.5%,
+      #422204 20.5% 21.5%,
+      transparent 21.5% 78.5%,
+      #422204 78.5% 79.5%,
+      #7e5110 79.5% 82%,
+      #e2c16e 82% 84%,
+      #865812 84% 86%,
+      #422204 86% 87%,
+      transparent 87% 93%,
+      #422204 93% 94%,
+      #8e5e14 94% 97%,
+      #d8b55d 97% 99%,
+      #593409 99% 100%
+    ),
+    /* Horizontal timber/brass plank seams */
+    repeating-linear-gradient(
+      0deg,
+      rgba(45, 22, 2, 0.5) 0 2px,
+      rgba(255, 232, 165, 0.16) 2px 4px,
+      transparent 4px calc(var(--u) * 40px)
+    ),
+    repeating-linear-gradient(90deg, rgba(60, 32, 0, 0.24) 0 2px, transparent 2px calc(var(--u) * 44px)),
+    linear-gradient(140deg, #dcba62 0%, #bf8e2d 36%, #966817 70%, #b88a2e 100%);
+  background-size:
+    100% calc(var(--u) * 36px),
+    100% calc(var(--u) * 36px),
+    100% calc(var(--u) * 36px),
+    100% calc(var(--u) * 36px),
+    auto,
+    auto,
+    auto,
+    auto;
+}
+
+/* Armored front rim crown on lowest front lid slat */
+.tc-lidcrown {
+  box-shadow:
+    inset 0 calc(var(--u) * -8px) 0 rgba(66, 34, 4, 0.72),
+    inset 0 calc(var(--u) * -12px) 0 rgba(241, 220, 156, 0.45);
+}
+
+.tc-velvet {
+  background: radial-gradient(ellipse at 50% 0%, #a22a33, var(--tc-red-900));
+}
+
+.tc-pile {
+  background-color: #3d2c1e;
+  /* Folded layered garments packed inside the chest + warm inner golden glow */
+  background-image:
+    radial-gradient(ellipse at 50% 48%, rgba(255, 228, 138, 0.62) 0%, rgba(235, 182, 72, 0.25) 45%, transparent 72%),
+    /* Folded crimson knit stack */
+    radial-gradient(ellipse at 26% 62%, #b63d44 0 24%, #7a2027 25%, transparent 27%),
+    /* Folded vintage denim stack */
+    radial-gradient(ellipse at 74% 58%, #6d8ca3 0 26%, #455f73 27%, transparent 29%),
+    /* Folded sage wool sweater */
+    radial-gradient(ellipse at 48% 36%, #9fb382 0 28%, #5e7346 29%, transparent 31%),
+    /* Warm cream linen shirt folds */
+    repeating-linear-gradient(
+      -12deg,
+      #efe5cb 0 calc(var(--u) * 14px),
+      #d8c7a3 calc(var(--u) * 14px) calc(var(--u) * 17px),
+      #c9d3b0 calc(var(--u) * 17px) calc(var(--u) * 32px),
+      #e2a898 calc(var(--u) * 32px) calc(var(--u) * 46px)
+    );
+  box-shadow:
+    inset 0 0 calc(var(--u) * 34px) rgba(255, 220, 120, 0.65),
+    0 0 calc(var(--u) * 28px) rgba(246, 200, 90, 0.45);
+}
+
+.tc-pile::before {
+  content: "";
+  position: absolute;
+  inset: calc(var(--u) * 8px);
+  border-radius: calc(var(--u) * 12px);
+  background: radial-gradient(
+    ellipse at 50% 50%,
+    rgba(255, 240, 178, 0.65) 0%,
+    rgba(244, 198, 92, 0.26) 55%,
+    transparent 80%
+  );
+  animation: tc-wardrobe-glow 2.8s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+@keyframes tc-wardrobe-glow {
+  0% {
+    opacity: 0.65;
+    transform: scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1.03);
+  }
+}
+
+/* body interior */
+.tc-back {
+  --fw: var(--w);
+  --fh: var(--h);
+  transform: translateZ(calc(var(--d) / -2));
+}
+.tc-left {
+  --fw: var(--d);
+  --fh: var(--h);
+  transform: translateX(calc(var(--w) / -2)) rotateY(90deg);
+  --ov: rgba(40, 0, 0, 0.25);
+}
+.tc-floor {
+  --fw: var(--w);
+  --fh: var(--d);
+  transform: translateY(calc(var(--h) / 2)) rotateX(90deg);
+}
+.tc-pilef {
+  --fw: calc(var(--w) - var(--u) * 26px);
+  --fh: calc(var(--d) - var(--u) * 26px);
+  transform: translateY(calc(var(--h) / -2 - var(--u) * 3px)) rotateX(90deg);
+}
+.tc-rimb {
+  --fw: var(--w);
+  --fh: calc(var(--u) * 18px);
+  transform: translate3d(0, calc(var(--h) / -2), calc(var(--d) / -2 + var(--u) * 9px)) rotateX(90deg);
+  --ov: rgba(255, 245, 210, 0.12);
+}
+.tc-riml {
+  --fw: calc(var(--u) * 18px);
+  --fh: var(--d);
+  transform: translate3d(calc(var(--w) / -2 + var(--u) * 9px), calc(var(--h) / -2), 0) rotateX(90deg);
+  --ov: rgba(255, 245, 210, 0.08);
+}
+
+/* lid */
+.tc-lid {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  transform-style: preserve-3d;
+  transform: translate3d(0, calc(var(--h) / -2), calc(var(--d) / -2)) rotateX(var(--lid, 0deg));
+}
+
+/* front panels — thicker beveled carpentry & plinth skirt */
+.tc-fr,
+.tc-rt {
+  border-style: solid;
+  border-color: #e2c574 #7b5211 #462605 #7b5211;
+  border-width: calc(var(--u) * 11px) calc(var(--u) * 10px) calc(var(--u) * 15px) calc(var(--u) * 10px);
+  outline: 2px solid rgba(43, 26, 7, 0.72);
+  box-shadow: inset 0 calc(var(--u) * -10px) 0 rgba(58, 30, 4, 0.42);
+}
+.tc-fr {
+  --fw: var(--w);
+  --fh: var(--h);
+  transform: translateZ(calc(var(--d) / 2));
+}
+.tc-rt {
+  --fw: var(--d);
+  --fh: var(--h);
+  transform: translateX(calc(var(--w) / 2)) rotateY(90deg);
+  --ov: rgba(50, 20, 0, 0.28);
+}
+
+/* heavy side brass handle assembly on right panel */
+.tc-handle {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  top: 46%;
+  width: calc(var(--u) * 68px);
+  height: calc(var(--u) * 32px);
+  transform: translate(-50%, -50%);
+  background: linear-gradient(180deg, #d8b55d, #8d5e14);
+  border: 2px solid #422204;
+  border-radius: calc(var(--u) * 6px);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 244, 205, 0.45),
+    0 3px 0 rgba(35, 16, 0, 0.45);
+}
+.tc-handle::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  width: calc(var(--u) * 48px);
+  height: calc(var(--u) * 36px);
+  transform: translateX(-50%);
+  border: calc(var(--u) * 7px) solid #c89a38;
+  border-radius: 40% 40% 50% 50%;
+  outline: 1.5px solid #422204;
+  box-shadow: 0 4px 4px rgba(0, 0, 0, 0.35);
+}
+.tc-handle::after {
+  content: "";
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  top: 50%;
+  height: calc(var(--u) * 6px);
+  margin-top: calc(var(--u) * -3px);
+  background: radial-gradient(circle at 8% 50%, #f1dc9c 0 3px, #422204 3.5px 5px, transparent 5.5px),
+    radial-gradient(circle at 92% 50%, #f1dc9c 0 3px, #422204 3.5px 5px, transparent 5.5px);
+}
+.tc-fr::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 38%, rgba(255, 244, 205, 0.26) 49%, transparent 60%);
+  background-size: 300% 100%;
+  background-position: 100% 0;
+  animation: tc-shine 4.5s ease-in-out infinite;
+}
+@keyframes tc-shine {
+  0%,
+  50% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: 0% 0;
+  }
+}
+.tc-rimf {
+  --fw: var(--w);
+  --fh: calc(var(--u) * 18px);
+  transform: translate3d(0, calc(var(--h) / -2), calc(var(--d) / 2 - var(--u) * 9px)) rotateX(90deg);
+  --ov: rgba(255, 245, 210, 0.14);
+}
+.tc-rimr {
+  --fw: calc(var(--u) * 18px);
+  --fh: var(--d);
+  transform: translate3d(calc(var(--w) / 2 - var(--u) * 9px), calc(var(--h) / -2), 0) rotateX(90deg);
+  --ov: rgba(255, 245, 210, 0.06);
+}
+
+.tc-lock {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  top: calc(var(--u) * -10px);
+  width: calc(var(--u) * 66px);
+  height: calc(var(--u) * 82px);
+  transform: translateX(-50%);
+  background:
+    radial-gradient(circle at 14% 14%, #f1dc9c 0 2px, #422204 2.5px 3.8px, transparent 4.2px),
+    radial-gradient(circle at 86% 14%, #f1dc9c 0 2px, #422204 2.5px 3.8px, transparent 4.2px),
+    radial-gradient(circle at 18% 82%, #f1dc9c 0 2px, #422204 2.5px 3.8px, transparent 4.2px),
+    radial-gradient(circle at 82% 82%, #f1dc9c 0 2px, #422204 2.5px 3.8px, transparent 4.2px),
+    linear-gradient(160deg, #ebcf82, #c79530 48%, #7d5312);
+  border: 2.5px solid #3f2004;
+  border-radius: calc(var(--u) * 10px) calc(var(--u) * 10px) calc(var(--u) * 18px) calc(var(--u) * 18px);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 246, 210, 0.5),
+    0 5px 0 rgba(28, 12, 0, 0.42);
+}
+.tc-lock::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 13%;
+  width: calc(var(--u) * 17px);
+  height: calc(var(--u) * 17px);
+  margin-left: calc(var(--u) * -8.5px);
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffb4bf, #c8253c 55%, #5f0a17);
+  box-shadow:
+    0 0 0 2.5px #3f2004,
+    0 0 8px rgba(200, 37, 60, 0.45);
+}
+.tc-lock::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--u) * 13px);
+  height: calc(var(--u) * 25px);
+  transform: translateX(-50%);
+  background: #241505;
+  clip-path: polygon(25% 0, 75% 0, 100% 40%, 65% 45%, 80% 100%, 20% 100%, 35% 45%, 0 40%);
+}
+
+/* ivy across chest faces */
+.tc-ivy {
+  position: absolute;
+  left: calc(var(--u) * -10px);
+  top: calc(var(--u) * -11px);
+  height: var(--h);
+  overflow: visible;
+  pointer-events: none;
+  z-index: 1;
+}
+.tc-fr .tc-ivy {
+  width: var(--w);
+}
+.tc-rt .tc-ivy {
+  width: var(--d);
+}
+.tc-ivy .tc-stem {
+  fill: none;
+  stroke: var(--tc-ivy-900);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: calc(1 - var(--g, 0.45));
+}
+.tc-ivy .tc-gr {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  transform: scale(clamp(0, calc((var(--g, 0.45) - var(--t)) * 7), 1));
+}
+
+/* middle layer */
+.tc-cards {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+}
+.tc-rays {
+  position: absolute;
+  left: 0;
+  top: calc(var(--u) * -100px);
+  width: calc(var(--u) * 1000px);
+  height: calc(var(--u) * 1000px);
+  margin: calc(var(--u) * -500px) 0 0 calc(var(--u) * -500px);
+  border-radius: 50%;
+  opacity: 0;
+  background: repeating-conic-gradient(from 0deg, rgba(226, 184, 80, 0.3) 0 5deg, transparent 5deg 15deg);
+  -webkit-mask-image: radial-gradient(closest-side, #000 8%, transparent 72%);
+  mask-image: radial-gradient(closest-side, #000 8%, transparent 72%);
+}
+.tc-glow {
+  position: absolute;
+  left: 0;
+  top: calc(var(--u) * -95px);
+  width: calc(var(--u) * 540px);
+  height: calc(var(--u) * 330px);
+  margin: calc(var(--u) * -165px) 0 0 calc(var(--u) * -270px);
+  background: radial-gradient(closest-side, rgba(240, 205, 110, 0.7), rgba(226, 184, 80, 0.22) 55%, transparent);
+  opacity: 0;
+}
+.tc-sparks {
+  position: absolute;
+  left: 0;
+  top: calc(var(--u) * -90px);
+  opacity: 0;
+}
+.tc-sparks i {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f1dc9c;
+  box-shadow: 0 0 10px 3px rgba(226, 184, 80, 0.8);
+  animation: tc-rise 2.6s ease-out infinite;
+}
+@keyframes tc-rise {
+  0% {
+    transform: translate(0, 0) scale(0.4);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--sx), calc(var(--u) * -200px)) scale(1);
+    opacity: 0;
+  }
+}
+.tc-garment {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: calc(var(--u) * 44px);
+  height: calc(var(--u) * 44px);
+  opacity: 0;
+  pointer-events: none;
+  filter:
+    drop-shadow(0 0 11px rgba(255, 224, 128, 0.92))
+    drop-shadow(0 0 22px rgba(240, 185, 65, 0.55));
+}
+.tc-garment svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* flying product cards */
+.tc-card {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: calc(var(--u) * 150px);
+  height: calc(var(--u) * 205px);
+  background: #fffaf0;
+  border: 1px solid rgba(20, 40, 26, 0.14);
+  border-radius: 14px;
+  padding: calc(var(--u) * 7px);
+  box-shadow: 0 14px 28px -10px rgba(20, 40, 26, 0.4);
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 7px);
+  transition: border-color 0.2s ease;
+}
+.tc-card:hover {
+  border-color: var(--tc-green-700);
+}
+.tc-card .tc-ph {
+  flex: 1;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  position: relative;
+}
+.tc-card .tc-ph img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+}
+.tc-card .tc-nm {
+  font-size: calc(var(--u) * 11.5px);
+  font-weight: 600;
+  line-height: 1.2;
+  display: block;
+  color: var(--tc-green-800);
+}
+.tc-card .tc-pr {
+  font-size: calc(var(--u) * 11px);
+  color: var(--tc-red-700);
+  font-weight: 600;
+}
+.tc-card .tc-tag {
+  position: absolute;
+  top: calc(var(--u) * 13px);
+  left: calc(var(--u) * 13px);
+  background: #fffaf0;
+  color: var(--tc-green-800);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: calc(var(--u) * 9.5px);
+  font-weight: 600;
+  z-index: 1;
+}
+
+/* HUD */
+.tc-hud {
+  position: absolute;
+  z-index: 10;
+  left: 50%;
+  bottom: calc(var(--u) * 22px);
+  transform: translateX(-50%);
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--tc-green-800);
+}
+.tc-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.tc-mouse {
+  width: 20px;
+  height: 32px;
+  border: 2px solid var(--tc-green-800);
+  border-radius: 12px;
+  position: relative;
+}
+.tc-mouse::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 6px;
+  width: 3px;
+  height: 6px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: var(--tc-green-800);
+  animation: tc-wheel 1.4s infinite;
+}
+@keyframes tc-wheel {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+}
+.tc-count {
+  margin-top: 2px;
+  opacity: 0;
+}
+.tc-hud-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+.tc-hud-actions.on {
+  opacity: 1;
+  pointer-events: auto;
+}
+.tc-cta {
+  display: inline-block;
+  background: var(--tc-red-700);
+  color: #fff;
+  padding: 12px 26px;
+  border-radius: 999px;
+  transition: background-color 0.2s;
+}
+.tc-cta:hover {
+  background: var(--tc-red-900);
+}
+.tc-cta-down {
+  background: var(--tc-green-700);
+}
+.tc-cta-down:hover {
+  background: var(--tc-green-900);
+}
+.tc-hud-slot {
+  position: relative;
+}
+
+/* mobile */
+@media (max-width: 760px) {
+  .tc-hero {
+    height: 205vh;
+  }
+  .tc-copy {
+    left: 20px;
+    top: 14px;
+  }
+  .tc-copy h1 {
+    font-size: 40px;
+  }
+  .tc-copy p,
+  .tc-aside,
+  .tc-tagline,
+  .tc-btn {
+    display: none;
+  }
+  .tc-vine {
+    display: none;
+  }
+  .tc-scene {
+    top: 70%;
+  }
+  .tc-sun {
+    width: calc(var(--u) * 440px);
+    height: calc(var(--u) * 440px);
+    margin: calc(var(--u) * -220px) 0 0 calc(var(--u) * -220px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tc-sparks i,
+  .tc-mouse::after,
+  .tc-fr::before,
+  .tc-pile::before {
+    animation: none;
+  }
+}
+

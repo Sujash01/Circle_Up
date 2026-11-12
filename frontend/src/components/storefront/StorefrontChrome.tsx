@@ -540,7 +540,7 @@ export function StorefrontFooter() {
 
 export function StorefrontPaperWrapper({ children }: { children: ReactNode }) {
   return (
-    <div className="relative min-h-screen w-full frame-layered-bg p-2.5 sm:p-4 md:p-5 lg:p-6 overflow-x-hidden">
+    <div className="relative min-h-screen w-full frame-layered-bg p-2.5 sm:p-4 md:p-5 lg:p-6 overflow-x-clip">
       <div className="relative w-full">
         <div
           aria-hidden

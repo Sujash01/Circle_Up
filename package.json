@@ -9,7 +9,7 @@
     "frontend"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace=@circleup/backend",
+    "dev": "node scripts/dev.mjs",
     "dev:backend": "npm run dev --workspace=@circleup/backend",
     "dev:frontend": "npm run dev --workspace=@circleup/frontend",
     "build": "npm run build --workspace=@circleup/shared && npm run build --workspace=@circleup/backend && npm run build --workspace=@circleup/frontend",

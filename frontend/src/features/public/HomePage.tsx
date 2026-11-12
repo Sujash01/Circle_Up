@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { Heart } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -11,7 +11,6 @@ import community2 from '@/assets/community-2.jpg';
 import crumpledPaper from '@/assets/crumpled-paper.jpg';
 import heroDetail1 from '@/assets/hero-detail-1.jpg';
 import heroDetail2 from '@/assets/hero-detail-2.jpg';
-import heroModel from '@/assets/hero-model-cutout.png';
 import lookbook from '@/assets/lookbook.jpg';
 import rtw1 from '@/assets/rtw-1.jpg';
 import rtw2 from '@/assets/rtw-2.jpg';
@@ -22,6 +21,7 @@ import story2 from '@/assets/story-2.jpg';
 import winter1 from '@/assets/winter-1.jpg';
 import { Reveal } from '@/components/landing/Reveal';
 import { ScrollIvyBranch } from '@/components/landing/ScrollIvyBranch';
+import { TreasureChestHero } from '@/components/landing/TreasureChestHero';
 import {
   StorefrontFooter,
   StorefrontHeader,
@@ -280,91 +280,6 @@ function ProductCard({
   );
 }
 
-function Hero() {
-  return (
-    <section className={cn('pt-6 pb-16 sm:pt-10 lg:pb-24', pad)}>
-      <div className="grid gap-8 lg:min-h-[41rem] lg:grid-cols-[1fr_minmax(0,1.02fr)_1fr] lg:gap-0">
-        <Reveal className="relative z-0 flex flex-col pt-2 lg:pt-6">
-          <h1 className="text-[clamp(3.4rem,7.4vw,6rem)] leading-[0.95] whitespace-nowrap text-cocoa">
-            Fashion
-            <br />
-            That Lasts<span className="text-primary">!</span>
-          </h1>
-          <p className="mt-6 max-w-[16.5rem] text-[0.68rem] leading-[1.75] text-terracotta">
-            Handpicked Thrift Treasures, Each With A Story. Sustainable, Timeless, And Full Of
-            Character. Waiting For Their Next Chapter.
-          </p>
-          <div className="mt-8 hidden w-44 flex-col gap-3 lg:mt-auto lg:flex">
-            <img
-              src={heroDetail1}
-              alt="Close-up of a knit top"
-              width={912}
-              height={1200}
-              loading="lazy"
-              className="aspect-[4/5] w-24 rounded-lg border border-foreground/15 object-cover"
-            />
-            <Link
-              to="/new-arrivals"
-              className="rounded-md bg-steel px-6 py-2.5 text-center text-[0.72rem] font-medium text-primary-foreground transition-colors duration-300 hover:bg-forest-deep"
-            >
-              Explore More
-            </Link>
-          </div>
-        </Reveal>
-
-        <div className="relative z-10 -mx-2 flex justify-center lg:-ml-16 lg:-mr-6">
-          <div
-            aria-hidden
-            className="pointer-events-none absolute top-[18%] left-[10%] size-[75%] rounded-full bg-[radial-gradient(closest-side,rgba(200,211,176,0.45),transparent)] blur-3xl"
-          />
-          <img
-            src={heroModel}
-            alt="Model styled in curated thrift outfit with olive cargo trousers"
-            width={1024}
-            height={1408}
-            fetchPriority="high"
-            className="relative w-full max-w-[34rem] object-contain drop-shadow-[0_14px_28px_rgba(25,35,18,0.16)] lg:max-w-none"
-          />
-        </div>
-
-        <Reveal
-          delay={150}
-          className="relative z-20 flex flex-col items-start gap-10 text-left lg:items-end lg:justify-between lg:text-right"
-        >
-          <div className="flex flex-col lg:items-end">
-            <p className="max-w-[13.5rem] font-display text-[clamp(1.2rem,1.8vw,1.6rem)] leading-[1.25] text-foreground">
-              one-of-a-kind pieces with a story, ready to be yours!
-            </p>
-            <div className="mt-5 flex gap-2 rounded-xl border border-foreground/20 bg-card/80 p-1.5">
-              <img
-                src={heroDetail1}
-                alt="Curated knit detail"
-                width={912}
-                height={1200}
-                loading="lazy"
-                className="aspect-[4/5] w-[4.2rem] rounded-lg object-cover"
-              />
-              <img
-                src={heroDetail2}
-                alt="Curated cargo trouser pairing"
-                width={912}
-                height={1200}
-                loading="lazy"
-                className="aspect-[4/5] w-[4.2rem] rounded-lg object-cover object-top"
-              />
-            </div>
-          </div>
-          <h2 className="text-[clamp(1.35rem,2.3vw,2rem)] leading-[1.2] text-cocoa lg:text-right">
-            Curated Vintage &amp;
-            <br className="hidden lg:block" /> Thrift Finds,
-            <br className="hidden lg:block" /> Just For You!
-          </h2>
-        </Reveal>
-      </div>
-    </section>
-  );
-}
-
 function ProductSection({
   id,
   title,
@@ -385,8 +300,10 @@ function ProductSection({
         </div>
       ) : (
         <div className="mt-7 grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-4">
-          {products.map((product) => (
-            <ProductCard key={product.name} product={product} />
+          {products.map((product, idx) => (
+            <Reveal key={product.name} delay={idx * 80}>
+              <ProductCard product={product} />
+            </Reveal>
           ))}
         </div>
       )}
@@ -397,7 +314,7 @@ function ProductSection({
 function StorySection() {
   return (
     <section id="story" className={cn('scroll-mt-6 py-14 lg:py-20', pad)}>
-      <div className="grid items-stretch gap-12 lg:grid-cols-[0.94fr_1.06fr] lg:gap-14">
+      <Reveal className="grid items-stretch gap-12 lg:grid-cols-[0.94fr_1.06fr] lg:gap-14">
         <div className="relative">
           <div className="rounded-[1.6rem] border border-foreground/20 bg-card/70 p-2 shadow-[0_18px_40px_-26px_rgb(30_45_20/0.45)]">
             <img
@@ -411,7 +328,8 @@ function StorySection() {
           </div>
           <span
             aria-hidden
-            className="plaid absolute top-5 -right-3 hidden h-[78%] w-5 shadow-md sm:block"
+            style={{ transform: 'translateY(calc(var(--p-story, 0) * 18px))' }}
+            className="plaid absolute top-5 -right-3 hidden h-[78%] w-5 shadow-md will-change-transform sm:block"
           />
         </div>
 
@@ -422,7 +340,10 @@ function StorySection() {
             piece carries a story
           </h2>
           <div className="mt-10 grid flex-1 items-end gap-8 sm:grid-cols-[0.82fr_1fr]">
-            <div className="relative mx-auto w-full max-w-[15rem] pt-4 sm:mx-0">
+            <div
+              style={{ transform: 'translateY(calc(var(--p-story, 0) * -22px))' }}
+              className="relative mx-auto w-full max-w-[15rem] pt-4 will-change-transform sm:mx-0"
+            >
               <Clip className="top-0 left-1/2 -translate-x-1/2" />
               <div className="rounded-2xl border border-foreground/20 bg-card/80 p-1.5 shadow-[0_14px_30px_-22px_rgb(30_45_20/0.45)]">
                 <img
@@ -444,7 +365,7 @@ function StorySection() {
           </div>
           <SeeMore to="/about" label="Learn more" className="mt-10 self-end" />
         </div>
-      </div>
+      </Reveal>
     </section>
   );
 }
@@ -452,14 +373,17 @@ function StorySection() {
 function WinterSection() {
   return (
     <section id="winter" className={cn('scroll-mt-6 py-14 lg:py-16', pad)}>
-      <div className="grid gap-10 lg:grid-cols-[0.36fr_1fr] lg:gap-8">
+      <Reveal className="grid gap-10 lg:grid-cols-[0.36fr_1fr] lg:gap-8">
         <div className="flex flex-col lg:items-end">
           <h2 className="text-[clamp(2rem,3.4vw,3rem)] leading-[1.08] text-steel lg:text-right">
             winter
             <br />
             collection
           </h2>
-          <div className="mt-10 w-full max-w-[11rem] lg:mt-auto lg:self-start">
+          <div
+            style={{ transform: 'translateY(calc(var(--p-winter, 0) * -20px))' }}
+            className="mt-10 w-full max-w-[11rem] will-change-transform lg:mt-auto lg:self-start"
+          >
             <p className="mb-2 text-[0.62rem] tracking-[0.18em] text-foreground/80">LOOK</p>
             <div className="relative">
               <Pin className="-top-3 -left-2" />
@@ -478,7 +402,10 @@ function WinterSection() {
           </div>
         </div>
 
-        <div className="rounded-[1.5rem] border border-foreground/20 bg-card/60 p-2">
+        <div
+          style={{ transform: 'translateY(calc(var(--p-winter, 0) * 14px))' }}
+          className="rounded-[1.5rem] border border-foreground/20 bg-card/60 p-2 will-change-transform"
+        >
           <div className="grid grid-cols-2 overflow-hidden rounded-[1.1rem] lg:h-[31rem] lg:grid-cols-4">
             {winterLooks.map((look) => (
               <img
@@ -493,7 +420,7 @@ function WinterSection() {
             ))}
           </div>
         </div>
-      </div>
+      </Reveal>
     </section>
   );
 }
@@ -501,16 +428,20 @@ function WinterSection() {
 function CommunitySection() {
   return (
     <section id="community" className={cn('scroll-mt-6 pt-14 pb-20 lg:pt-16 lg:pb-28', pad)}>
-      <div className="grid gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:gap-8">
+      <Reveal className="grid gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:gap-8">
         <img
           src={community1}
           alt="Crowded vintage market sale"
           width={1104}
           height={1104}
           loading="lazy"
-          className="aspect-[10/11] w-full rounded-[1.4rem] object-cover border border-foreground/15"
+          style={{ transform: 'translateY(calc(var(--p-comm, 0) * -16px))' }}
+          className="aspect-[10/11] w-full rounded-[1.4rem] object-cover border border-foreground/15 will-change-transform"
         />
-        <div className="flex flex-col justify-between gap-8">
+        <div
+          style={{ transform: 'translateY(calc(var(--p-comm, 0) * 16px))' }}
+          className="flex flex-col justify-between gap-8 will-change-transform"
+        >
           <div className="flex flex-col lg:items-end">
             <h2 className="max-w-[22rem] text-[clamp(1.6rem,2.5vw,2.2rem)] leading-[1.2] text-cocoa lg:text-right">
               Join Our Community And Offline Store Sale
@@ -526,15 +457,57 @@ function CommunitySection() {
             className="aspect-[11/10] w-full rounded-[1.4rem] object-cover border border-foreground/15"
           />
         </div>
-      </div>
+      </Reveal>
     </section>
   );
 }
 
 export function HomePage() {
-  const mainRef = useRef<HTMLElement>(null);
+  const belowHeroRef = useRef<HTMLDivElement>(null);
   const allProducts = productService.getAllProducts();
   const isDbLive = productService.isDatabaseLive();
+
+  useEffect(() => {
+    const root = belowHeroRef.current;
+    if (!root || typeof window === 'undefined') return;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+
+    const sections: Array<[string, string]> = [
+      ['story', '--p-story'],
+      ['winter', '--p-winter'],
+      ['community', '--p-comm'],
+    ];
+    let rafId = 0;
+
+    const update = () => {
+      rafId = 0;
+      const vh = window.innerHeight || 800;
+      for (const [id, cssVar] of sections) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        const rect = el.getBoundingClientRect();
+        const center = rect.top + rect.height / 2;
+        const progress = Math.max(-1, Math.min(1, (vh / 2 - center) / (vh * 0.75)));
+        root.style.setProperty(cssVar, progress.toFixed(3));
+      }
+    };
+
+    const onScroll = () => {
+      if (!rafId) {
+        rafId = window.requestAnimationFrame(update);
+      }
+    };
+
+    update();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll, { passive: true });
+
+    return () => {
+      if (rafId) window.cancelAnimationFrame(rafId);
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+    };
+  }, []);
 
   const liveReadyToWear: ProductPreview[] = allProducts
     .filter((p) => p.category === 'womens-one-piece' || p.category === 'womens-upperwear')
@@ -568,7 +541,7 @@ export function HomePage() {
   const activeHandbags = isDbLive ? liveHandbags : (liveHandbags.length > 0 ? liveHandbags : handbags);
 
   return (
-    <div className="relative min-h-screen w-full frame-layered-bg p-2.5 sm:p-4 md:p-5 lg:p-6 overflow-x-hidden">
+    <div className="relative min-h-screen w-full frame-layered-bg p-2.5 sm:p-4 md:p-5 lg:p-6 overflow-x-clip">
       <div className="relative w-full">
         <div
           aria-hidden
@@ -592,25 +565,27 @@ export function HomePage() {
           <div className="relative z-20">
             <StorefrontTopBanner />
             <StorefrontHeader preserveHomeHeader />
-            <main ref={mainRef} className="relative">
-              <ScrollIvyBranch containerRef={mainRef} />
-              <div className="relative z-20">
-                <Hero />
-                <ProductSection
-                  id="ready-to-wear"
-                  title="Ready-To-Wear"
-                  products={activeReadyToWear}
-                  to="/womens-one-piece"
-                />
-                <ProductSection
-                  id="handbags"
-                  title="Handbags Collection"
-                  products={activeHandbags}
-                  to="/accessories"
-                />
-                <StorySection />
-                <WinterSection />
-                <CommunitySection />
+            <main className="relative">
+              <TreasureChestHero />
+              <div ref={belowHeroRef} className="relative">
+                <ScrollIvyBranch containerRef={belowHeroRef} />
+                <div className="relative z-20">
+                  <ProductSection
+                    id="ready-to-wear"
+                    title="Ready-To-Wear"
+                    products={activeReadyToWear}
+                    to="/womens-one-piece"
+                  />
+                  <ProductSection
+                    id="handbags"
+                    title="Handbags Collection"
+                    products={activeHandbags}
+                    to="/accessories"
+                  />
+                  <StorySection />
+                  <WinterSection />
+                  <CommunitySection />
+                </div>
               </div>
             </main>
             <StorefrontFooter />
