@@ -22,14 +22,14 @@ const envSchema = z.object({
   COOKIE_DOMAIN: z.string().optional(),
   CORS_ALLOWED_ORIGINS: z
     .string()
-    .default('http://localhost:5173,http://localhost:3000')
+    .default('https://circleuponline.com,https://www.circleuponline.com,http://localhost:5173,http://localhost:3000')
     .transform((value) =>
       value
         .split(',')
         .map((origin) => origin.trim())
         .filter(Boolean),
     ),
-  FRONTEND_URL: z.string().url().default('http://localhost:5173'),
+  FRONTEND_URL: z.string().url().default('https://circleuponline.com'),
   CLOUDINARY_CLOUD_NAME: z.string().optional(),
   CLOUDINARY_API_KEY: z.string().optional(),
   CLOUDINARY_API_SECRET: z.string().optional(),

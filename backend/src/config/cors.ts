@@ -3,6 +3,8 @@ import { env } from './env.js';
 
 function getAllowedOrigins(): Set<string> {
   const allowed = new Set<string>(env.CORS_ALLOWED_ORIGINS);
+  allowed.add('https://circleuponline.com');
+  allowed.add('https://www.circleuponline.com');
   if (env.FRONTEND_URL) {
     allowed.add(env.FRONTEND_URL);
   }
