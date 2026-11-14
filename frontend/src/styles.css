@@ -506,22 +506,27 @@ button.organic-control:focus-visible {
 }
 
 .home-vine-frame {
-  --vine-gutter: clamp(4.25rem, 6vw, 7rem);
+  --vine-gutter: 0px;
   --section-space: clamp(2rem, 3vw, 3rem);
 }
 
 .home-vine-frame .home-vine-section {
-  padding-inline-start: calc(var(--vine-gutter) + 1rem);
+  padding-inline: 1rem;
   padding-block: var(--section-space);
 }
 
 .home-vine-frame .home-vine-footer footer > div:first-child {
-  padding-inline-start: calc(var(--vine-gutter) + 1rem);
+  padding-inline: 1rem;
 }
 
-@media (min-width: 640px) {
+@media (min-width: 768px) {
+  .home-vine-frame {
+    --vine-gutter: clamp(4.25rem, 6vw, 7rem);
+  }
+
   .home-vine-frame .home-vine-section {
-    padding-inline-start: calc(var(--vine-gutter) + 4rem);
+    padding-inline-start: calc(var(--vine-gutter) + 2.5rem);
+    padding-inline-end: 2rem;
   }
 
   .home-vine-frame .home-vine-footer footer > div:first-child {
@@ -543,12 +548,6 @@ button.organic-control:focus-visible {
   }
 
   .home-vine-frame .home-vine-footer footer > div:first-child {
-    padding-inline-start: calc(var(--vine-gutter) + 3rem);
-  }
-}
-
-@media (min-width: 1024px) {
-  .home-vine-frame .home-vine-section {
     padding-inline-start: calc(var(--vine-gutter) + 3rem);
   }
 }
@@ -1120,6 +1119,7 @@ button.organic-control:focus-visible {
  .storefront-browse-cta { padding-inline:16px; }
 }
 @media(max-width:767px) {
+ .home-vine-layer { display: none !important; }
  .storefront-top-banner { min-height:32px; gap:0 6px; padding:5px 8px; font-size:.68rem; }
  .storefront-header { border-top:0 !important; }
  .storefront-header .storefront-header-inner { min-height:70px; gap:8px; padding-inline:12px; }
@@ -1135,20 +1135,6 @@ button.organic-control:focus-visible {
 }
 
 @media (max-width: 639px) {
-  .home-vine-frame {
-    --vine-gutter: 44px;
-  }
-
-  .home-vine-layer {
-    left: 4px;
-    width: var(--vine-gutter);
-    opacity: 0.92;
-  }
-
-  .home-vine-layer [data-vine-stem] {
-    stroke-width: 3.8px;
-  }
-
   .storefront-brand-caption {
     display: none;
   }
@@ -1174,16 +1160,6 @@ button.organic-control:focus-visible {
   .storefront-header-tools > a:not(.storefront-signup-cta) {
     width: 44px;
     height: 44px;
-  }
-
-  .home-vine-frame .home-vine-section {
-    padding-inline-start: calc(var(--vine-gutter) + 0.65rem);
-    padding-inline-end: 1rem;
-  }
-
-  .home-vine-frame .home-vine-footer footer > div:first-child {
-    padding-inline-start: calc(var(--vine-gutter) + 0.65rem);
-    padding-inline-end: 1rem;
   }
 }
 

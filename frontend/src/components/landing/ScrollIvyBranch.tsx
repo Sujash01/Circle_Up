@@ -155,6 +155,21 @@ function createVinePath(width: number, height: number): string {
   return path;
 }
 
+const getScrollY = () =>
+  typeof window !== 'undefined'
+    ? (window.scrollY ??
+       window.pageYOffset ??
+       document.documentElement?.scrollTop ??
+       document.scrollingElement?.scrollTop ??
+       document.body?.scrollTop ??
+       0)
+    : 0;
+
+const getViewportHeight = () =>
+  typeof window !== 'undefined'
+    ? (window.innerHeight || document.documentElement?.clientHeight || 800)
+    : 800;
+
 export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const measurePathRef = useRef<SVGPathElement>(null);
@@ -176,55 +191,86 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
   const [leaves, setLeaves] = useState<LeafSpec[]>([]);
   const pathData = useMemo(() => createVinePath(size.width, size.height), [size]);
 
-  useLayoutEffect(() => {
+  const getContainer = () => containerRef.current ?? wrapperRef.current?.parentElement ?? null;
+
+  const updatePageYLookup = () => {
+    const metrics = metricsRef.current;
+    const sampleCount = metrics.points.length - 1;
+    metrics.pageYLengths = metrics.points.map((point, index) => ({
+      pageY: metrics.docTop + point.y,
+      distance: sampleCount > 0 ? (index / sampleCount) * metrics.totalLength : 0,
+    }));
+  };
+
+  const measure = () => {
     const wrapper = wrapperRef.current;
-    const container = containerRef.current;
+    const container = getContainer();
     if (!wrapper || !container) return;
 
+    const anchor = container.querySelector<HTMLElement>('#ready-to-wear');
+    if (anchor) {
+      wrapper.style.top = `${anchor.offsetTop}px`;
+      wrapper.style.bottom = '0px';
+    }
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const targetElem = anchor ?? container;
+    const targetRect = targetElem.getBoundingClientRect();
+    const width = Math.max(44, Math.round(wrapperRect.width || 112));
+    const height = Math.max(
+      600,
+      Math.round(
+        anchor
+          ? (wrapper.offsetHeight || wrapperRect.height || (container.scrollHeight - anchor.offsetTop))
+          : (container.scrollHeight || container.offsetHeight || targetRect.height),
+      ),
+    );
+    metricsRef.current.docTop = targetRect.top + getScrollY();
+    metricsRef.current.height = height;
+    updatePageYLookup();
+    setSize((current) =>
+      Math.abs(current.width - width) < 2 && Math.abs(current.height - height) < 6
+        ? current
+        : { width, height },
+    );
+  };
+
+  useLayoutEffect(() => {
+    const wrapper = wrapperRef.current;
+    const container = getContainer();
+    if (!wrapper) return;
+
     let disposed = false;
-    const updatePageYLookup = () => {
-      const metrics = metricsRef.current;
-      const sampleCount = metrics.points.length - 1;
-      metrics.pageYLengths = metrics.points.map((point, index) => ({
-        pageY: metrics.docTop + point.y,
-        distance: sampleCount > 0 ? (index / sampleCount) * metrics.totalLength : 0,
-      }));
-    };
-    const measure = () => {
-      const anchor = container.querySelector<HTMLElement>('#ready-to-wear');
-      if (anchor) {
-        wrapper.style.top = `${anchor.offsetTop}px`;
-        wrapper.style.bottom = '0px';
-      }
-      const wrapperRect = wrapper.getBoundingClientRect();
-      const containerRect = (anchor ?? container).getBoundingClientRect();
-      const width = Math.max(44, Math.round(wrapperRect.width || 112));
-      const height = Math.max(600, Math.round(anchor ? wrapperRect.height : containerRect.height));
-      metricsRef.current.docTop = containerRect.top + window.scrollY;
-      metricsRef.current.height = height;
-      updatePageYLookup();
-      setSize((current) =>
-        Math.abs(current.width - width) < 2 && Math.abs(current.height - height) < 6
-          ? current
-          : { width, height },
-      );
-    };
 
     measure();
     const observer =
       typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
-    observer?.observe(container);
-    container.addEventListener('load', measure, true);
+    if (container) observer?.observe(container);
+    if (wrapper.parentElement && wrapper.parentElement !== container) {
+      observer?.observe(wrapper.parentElement);
+    }
+    container?.addEventListener('load', measure, true);
+    window.addEventListener('resize', measure, { passive: true });
+    window.addEventListener('load', measure, { passive: true });
     const fonts = document.fonts;
     fonts?.addEventListener('loadingdone', measure);
     void fonts?.ready.then(() => {
       if (!disposed) measure();
     });
+    const timer1 = setTimeout(() => {
+      if (!disposed) measure();
+    }, 150);
+    const timer2 = setTimeout(() => {
+      if (!disposed) measure();
+    }, 600);
 
     return () => {
       disposed = true;
       observer?.disconnect();
-      container.removeEventListener('load', measure, true);
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+      container?.removeEventListener('load', measure, true);
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('load', measure);
       fonts?.removeEventListener('loadingdone', measure);
     };
   }, [containerRef]);
@@ -342,7 +388,7 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
 
     const computeTipPageY = (scrollY: number, vh: number) => scrollY + vh * 0.95;
 
-    const openingPageY = computeTipPageY(window.scrollY, window.innerHeight);
+    const openingPageY = computeTipPageY(getScrollY(), getViewportHeight());
     metricsRef.current.progress = metricsRef.current.totalLength > 0
       ? getLengthAtPageY(metricsRef.current.pageYLengths, openingPageY) / metricsRef.current.totalLength
       : 0;
@@ -354,6 +400,9 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
       if (unsubscribe || reducedMotion) return;
       unsubscribe = subscribeToScrollFrames((scrollY, _now, viewportHeight) => {
         const metrics = metricsRef.current;
+        if (metrics.totalLength <= 0 || metrics.height <= 1) {
+          measure();
+        }
         const tipPageY = computeTipPageY(scrollY, viewportHeight);
         const targetLength = getLengthAtPageY(metrics.pageYLengths, tipPageY);
         const targetProgress = metrics.totalLength > 0 ? targetLength / metrics.totalLength : 0;
@@ -393,28 +442,6 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
       start();
     }
 
-    if (typeof IntersectionObserver !== 'undefined') {
-      const observer = new IntersectionObserver(
-        (entries) => {
-          const isNear = entries.some((entry) => entry.isIntersecting);
-          if (isNear) start();
-          else stop();
-        },
-        { rootMargin: '800px 0px 800px 0px' },
-      );
-      observer.observe(container);
-      return () => {
-        observer.disconnect();
-        stop();
-        motionQuery?.removeEventListener?.('change', handleMotionChange);
-      };
-    }
-
-    return () => {
-      stop();
-      motionQuery?.removeEventListener?.('change', handleMotionChange);
-    };
-
     return () => {
       stop();
       motionQuery?.removeEventListener?.('change', handleMotionChange);
@@ -425,7 +452,7 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
     <div
       ref={wrapperRef}
       aria-hidden="true"
-      className={cn('home-vine-layer pointer-events-none absolute inset-y-0 z-10 select-none', className)}
+      className={cn('home-vine-layer pointer-events-none absolute inset-y-0 z-10 select-none hidden md:block', className)}
     >
       <svg viewBox={`0 0 ${size.width} ${size.height}`} className="h-full w-full overflow-visible">
         <defs>
