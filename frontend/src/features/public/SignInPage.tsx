@@ -255,6 +255,24 @@ export function SignInPage() {
           </button>
         </form>
 
+        {/* 1-Click Demo Customer Fill */}
+        <div className="pt-2 border-t border-foreground/15 text-center space-y-2">
+          <p className="text-[0.68rem] uppercase font-bold tracking-wider text-terracotta">
+            Quick Testing
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setEmail('aanya@example.com');
+              setPassword('CustomerPass123');
+              setErrors({});
+            }}
+            className="w-full py-2 px-3 rounded-full border border-primary/30 bg-primary/5 hover:bg-primary/10 text-xs font-semibold text-primary transition-colors text-center"
+          >
+            Fill Demo Customer (Aanya Sharma)
+          </button>
+        </div>
+
         {/* Footer redirection */}
         <div className="border-t border-foreground/15 pt-5 text-center text-xs text-foreground/80">
           <span>New to CircleUp? </span>

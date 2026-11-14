@@ -243,6 +243,25 @@
   - `npm test`: 65/65 passed across shared, backend, and frontend.
   - Verification screenshots captured: `docs/screenshots/verify-mobile-hero-fixed.png` and `docs/screenshots/verify-mobile-rtw-fixed.png`.
 
+### Phase 8: Admin Customer CRM & User Customer Account Portal (Completed)
+- **Shared Domain Contracts (`@circleup/shared`)**:
+  - Added `customerSchema` and `customerTierSchema` (`Customer`, `CustomerTier`: VIP, REGULAR, NEW, COMMUNITY) with non-negative integer paise spend representation.
+- **Backend Customer CRM Service & Routes**:
+  - Created `adminCustomer.service.ts` aggregating unique customer profiles from database orders (lifetime spend, order counts, first/last order dates, addresses) with fallback mock customers for immediate testing.
+  - Created `adminCustomer.controller.ts` and mounted `GET /api/admin/customers` and `GET /api/admin/customers/:id`.
+  - Updated `backend/src/scripts/seed.ts` to automatically seed default Owner (`owner@circleuponline.com`) and Staff (`staff@circleuponline.com`).
+- **Admin Workspace CRM Dashboard (`/admin/customers`)**:
+  - Added `Customers` nav item with icon in `AdminSidebar.tsx` and route in `AdminApp.tsx`.
+  - Built `CustomersPage.tsx` with top KPI metrics (Total Customers, VIP Members, Total Spend in `formatPrice`, Circular Garments Rehomed), live search, tier filtering, and interactive customer profile drawer with order history timeline and sustainability impact.
+  - Added 1-click "Fill Demo Owner" and "Fill Demo Staff" buttons on `AdminLoginPage.tsx`.
+- **User Customer Account Portal (`/account`)**:
+  - Created `CustomerAccountPage.tsx` with user greeting, Circle Insider loyalty tier, recent order tracking timeline with itemized prices, delivery address details, and Circular Wardrobe sustainability impact stats.
+  - Added 1-click "Fill Demo Customer" on `SignInPage.tsx`.
+  - Wired header user pill in `StorefrontChrome.tsx`: redirects customers to `/account` and admins to `/admin`.
+- **Verification**:
+  - `npm run typecheck`: 0 errors across shared, backend, and frontend.
+  - `npm test`: 65/65 passing tests.
+
 
 
 

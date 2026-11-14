@@ -119,7 +119,36 @@ export function AdminLoginPage() {
           </button>
         </form>
 
-        <div className="pt-4 border-t border-[#1e2a1c]/10 text-center">
+        {/* Demo Quick Fill */}
+        <div className="pt-2 border-t border-[#1e2a1c]/10 space-y-2">
+          <p className="text-[0.68rem] uppercase font-bold tracking-wider text-[#8b5a3e] text-center">
+            One-Click Demo Credentials
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setEmail('owner@circleuponline.com');
+                setPassword('OwnerPassword123');
+              }}
+              className="py-2 px-3 rounded-xl border border-[#1e2a1c]/20 bg-[#1e2a1c]/5 hover:bg-[#1e2a1c]/10 text-xs font-semibold text-[#1e2a1c] transition-colors text-center"
+            >
+              Fill Demo Owner
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setEmail('staff@circleuponline.com');
+                setPassword('StaffPassword123');
+              }}
+              className="py-2 px-3 rounded-xl border border-[#1e2a1c]/20 bg-[#1e2a1c]/5 hover:bg-[#1e2a1c]/10 text-xs font-semibold text-[#1e2a1c] transition-colors text-center"
+            >
+              Fill Demo Staff
+            </button>
+          </div>
+        </div>
+
+        <div className="pt-2 text-center">
           <p className="text-[0.72rem] text-[#1e2a1c]/60">
             Protected area. Authorized team members only.
           </p>

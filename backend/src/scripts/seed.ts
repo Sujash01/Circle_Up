@@ -6,6 +6,7 @@ import { Coupon } from '../models/Coupon.js';
 import { Rental } from '../models/Rental.js';
 import { Event } from '../models/Event.js';
 import { SiteSettings } from '../models/SiteSettings.js';
+import { adminAuthService } from '../services/adminAuth.service.js';
 import { SEED_PRODUCTS } from '../data/seedProducts.js';
 
 const LAUNCH_COUPONS = [
@@ -184,6 +185,33 @@ async function runSeed() {
     { upsert: true, new: true },
   );
   logger.info('Seeded site settings successfully');
+
+  // 6. Seed Default Admin Users
+  try {
+    await adminAuthService.createAdminUser({
+      email: 'owner@circleuponline.com',
+      password: 'OwnerPassword123',
+      name: 'CircleUp Owner',
+      role: 'owner',
+      force: true,
+    });
+    logger.info('Seeded default owner user: owner@circleuponline.com');
+  } catch {
+    logger.info('Owner user already exists, skipping.');
+  }
+
+  try {
+    await adminAuthService.createAdminUser({
+      email: 'staff@circleuponline.com',
+      password: 'StaffPassword123',
+      name: 'CircleUp Staff',
+      role: 'staff',
+      force: true,
+    });
+    logger.info('Seeded default staff user: staff@circleuponline.com');
+  } catch {
+    logger.info('Staff user already exists, skipping.');
+  }
 
   await disconnectDatabase();
   process.exit(0);

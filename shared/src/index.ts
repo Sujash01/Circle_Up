@@ -12,3 +12,4 @@ export * from './schemas/rental.js';
 export * from './schemas/event.js';
 export * from './schemas/settings.js';
 export * from './schemas/admin.js';
+export * from './schemas/customer.js';

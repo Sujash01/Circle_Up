@@ -12,6 +12,7 @@ const ProductsPage = lazy(() => import('./pages/ProductsPage'));
 const ProductFormPage = lazy(() => import('./pages/ProductFormPage'));
 const CollectionsPage = lazy(() => import('./pages/CollectionsPage'));
 const OrdersPage = lazy(() => import('./pages/OrdersPage'));
+const CustomersPage = lazy(() => import('./pages/CustomersPage'));
 const RentalsEventsPage = lazy(() => import('./pages/RentalsEventsPage'));
 const CouponsPage = lazy(() => import('./pages/CouponsPage'));
 const SiteSettingsPage = lazy(() => import('./pages/SiteSettingsPage'));
@@ -53,6 +54,7 @@ function ProtectedAdminRoutes() {
           <Route path="products/:id/edit" element={<ProductFormPage />} />
           <Route path="collections" element={<CollectionsPage />} />
           <Route path="orders" element={<OrdersPage />} />
+          <Route path="customers" element={<CustomersPage />} />
           <Route path="rentals" element={<RentalsEventsPage />} />
           <Route path="coupons" element={<CouponsPage />} />
           <Route path="settings" element={<SiteSettingsPage />} />

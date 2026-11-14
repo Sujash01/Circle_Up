@@ -430,7 +430,7 @@ export function StorefrontHeader({ preserveHomeHeader = false }: { preserveHomeH
 
             {currentUser ? (
               <Link
-                to="/admin"
+                to={currentUser.actorType === 'ADMIN' || currentUser.role === 'OWNER' || currentUser.role === 'STAFF' ? '/admin' : '/account'}
                 aria-label={`Account (${currentUser.fullName})`}
                 className="storefront-account-link flex min-h-[44px] items-center gap-1.5 rounded-full border-2 border-foreground/20 bg-card/90 px-3.5 py-1.5 text-xs font-semibold text-cocoa shadow-xs transition-all hover:border-primary hover:text-primary hover:shadow-sm"
               >
@@ -693,7 +693,8 @@ export function StorefrontFooter() {
             title="Company"
             links={[
               { label: 'About Us', to: '/about' },
-              { label: 'Create Account', to: '/signup' },
+              { label: 'Customer Portal', to: '/account' },
+              { label: 'Admin Workspace', to: '/admin' },
               { label: 'Contact', to: '/contact' },
               { label: 'Shopping Bag', to: '/cart' },
               { label: 'Saved Wishlist', to: '/wishlist' },

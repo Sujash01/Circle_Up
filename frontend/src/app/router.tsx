@@ -27,6 +27,7 @@ import { ReviewsPage } from '@/features/public/ReviewsPage';
 import { SearchPage } from '@/features/public/SearchPage';
 import { SignInPage } from '@/features/public/SignInPage';
 import { SignUpPage } from '@/features/public/SignUpPage';
+import { CustomerAccountPage } from '@/features/customer/CustomerAccountPage';
 import { ThriftCrewPage } from '@/features/public/ThriftCrewPage';
 import { ThriftedTreasurePage } from '@/features/public/ThriftedTreasurePage';
 import { WishlistPage } from '@/features/public/WishlistPage';
@@ -164,7 +165,7 @@ export const router = createBrowserRouter([
         ],
       },
 
-      // Authentication routes (clean layout without notebook spiral binding)
+      // Authentication and User Account routes (clean layout without notebook spiral binding)
       {
         element: <StorefrontCleanLayout />,
         children: [
@@ -172,6 +173,8 @@ export const router = createBrowserRouter([
           { path: 'signup', element: <SignUpPage /> },
           { path: 'login', element: <Navigate to="/signin" replace /> },
           { path: 'register', element: <Navigate to="/signup" replace /> },
+          { path: 'account', element: <CustomerAccountPage /> },
+          { path: 'profile', element: <Navigate to="/account" replace /> },
         ],
       },
     ],

@@ -8,6 +8,7 @@ import { adminSettingsController } from '../../controllers/admin/adminSettings.c
 import { adminCouponController } from '../../controllers/admin/adminCoupon.controller.js';
 import { adminRentalController } from '../../controllers/admin/adminRental.controller.js';
 import { adminEventController } from '../../controllers/admin/adminEvent.controller.js';
+import { adminCustomerController } from '../../controllers/admin/adminCustomer.controller.js';
 import { requireAdminAuth, verifyAdminCsrf } from '../../middleware/adminAuth.js';
 import { adminAuthRateLimiter } from '../../middleware/rateLimiter.js';
 import { noStoreCache } from '../../middleware/cacheControl.js';
@@ -72,6 +73,10 @@ adminRouter.put(
   verifyAdminCsrf,
   adminOrderController.updateStatus,
 );
+
+// === CUSTOMERS (CRM) ===
+adminRouter.get('/customers', requireAdminAuth(), adminCustomerController.list);
+adminRouter.get('/customers/:id', requireAdminAuth(), adminCustomerController.getById);
 
 // === MEDIA UPLOAD ===
 adminRouter.post(
