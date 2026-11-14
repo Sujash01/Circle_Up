@@ -1136,17 +1136,15 @@ button.organic-control:focus-visible {
 
 @media (max-width: 639px) {
   .home-vine-frame {
-    --vine-gutter: 20px;
+    --vine-gutter: 48px;
   }
 
   .home-vine-layer {
-    left: 4px;
-    width: 20px;
-    opacity: 0.55;
+    opacity: 0.85;
   }
 
   .home-vine-layer [data-vine-stem] {
-    stroke-width: 3.2px;
+    stroke-width: 3.8px;
   }
 
   .storefront-brand-caption {
@@ -1177,13 +1175,11 @@ button.organic-control:focus-visible {
   }
 
   .home-vine-frame .home-vine-section {
-    padding-inline-start: 1.25rem;
-    padding-inline-end: 1.25rem;
+    padding-inline-start: calc(var(--vine-gutter) + 5rem);
   }
 
   .home-vine-frame .home-vine-footer footer > div:first-child {
-    padding-inline-start: 1.25rem;
-    padding-inline-end: 1.25rem;
+    padding-inline-start: calc(var(--vine-gutter) + 5rem);
   }
 }
 
