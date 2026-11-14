@@ -11,3 +11,4 @@ export function noStoreCache(_req: Request, res: Response, next: NextFunction): 
   res.setHeader('Pragma', 'no-cache');
   next();
 }
+

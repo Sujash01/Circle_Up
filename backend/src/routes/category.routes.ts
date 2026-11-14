@@ -6,3 +6,4 @@ export const categoryRouter = Router();
 
 categoryRouter.get('/categories', cacheCatalogReads, categoryController.listCategories);
 categoryRouter.get('/collections', cacheCatalogReads, categoryController.listCollections);
+

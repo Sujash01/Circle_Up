@@ -88,3 +88,4 @@ const CouponSchema = new Schema<ICouponDocument>(
 export const Coupon: mongoose.Model<ICouponDocument> =
   (mongoose.models.Coupon as mongoose.Model<ICouponDocument>) ||
   mongoose.model<ICouponDocument>('Coupon', CouponSchema);
+

@@ -74,3 +74,4 @@ const AdminUserSchema = new Schema<IAdminUserDocument>(
 export const AdminUser: mongoose.Model<IAdminUserDocument> =
   (mongoose.models.AdminUser as mongoose.Model<IAdminUserDocument>) ||
   mongoose.model<IAdminUserDocument>('AdminUser', AdminUserSchema);
+

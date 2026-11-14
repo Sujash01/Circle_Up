@@ -67,3 +67,4 @@ const SiteSettingsSchema = new Schema<ISiteSettingsDocument>(
 export const SiteSettings: mongoose.Model<ISiteSettingsDocument> =
   (mongoose.models.SiteSettings as mongoose.Model<ISiteSettingsDocument>) ||
   mongoose.model<ISiteSettingsDocument>('SiteSettings', SiteSettingsSchema);
+

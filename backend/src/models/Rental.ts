@@ -49,3 +49,4 @@ const RentalSchema = new Schema<IRentalDocument>(
 export const Rental: mongoose.Model<IRentalDocument> =
   (mongoose.models.Rental as mongoose.Model<IRentalDocument>) ||
   mongoose.model<IRentalDocument>('Rental', RentalSchema);
+
