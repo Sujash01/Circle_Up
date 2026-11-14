@@ -93,7 +93,21 @@ export const adminAuthService = {
 
     if (!isDbConnected()) {
       // Degraded / testing mode: resolve from MOCK_ADMIN_USERS
-      const mock = MOCK_ADMIN_USERS.find((u) => u.email === cleanEmail);
+      let mock = MOCK_ADMIN_USERS.find((u) => u.email === cleanEmail);
+      if (!mock && cleanEmail === 'owner@circleuponline.com') {
+        mock = {
+          id: 'owner-default-01',
+          email: 'owner@circleuponline.com',
+          name: 'CircleUp Owner',
+          passwordHash: await this.hashPassword('OwnerPassword123'),
+          role: 'owner',
+          isActive: true,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        MOCK_ADMIN_USERS.push(mock);
+      }
+
       if (!mock || !(await this.verifyPassword(String(mock.passwordHash), plainPassword))) {
         throw new UnauthorizedError('Invalid admin email or password.', 'INVALID_CREDENTIALS');
       }

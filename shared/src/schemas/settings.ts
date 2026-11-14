@@ -1,5 +1,14 @@
 import { z } from 'zod';
 
+export const categoryTileSchema = z.object({
+  to: z.string(),
+  title: z.string(),
+  note: z.string(),
+  img: z.string(),
+  alt: z.string(),
+});
+export type CategoryTile = z.infer<typeof categoryTileSchema>;
+
 export const siteSettingsSchema = z.object({
   announcementText: z.string().default(
     'Use code THRIFT10 or CIRCLE20 in bag • Plastic-free sustainable packaging on every parcel',
@@ -12,6 +21,7 @@ export const siteSettingsSchema = z.object({
     'Community sale days',
     'Fashion that lasts',
   ]),
+  categoryTiles: z.array(categoryTileSchema).optional(),
   storeAddress: z.string().default('CircleUp Studio Courtyard, Sector 7, Chandigarh'),
   contactEmail: z.string().email().default('care@circleuponline.com'),
   contactPhone: z.string().default('+91 98765 43210'),

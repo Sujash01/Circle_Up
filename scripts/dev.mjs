@@ -76,7 +76,7 @@ process.on('SIGTERM', () => shutdown(0));
 console.log('[setup] Building @circleup/shared...');
 const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 try {
-  execFileSync(npmCmd, ['run', 'build:shared'], { cwd: rootDir, stdio: 'inherit' });
+  execFileSync(npmCmd, ['run', 'build:shared'], { cwd: rootDir, stdio: 'inherit', shell: true });
 } catch (err) {
   console.error('[setup] Failed to build @circleup/shared:', err);
   process.exit(1);

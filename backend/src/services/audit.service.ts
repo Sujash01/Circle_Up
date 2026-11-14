@@ -36,5 +36,10 @@ export const auditService = {
       // Non-blocking: audit log failure should not fail mutation
     }
   },
+
+  async list(limit = 50) {
+    if (mongoose.connection.readyState !== 1) return [];
+    return AuditLog.find().sort({ createdAt: -1 }).limit(limit).lean();
+  },
 };
 

@@ -82,6 +82,7 @@ export type CheckoutRequestStatus =
   (typeof CheckoutRequestStatus)[keyof typeof CheckoutRequestStatus];
 
 export const OrderStatus = {
+  PENDING: 'PENDING',
   CONFIRMED: 'CONFIRMED',
   PACKED: 'PACKED',
   SHIPPED: 'SHIPPED',

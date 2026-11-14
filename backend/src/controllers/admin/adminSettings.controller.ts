@@ -15,6 +15,15 @@ export const adminSettingsController = {
     }
   },
 
+  async getActivity(_req: Request, res: Response, next: NextFunction) {
+    try {
+      const logs = await auditService.list();
+      return sendSuccess(res, logs);
+    } catch (error) {
+      next(error);
+    }
+  },
+
   async updateSettings(req: Request, res: Response, next: NextFunction) {
     try {
       if (mongoose.connection.readyState === 1) {

@@ -50,6 +50,43 @@
   - [x] Record final summary and commit.
 
 ---
+
+## Session 2: Admin Frontend & Frontend Data Layer
+
+### Session 2 Checklist
+
+- [x] **Phase 4: Admin Frontend (/admin)**
+  - [x] Lazy-load `frontend/src/admin` under `/admin` with `noindex` meta tag.
+  - [x] Consistent brand styling: warm cream canvas, deep forest green, soft organic shapes, dense and phone-friendly (desktop sidebar / mobile bottom nav, 44px+ tap targets).
+  - [x] Admin auth context: login/logout, HttpOnly session cookie, CSRF token handling, and role restrictions (`owner` vs `staff`).
+  - [x] Overview dashboard: live counts (published products, low stock, new orders, pending rentals), recent orders, recent activity.
+  - [x] Products table: thumbnail, name, category, price, stock, status, updated date; search, filters (category, status, stock), sort, pagination, multi-select bulk actions.
+  - [x] Product Add/Edit form: all product fields, auto-slug, sizes with per-size stock, multi-image upload with reorder, set cover, required alt text, inline validation, unsaved-changes warning, duplicate, soft delete + restore, permanent delete with confirmation.
+  - [x] Categories and Collections editor: edit 4 homepage tiles, assign products to Ready-To-Wear / Handbags / Winter with reorder, pick 4-6 chest picks.
+  - [x] Orders management: filter, detail, status change (validated transitions only), notes, printable packing slip.
+  - [x] Rentals and Events editor (edit public site items).
+  - [x] Coupons manager (create, edit, disable).
+  - [x] Site settings editor (owner-only: announcement text, reorderable marquee phrases).
+  - [x] Activity log (owner-only) and Account settings (change password, logout).
+  - [x] Toasts for success/failure, optimistic updates with rollback, skeleton loading.
+  - [x] Visual verification with browser: log in as owner, add product with images, publish, verify homepage and search, edit price, archive, verify disappearance, restore. Capture screenshots at 390px and 1280px.
+  - [x] Run typecheck, lint, tests and commit `session2 phase 4: admin frontend`.
+
+- [ ] **Phase 5: Frontend Data Layer**
+  - [ ] Replace all hardcoded and mock data in the public site with API data (products, tiles, announcement text, marquee phrases, chest picks, rentals, events).
+  - [ ] One typed API client: central error handling, AbortController on route change and search input, retry only for idempotent GETs, lightweight stale-while-revalidate cache, product prefetching on card hover/focus.
+  - [ ] Homepage uses single `/api/homepage` endpoint without request waterfall.
+  - [ ] Loading, empty and error states using organic skeleton style. Never show undefined, NaN, .00 or broken images.
+  - [ ] Cart totals, coupon discounts and quantities matching backend; `formatPrice()` everywhere.
+  - [ ] Remove dead code, unused assets and old mock data.
+  - [ ] Run typecheck, lint, tests and commit `session2 phase 5: frontend data layer`.
+
+- [ ] **End of Session 2: Verification & Handoff**
+  - [ ] Root typecheck, lint, test, and build passing.
+  - [ ] Browser walk-through across public store and admin flows with no console errors or failed requests.
+  - [ ] Record final summary and commit.
+
+---
 ## Phase Execution Log
 
 ### Phase 0: Rules and Audit (Completed)
@@ -110,7 +147,33 @@
 - Wrote 19 new integration tests in `adminBackend.test.ts` (all 45 backend tests + 20 frontend tests = 65 passing tests).
 
 ### End of Session 1: Final Summary & Verification (Completed)
-- **Monorepo Build Health**:
+- **Monorepo Build Health**: All test suites passing (45 backend + 20 frontend = 65 total tests).
+- Backend and admin APIs ready for Session 2 frontend consumption.
+
+### Phase 4: Admin Frontend (/admin) (Completed)
+- Built independent lazy-loaded Admin Single-Page App in `frontend/src/admin`, decoupled completely from storefront public bundle (`admin-*.js` chunks loaded only on `/admin/*`). Injected `<meta name="robots" content="noindex, nofollow" />`.
+- Styled dense, phone-friendly workspace matching the CircleUp brand design system: warm vintage cream canvas, deep forest green accents, soft organic panels, 44px+ tap targets, desktop sidebar and mobile bottom navigation sheet.
+- Implemented Typed Admin API client with Axios (`/api/admin`), double-submit CSRF interceptor (`X-CSRF-Token`), and central API error normalization.
+- Built responsive layout and context architecture:
+  - `AdminAuthContext`: session verification via `GET /api/admin/auth/me`, login, logout, and role gating (`owner` vs `staff`).
+  - `AdminToastContext`: auto-dismissing feedback notifications with optimistic update rollbacks.
+  - `AdminSkeleton`: organic shimmer skeletons for card grids and data tables.
+  - `PackingSlipModal`: printable sustainable fashion packing slip (`@media print`).
+- Implemented all 8 required admin modules:
+  1. **Overview Dashboard** (`OverviewPage.tsx`): live store volume, active counts (published items, low stock ≤ 2, active orders), quick action links, and recent orders table.
+  2. **Products Management** (`ProductsPage.tsx`, `ProductFormPage.tsx`): searchable, filterable (category, status, stock), sortable product table with bulk publish/unpublish/archive/delete; Add/Edit form with auto-slug, per-size stock matrix, multi-image reorder and cover selection, required accessibility alt text, duplicate as draft copy, soft delete, and permanent deletion with order safety confirmation.
+  3. **Categories & Collections** (`CollectionsPage.tsx`): visual editor for 4 homepage tiles (`Rentals`, `Thrifted Treasure`, `Accessories`, `Social Circle`), 3D chest treasure picks curator (4–6 items), and collection rail mapping.
+  4. **Orders Management** (`OrdersPage.tsx`): filterable order stream, customer drawer, state machine status transition controls (`PENDING -> CONFIRMED -> PACKED -> SHIPPED -> OUT_FOR_DELIVERY -> DELIVERED` / `CANCELLED`), order item details with integer paise currency formatting, and one-click printable packing slip.
+  5. **Rentals & Events** (`RentalsEventsPage.tsx`): rates manager (3-day, 7-day, 14-day, and security deposit) and community pop-ups/swap meets event editor.
+  6. **Coupons** (`CouponsPage.tsx`): create, edit, toggle active status, and set order caps for promo codes (e.g. `THRIFT10`, `CIRCLE20`).
+  7. **Site Settings** (`SiteSettingsPage.tsx` - owner only): announcement ribbon banner text, reorderable marquee phrases ticker with add/remove/reorder controls, and studio contact channels.
+  8. **Activity Log & Account** (`ActivityLogPage.tsx`, `AccountPage.tsx` - owner only): audit log stream with JSON diff inspector and administrator password change utility.
+- Executed visual automated browser verification with screenshots at 1280px (desktop) and 390px (mobile) stored in `docs/screenshots/`:
+  - `admin-login-1280px.png` & `admin-login-390px.png`
+  - `admin-products-table-1280px.png` & `admin-products-table-390px.png`
+  - `admin-product-form-1280px.png` & `admin-product-form-390px.png`
+  - `admin-orders-1280px.png` & `admin-orders-390px.png`
+- Verified: root typecheck passes (0 errors), ESLint passes (0 errors), all 65 unit/integration tests pass, and production build generates clean isolated code-split chunks.
   - `npm run typecheck`: clean across `@circleup/shared`, `@circleup/backend`, `@circleup/frontend` (0 errors).
   - `npm run lint`: clean across all workspaces (0 errors, 0 warnings).
   - `npm test`: all 65 tests passing (45 backend unit/integration tests + 20 frontend tests).

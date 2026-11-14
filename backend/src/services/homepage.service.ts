@@ -34,7 +34,7 @@ export const homepageService = {
     });
 
     // 4 Category World Tiles
-    const categoryTiles = [
+    const defaultCategoryTiles = [
       {
         to: '/rentals',
         title: 'Rentals',
@@ -64,6 +64,11 @@ export const homepageService = {
         alt: 'Warm lights and leafy branches decorate the CircleUp shop',
       },
     ];
+
+    const categoryTiles =
+      settings.categoryTiles && settings.categoryTiles.length === 4
+        ? settings.categoryTiles
+        : defaultCategoryTiles;
 
     // Winter Collection Lookbook
     const winterLooks = [

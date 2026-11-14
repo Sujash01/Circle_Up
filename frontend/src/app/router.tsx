@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { createBrowserRouter, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { ExitIntentModal } from '@/components/storefront/ExitIntentModal';
 import { StorefrontLayout } from '@/components/storefront/StorefrontChrome';
@@ -21,6 +21,8 @@ import { ThriftCrewPage } from '@/features/public/ThriftCrewPage';
 import { ThriftedTreasurePage } from '@/features/public/ThriftedTreasurePage';
 import { WishlistPage } from '@/features/public/WishlistPage';
 
+const AdminApp = lazy(() => import('@/admin/AdminApp'));
+
 function RootScrollWrapper() {
   const { pathname } = useLocation();
   useEffect(() => {
@@ -35,6 +37,15 @@ function RootScrollWrapper() {
 }
 
 export const router = createBrowserRouter([
+  // Admin App: Lazy-loaded independently outside storefront chrome and exit modals
+  {
+    path: 'admin/*',
+    element: (
+      <Suspense fallback={null}>
+        <AdminApp />
+      </Suspense>
+    ),
+  },
   {
     element: <RootScrollWrapper />,
     children: [

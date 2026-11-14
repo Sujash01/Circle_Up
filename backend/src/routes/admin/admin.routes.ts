@@ -6,6 +6,8 @@ import { adminOrderController } from '../../controllers/admin/adminOrder.control
 import { adminMediaController } from '../../controllers/admin/adminMedia.controller.js';
 import { adminSettingsController } from '../../controllers/admin/adminSettings.controller.js';
 import { adminCouponController } from '../../controllers/admin/adminCoupon.controller.js';
+import { adminRentalController } from '../../controllers/admin/adminRental.controller.js';
+import { adminEventController } from '../../controllers/admin/adminEvent.controller.js';
 import { requireAdminAuth, verifyAdminCsrf } from '../../middleware/adminAuth.js';
 import { adminAuthRateLimiter } from '../../middleware/rateLimiter.js';
 import { noStoreCache } from '../../middleware/cacheControl.js';
@@ -88,6 +90,7 @@ adminRouter.put(
   verifyAdminCsrf,
   adminSettingsController.updateSettings,
 );
+adminRouter.get('/activity', requireAdminAuth('owner'), adminSettingsController.getActivity);
 
 // === COUPONS ===
 adminRouter.get('/coupons', requireAdminAuth(), adminCouponController.list);
@@ -99,4 +102,16 @@ adminRouter.delete(
   verifyAdminCsrf,
   adminCouponController.delete,
 );
+
+// === RENTALS ===
+adminRouter.get('/rentals', requireAdminAuth(), adminRentalController.list);
+adminRouter.post('/rentals', requireAdminAuth(), verifyAdminCsrf, adminRentalController.create);
+adminRouter.put('/rentals/:id', requireAdminAuth(), verifyAdminCsrf, adminRentalController.update);
+adminRouter.delete('/rentals/:id', requireAdminAuth(), verifyAdminCsrf, adminRentalController.delete);
+
+// === EVENTS ===
+adminRouter.get('/events', requireAdminAuth(), adminEventController.list);
+adminRouter.post('/events', requireAdminAuth(), verifyAdminCsrf, adminEventController.create);
+adminRouter.put('/events/:id', requireAdminAuth(), verifyAdminCsrf, adminEventController.update);
+adminRouter.delete('/events/:id', requireAdminAuth(), verifyAdminCsrf, adminEventController.delete);
 

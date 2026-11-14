@@ -1,8 +1,17 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
+export interface ICategoryTile {
+  to: string;
+  title: string;
+  note: string;
+  img: string;
+  alt: string;
+}
+
 export interface ISiteSettingsDocument extends Document {
   announcementText: string;
   marqueePhrases: string[];
+  categoryTiles?: ICategoryTile[];
   storeAddress: string;
   contactEmail: string;
   contactPhone: string;
@@ -28,6 +37,18 @@ const SiteSettingsSchema = new Schema<ISiteSettingsDocument>(
         'Community sale days',
         'Fashion that lasts',
       ],
+    },
+    categoryTiles: {
+      type: [
+        {
+          to: { type: String, required: true },
+          title: { type: String, required: true },
+          note: { type: String, required: true },
+          img: { type: String, required: true },
+          alt: { type: String, required: true },
+        },
+      ],
+      default: undefined,
     },
     storeAddress: {
       type: String,
