@@ -1,0 +1,268 @@
+import axios, { type AxiosRequestConfig } from 'axios';
+import { normalizeApiError } from './apiClient';
+import type {
+  CouponValidateResult,
+  Order,
+  Product,
+} from '@circleup/shared';
+
+export interface HomepagePayload {
+  chestPicks: Array<{
+    id: string;
+    name: string;
+    price: string;
+    rawPrice: number;
+    tag: string;
+    bg: [string, string];
+    img: string;
+    to: string;
+  }>;
+  collections: {
+    readyToWear: Array<{
+      id: string;
+      img: string;
+      name: string;
+      price: string;
+      rawPrice: number;
+      to: string;
+      category: string;
+    }>;
+    handbags: Array<{
+      id: string;
+      img: string;
+      name: string;
+      price: string;
+      rawPrice: number;
+      to: string;
+      category: string;
+    }>;
+    winter: Array<{
+      img: string;
+      alt: string;
+    }>;
+  };
+  categoryTiles: Array<{
+    to: string;
+    title: string;
+    note: string;
+    img: string;
+    alt: string;
+  }>;
+  announcementText: string;
+  marqueePhrases: string[];
+  siteSettings: {
+    storeAddress: string;
+    contactEmail: string;
+    contactPhone: string;
+    whatsappNumber: string;
+    contentVersion: number;
+  };
+}
+
+// === TINY STALE-WHILE-REVALIDATE CACHE ===
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+  maxAgeMs: number;
+  staleWhileRevalidateMs: number;
+}
+
+const swrCache = new Map<string, CacheEntry<unknown>>();
+
+export function clearStorefrontCache() {
+  swrCache.clear();
+}
+
+/**
+ * Executes an idempotent GET request with a lightweight Stale-While-Revalidate cache
+ * and up to 2 retries for transient failures.
+ */
+async function fetchWithSwr<T>(
+  url: string,
+  options: {
+    params?: Record<string, unknown>;
+    signal?: AbortSignal;
+    maxAgeMs?: number;
+    staleMs?: number;
+    retries?: number;
+  } = {},
+): Promise<T> {
+  const {
+    params,
+    signal,
+    maxAgeMs = 30_000, // 30 seconds fresh
+    staleMs = 300_000, // 5 minutes stale-while-revalidate
+    retries = 2,
+  } = options;
+
+  const cacheKey = `${url}?${new URLSearchParams(params as Record<string, string>).toString()}`;
+  const now = Date.now();
+  const cached = swrCache.get(cacheKey) as CacheEntry<T> | undefined;
+
+  // 1. Return immediate cache if within freshness window
+  if (cached && now - cached.timestamp < cached.maxAgeMs) {
+    return cached.data;
+  }
+
+  // 2. Fetch fresh network data with retry for idempotent GET
+  const fetchNetwork = async (attemptsLeft: number): Promise<T> => {
+    try {
+      const config: AxiosRequestConfig = {
+        params,
+        signal,
+        timeout: 12000,
+      };
+      const res = await axios.get<{ success: true; data: T }>(url, config);
+      const data = res.data.data;
+      swrCache.set(cacheKey, {
+        data,
+        timestamp: Date.now(),
+        maxAgeMs,
+        staleWhileRevalidateMs: staleMs,
+      });
+      return data;
+    } catch (err) {
+      if (axios.isCancel(err) || (err as { name?: string }).name === 'CanceledError') {
+        throw err;
+      }
+      if (attemptsLeft > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 300 * (3 - attemptsLeft)));
+        return fetchNetwork(attemptsLeft - 1);
+      }
+      // If network fails but we have stale cache, gracefully serve stale cache
+      if (cached) {
+        return cached.data;
+      }
+      throw normalizeApiError(err);
+    }
+  };
+
+  // If stale cache exists, revalidate in background and return stale immediately
+  if (cached && now - cached.timestamp < cached.staleWhileRevalidateMs) {
+    fetchNetwork(retries).catch(() => {});
+    return cached.data;
+  }
+
+  // Otherwise, wait for network
+  return fetchNetwork(retries);
+}
+
+// === CENTRAL PUBLIC STOREFRONT API ===
+export const storefrontApi = {
+  /**
+   * Fetches the unified homepage payload in a single round-trip without waterfall.
+   */
+  async getHomepage(signal?: AbortSignal): Promise<HomepagePayload> {
+    return fetchWithSwr<HomepagePayload>('/api/homepage', {
+      signal,
+      maxAgeMs: 60_000, // 1 minute
+      staleMs: 300_000, // 5 minutes SWR
+    });
+  },
+
+  /**
+   * Catalog query with filters, pagination, and sorting.
+   */
+  async getProducts(
+    params?: {
+      category?: string;
+      search?: string;
+      page?: number;
+      limit?: number;
+      sort?: string;
+      minPrice?: number;
+      maxPrice?: number;
+    },
+    signal?: AbortSignal,
+  ): Promise<{ products: Product[]; total: number; totalPages: number }> {
+    const res = await axios.get<{
+      data: Product[];
+      meta: { total: number; totalPages: number };
+    }>('/api/products', { params, signal, timeout: 12000 });
+    return {
+      products: res.data.data || [],
+      total: res.data.meta?.total || 0,
+      totalPages: res.data.meta?.totalPages || 1,
+    };
+  },
+
+  /**
+   * Retrieves single product by slug or serialNumber with SWR cache.
+   */
+  async getProductBySlug(slug: string, signal?: AbortSignal): Promise<Product> {
+    return fetchWithSwr<Product>(`/api/products/${encodeURIComponent(slug)}`, {
+      signal,
+      maxAgeMs: 60_000,
+    });
+  },
+
+  /**
+   * Prefetches a product ahead of time on card hover/focus.
+   */
+  prefetchProduct(slug: string): void {
+    if (!slug) return;
+    this.getProductBySlug(slug).catch(() => {});
+  },
+
+  /**
+   * Related products for a given product slug.
+   */
+  async getRelatedProducts(slug: string, signal?: AbortSignal): Promise<Product[]> {
+    return fetchWithSwr<Product[]>(`/api/products/${encodeURIComponent(slug)}/related`, {
+      signal,
+      maxAgeMs: 120_000,
+    });
+  },
+
+  /**
+   * Search suggestions / full search with AbortController cancellation.
+   */
+  async search(query: string, signal?: AbortSignal): Promise<Product[]> {
+    if (!query || query.trim().length < 2) return [];
+    const res = await axios.get<{ data: Product[] }>('/api/search', {
+      params: { q: query.trim(), limit: 12 },
+      signal,
+      timeout: 10000,
+    });
+    return res.data.data || [];
+  },
+
+  /**
+   * Curated circular rentals rail.
+   */
+  async getRentals(signal?: AbortSignal): Promise<unknown[]> {
+    return fetchWithSwr<unknown[]>('/api/rentals', {
+      signal,
+      maxAgeMs: 120_000,
+    });
+  },
+
+  /**
+   * Community pop-ups and swap meets events.
+   */
+  async getEvents(signal?: AbortSignal): Promise<unknown[]> {
+    return fetchWithSwr<unknown[]>('/api/events', {
+      signal,
+      maxAgeMs: 120_000,
+    });
+  },
+
+  /**
+   * Real-time coupon discount validation (THRIFT10, CIRCLE20, etc.).
+   */
+  async validateCoupon(code: string, subtotalInPaise: number): Promise<CouponValidateResult> {
+    const res = await axios.post<{ data: CouponValidateResult }>('/api/coupons/validate', {
+      code,
+      subtotalInPaise,
+    });
+    return res.data.data;
+  },
+
+  /**
+   * Orders placement with stock decrement.
+   */
+  async createOrder(orderPayload: Record<string, unknown>): Promise<Order> {
+    const res = await axios.post<{ data: Order }>('/api/orders', orderPayload);
+    return res.data.data;
+  },
+};

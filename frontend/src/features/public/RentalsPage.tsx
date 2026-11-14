@@ -1,7 +1,8 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { cn } from '@/lib/utils';
 import { formatPrice } from '@/services/cartService';
 import { rentalService } from '@/services/rentalService';
+import { storefrontApi } from '@/services/storefrontApi';
 import type { RentalProduct, SimulatedRentalRequest } from '@/types/storefront';
 
 function addDaysIso(startIso: string, deltaDays: number): string {
@@ -12,7 +13,20 @@ function addDaysIso(startIso: string, deltaDays: number): string {
 }
 
 export function RentalsPage() {
-  const rentals = rentalService.getAllRentalProducts();
+  const [rentals, setRentals] = useState<RentalProduct[]>(() => rentalService.getAllRentalProducts());
+
+  useEffect(() => {
+    const ac = new AbortController();
+    storefrontApi
+      .getRentals(ac.signal)
+      .then((apiRentals) => {
+        if (apiRentals && apiRentals.length > 0) {
+          setRentals(apiRentals as unknown as RentalProduct[]);
+        }
+      })
+      .catch(() => {});
+    return () => ac.abort();
+  }, []);
   const [selectedId, setSelectedId] = useState<string>(rentals[0]?.id ?? '');
   const selectedProduct: RentalProduct =
     rentals.find((r) => r.id === selectedId) ?? rentals[0]!;

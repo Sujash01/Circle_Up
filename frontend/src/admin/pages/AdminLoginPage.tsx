@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
+import circleUpLogo from '@/assets/circle-up-logo.png';
 import { useAdminAuth } from '../context/AdminAuthContext';
 import { useAdminToast } from '../context/AdminToastContext';
 import { ShieldAlert, Lock, Mail, Eye, EyeOff, ArrowRight } from 'lucide-react';
@@ -40,9 +41,7 @@ export function AdminLoginPage() {
     <div className="min-h-screen bg-[#f8f4e2] flex items-center justify-center p-4 selection:bg-[#1e2a1c] selection:text-[#f8f4e2]">
       <div className="max-w-md w-full bg-[#fcfbf7] border border-[#1e2a1c]/15 rounded-3xl p-8 sm:p-10 shadow-xl space-y-6">
         <div className="text-center space-y-1">
-          <div className="inline-flex size-12 rounded-2xl bg-[#1e2a1c] text-[#f8f4e2] items-center justify-center mb-2 shadow-sm">
-            <Lock className="size-6" />
-          </div>
+          <img src={circleUpLogo} alt="CircleUp" className="h-14 w-auto mx-auto mb-2 object-contain" />
           <h1 className="font-serif text-3xl font-bold text-[#1e2a1c] tracking-tight">CircleUp Admin</h1>
           <p className="text-xs uppercase tracking-widest text-[#8b5a3e] font-semibold">Store Management Portal</p>
         </div>

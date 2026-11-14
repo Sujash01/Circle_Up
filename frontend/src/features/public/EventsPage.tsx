@@ -1,10 +1,25 @@
+import { useEffect, useState } from 'react';
 import { Calendar, Clock, MapPin } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { eventService } from '@/services/communityServices';
+import { storefrontApi } from '@/services/storefrontApi';
 
 export function EventsPage() {
-  const events = eventService.getAllEvents();
+  const [events, setEvents] = useState(() => eventService.getAllEvents());
   const savedRegistrations = eventService.getRegistrations();
+
+  useEffect(() => {
+    const ac = new AbortController();
+    storefrontApi
+      .getEvents(ac.signal)
+      .then((apiEvents) => {
+        if (apiEvents && apiEvents.length > 0) {
+          setEvents(apiEvents as typeof events);
+        }
+      })
+      .catch(() => {});
+    return () => ac.abort();
+  }, []);
 
   return (
     <div className="space-y-14">

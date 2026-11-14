@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'rea
 import { createPortal } from 'react-dom';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import bag1 from '@/assets/bag-1.jpg';
+import circleUpLogo from '@/assets/circle-up-logo.png';
 import crumpledPaper from '@/assets/crumpled-paper.jpg';
 import rtw1 from '@/assets/rtw-1.jpg';
 import { useStore } from '@/context/StoreContext';
@@ -51,14 +52,20 @@ const NAV_GROUPS = [
   },
 ];
 
-export function StorefrontTopBanner() {
+export function StorefrontTopBanner({ text }: { text?: string }) {
   return (
     <div className="storefront-top-banner" role="note" aria-label="Store announcement">
-      <span>
-        Use code <strong>THRIFT10</strong> or <strong>CIRCLE20</strong> in bag
-      </span>
-      <i aria-hidden="true">•</i>
-      <span>Plastic-free packaging, always</span>
+      {text ? (
+        <span>{text}</span>
+      ) : (
+        <>
+          <span>
+            Use code <strong>THRIFT10</strong> or <strong>CIRCLE20</strong> in bag
+          </span>
+          <i aria-hidden="true">•</i>
+          <span>Plastic-free packaging, always</span>
+        </>
+      )}
     </div>
   );
 }
@@ -340,12 +347,15 @@ export function StorefrontHeader({ preserveHomeHeader = false }: { preserveHomeH
           <Link
             to="/"
             aria-label="CircleUp home"
-            className="storefront-brand text-cocoa transition-colors hover:text-primary"
+            className="storefront-brand flex items-center transition-transform hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 rounded"
           >
-            <span className="storefront-wordmark">CircleUp</span>
-            <span className="storefront-brand-caption" aria-hidden="true">
-              Thrift · rental · rewear
-            </span>
+            <img
+              src={circleUpLogo}
+              alt="CircleUp"
+              className="h-10 sm:h-11 md:h-12 w-auto object-contain select-none"
+              width={140}
+              height={48}
+            />
           </Link>
         </div>
 
@@ -585,10 +595,14 @@ export function StorefrontFooter() {
           )}
         >
           <div className="sm:col-span-3 lg:col-span-1">
-            <p className="font-body text-[clamp(2.2rem,4vw,3.2rem)] leading-none font-extrabold tracking-tight text-[#d8e1c4]">
-              CircleUp
-            </p>
-            <p className="mt-4 font-display text-[1.5rem] leading-[1.15]">
+            <Link to="/" aria-label="CircleUp home" className="inline-block transition-transform hover:scale-[1.02]">
+              <img
+                src={circleUpLogo}
+                alt="CircleUp"
+                className="h-10 sm:h-12 w-auto object-contain brightness-0 invert opacity-90 mb-3"
+              />
+            </Link>
+            <p className="mt-1 font-display text-[1.5rem] leading-[1.15]">
               Fashion
               <br />
               That Lasts!

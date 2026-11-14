@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
+import circleUpLogo from '@/assets/circle-up-logo.png';
 import { useAdminAuth } from '../context/AdminAuthContext';
 import {
   LayoutDashboard,
@@ -41,12 +42,15 @@ export function AdminSidebar() {
     >
       {/* Brand Cluster */}
       <div className="p-6 border-b border-[#1e2a1c]/10 flex items-center justify-between">
-        <div>
-          <span className="font-serif text-2xl font-semibold tracking-tight text-[#1e2a1c] block">CircleUp</span>
-          <span className="text-[0.68rem] tracking-widest uppercase font-semibold text-[#8b5a3e] block">
-            Admin Workspace
-          </span>
-        </div>
+        <Link to="/admin/overview" className="flex items-center gap-2.5">
+          <img src={circleUpLogo} alt="CircleUp" className="h-8 w-auto object-contain" />
+          <div>
+            <span className="font-serif text-xl font-bold tracking-tight text-[#1e2a1c] block leading-none">CircleUp</span>
+            <span className="text-[0.62rem] tracking-widest uppercase font-semibold text-[#8b5a3e] block mt-0.5">
+              Admin Workspace
+            </span>
+          </div>
+        </Link>
         <span
           className="px-2 py-0.5 text-[0.65rem] font-bold rounded-full uppercase tracking-wider"
           style={{

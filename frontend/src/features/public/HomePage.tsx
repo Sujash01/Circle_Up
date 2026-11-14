@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Heart } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { storefrontApi, type HomepagePayload } from '@/services/storefrontApi';
 
 import bag1 from '@/assets/bag-1.jpg';
 import bag2 from '@/assets/bag-2.jpg';
@@ -236,7 +237,18 @@ function ProductCard({
   const saved = isWishlisted(product.id);
   return (
     <article className="home-product-card group relative h-full rounded-[1.4rem] border border-foreground/15 bg-card/95 p-3 shadow-soft backdrop-blur-xs">
-      <Link to={product.to} className="block rounded-[1rem] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary">
+      <Link
+        to={product.to}
+        onMouseEnter={() => {
+          const slug = product.to.replace('/product/', '');
+          if (slug) storefrontApi.prefetchProduct(slug);
+        }}
+        onFocus={() => {
+          const slug = product.to.replace('/product/', '');
+          if (slug) storefrontApi.prefetchProduct(slug);
+        }}
+        className="block rounded-[1rem] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+      >
         <div className="absolute top-4 left-4 z-10 rounded-full border border-primary/20 bg-primary px-2.5 py-1 text-[0.62rem] font-bold tracking-wider text-primary-foreground uppercase shadow-sm">
           {badge}
         </div>
@@ -502,7 +514,8 @@ const VALUES = [
 ];
 
 /** Slow looping band of brand values; second copy is hidden from assistive tech. */
-function ValuesMarquee() {
+function ValuesMarquee({ phrases }: { phrases?: string[] }) {
+  const activeValues = phrases && phrases.length > 0 ? phrases : VALUES;
   return (
     <div
       className="values-marquee relative z-20 overflow-hidden border-y border-[#f7f3e1]/15 bg-footer py-3.5 text-[#f8f4e2]"
@@ -516,7 +529,7 @@ function ValuesMarquee() {
             aria-hidden={duplicate || undefined}
             className="flex w-max shrink-0 items-center"
           >
-            {VALUES.map((value) => (
+            {activeValues.map((value) => (
               <li
                 key={`${value}-${duplicate ? 'duplicate' : 'primary'}`}
                 className="flex items-center gap-8 pr-8 text-[0.78rem] font-semibold tracking-[0.22em] uppercase"
@@ -555,7 +568,23 @@ const worlds: Array<{
   },
 ];
 
-function WorldsSection() {
+function WorldsSection({ tiles }: { tiles?: Array<{ to: string; title: string; note: string; img: string; alt: string }> }) {
+  const activeTiles = tiles && tiles.length > 0
+    ? tiles.map((t) => {
+        // Find matching local asset fallback if available
+        const local = worlds.find((w) => w.to === t.to);
+        return {
+          to: t.to,
+          title: t.title,
+          note: t.note,
+          img: t.img || local?.img || rtw3,
+          alt: t.alt || local?.alt || t.title,
+          srcSet: local?.srcSet,
+          sizes: local?.sizes,
+        };
+      })
+    : worlds;
+
   return (
     <section id="worlds" className={cn('home-vine-section scroll-mt-28 py-12 lg:py-16', pad)}>
       <SectionHeading
@@ -565,7 +594,7 @@ function WorldsSection() {
         to="/new-arrivals"
       />
       <div className="mt-6 grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-4">
-        {worlds.map((w, idx) => (
+        {activeTiles.map((w, idx) => (
           <Reveal key={w.to} delay={idx * 80}>
             <Link
               to={w.to}
@@ -720,6 +749,21 @@ export function HomePage() {
     };
   }, []);
 
+  const [homepageData, setHomepageData] = useState<HomepagePayload | null>(null);
+
+  useEffect(() => {
+    const ac = new AbortController();
+    storefrontApi
+      .getHomepage(ac.signal)
+      .then((data) => setHomepageData(data))
+      .catch((err) => {
+        if (err.name !== 'CanceledError' && err.name !== 'AbortError') {
+          // Graceful fallback to static data
+        }
+      });
+    return () => ac.abort();
+  }, []);
+
   const liveReadyToWear: ProductPreview[] = allProducts
     .filter((p) => p.category === 'womens-one-piece' || p.category === 'womens-upperwear')
     .slice(0, 4)
@@ -748,8 +792,49 @@ export function HomePage() {
       to: `/product/${p.slug}`,
     }));
 
-  const activeReadyToWear = isDbLive ? liveReadyToWear : (liveReadyToWear.length > 0 ? liveReadyToWear : readyToWear);
-  const activeHandbags = isDbLive ? liveHandbags : (liveHandbags.length > 0 ? liveHandbags : handbags);
+  const apiReadyToWear: ProductPreview[] = homepageData?.collections?.readyToWear
+    ? homepageData.collections.readyToWear.map((p) => ({
+        id: p.id,
+        img: p.img || rtw1,
+        name: p.name,
+        price: p.price,
+        width: 912,
+        height: 1200,
+        aspect: 'aspect-[4/5]',
+        to: p.to,
+      }))
+    : [];
+
+  const apiHandbags: ProductPreview[] = homepageData?.collections?.handbags
+    ? homepageData.collections.handbags.map((p) => ({
+        id: p.id,
+        img: p.img || bag1,
+        name: p.name,
+        price: p.price,
+        width: 1008,
+        height: 1008,
+        aspect: 'aspect-square',
+        to: p.to,
+      }))
+    : [];
+
+  const activeReadyToWear =
+    apiReadyToWear.length > 0
+      ? apiReadyToWear
+      : isDbLive
+        ? liveReadyToWear
+        : liveReadyToWear.length > 0
+          ? liveReadyToWear
+          : readyToWear;
+
+  const activeHandbags =
+    apiHandbags.length > 0
+      ? apiHandbags
+      : isDbLive
+        ? liveHandbags
+        : liveHandbags.length > 0
+          ? liveHandbags
+          : handbags;
 
   return (
     <div className="relative min-h-screen w-full bg-[#f8f4e2] overflow-x-clip">
@@ -766,14 +851,14 @@ export function HomePage() {
           <div aria-hidden className="paper-ambient-sheen" />
 
           <div className="home-vine-footer relative z-20">
-            <StorefrontTopBanner />
+            <StorefrontTopBanner text={homepageData?.announcementText} />
             <StorefrontHeader preserveHomeHeader />
             <div className="home-vine-frame relative">
               <main id="main" className="relative z-20">
-                <TreasureChestHero />
+                <TreasureChestHero picks={homepageData?.chestPicks} />
                 <div ref={belowHeroRef} className="relative">
                   <div className="relative z-20">
-                    <ValuesMarquee />
+                    <ValuesMarquee phrases={homepageData?.marqueePhrases} />
                     <WaveDivider className="relative z-20 -mb-px bg-background text-sage-tint" />
                   </div>
                   <div ref={vineTrailRef} className="relative">
@@ -795,7 +880,7 @@ export function HomePage() {
                         products={activeHandbags}
                         to="/accessories"
                       />
-                      <WorldsSection />
+                      <WorldsSection tiles={homepageData?.categoryTiles} />
                       <StorySection />
                       <WinterSection />
                       <CommunitySection />

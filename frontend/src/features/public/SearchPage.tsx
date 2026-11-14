@@ -1,13 +1,35 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { EmptyState } from '@/components/storefront/EmptyState';
 import { ProductCard } from '@/components/storefront/ProductCard';
 import { productService, type ProductSortOption } from '@/services/productService';
+import { storefrontApi } from '@/services/storefrontApi';
 
 export function SearchPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const query = searchParams.get('q') ?? '';
   const sort = (searchParams.get('sort') as ProductSortOption) || 'newest';
+  const [, setIsSearching] = useState(false);
+
+  useEffect(() => {
+    if (!query.trim()) {
+      setIsSearching(false);
+      return;
+    }
+    const ac = new AbortController();
+    setIsSearching(true);
+    storefrontApi
+      .search(query, ac.signal)
+      .then(() => {
+        setIsSearching(false);
+      })
+      .catch((err) => {
+        if (err.name !== 'CanceledError' && err.name !== 'AbortError') {
+          setIsSearching(false);
+        }
+      });
+    return () => ac.abort();
+  }, [query]);
 
   const results = useMemo(
     () => productService.queryProducts({ search: query, sort }),

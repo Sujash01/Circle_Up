@@ -24,7 +24,7 @@ import {
 import { useChestScroll } from './chest/useChestScroll';
 import './TreasureChestHero.css';
 
-interface ChestProduct {
+export interface ChestProduct {
   name: string;
   price: string;
   tag: string;
@@ -117,7 +117,7 @@ const GARMENT_PATHS: Record<FloatingGarment['kind'], string> = {
  * Interactive 3D scroll-driven treasure chest hero ported from hero (2).html
  * and wired with CircleUp's real catalog products and React Router links.
  */
-export function TreasureChestHero() {
+export function TreasureChestHero({ picks }: { picks?: ChestProduct[] } = {}) {
   const heroRef = useRef<HTMLElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<HTMLDivElement>(null);
@@ -142,7 +142,7 @@ export function TreasureChestHero() {
   const garmentRefs = useRef<Array<HTMLDivElement | null>>([]);
   const frameRendererRef = useRef<(progress: number, now: number) => void>(() => {});
 
-  const visibleProducts = CHEST_PRODUCTS;
+  const visibleProducts = picks && picks.length > 0 ? picks.slice(0, 6) : CHEST_PRODUCTS;
   useChestScroll(heroRef, stageRef, frameRendererRef);
 
   useEffect(() => {

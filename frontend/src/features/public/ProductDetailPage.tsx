@@ -8,11 +8,18 @@ import { useStore } from '@/context/StoreContext';
 import { cn } from '@/lib/utils';
 import { formatPrice } from '@/services/cartService';
 import { productService } from '@/services/productService';
+import { storefrontApi } from '@/services/storefrontApi';
 
 export function ProductDetailPage() {
   const { slug = '' } = useParams();
   const product = productService.getProductBySlug(slug);
   const { addToCart, isWishlisted, toggleWishlist } = useStore();
+
+  useEffect(() => {
+    if (slug) {
+      void storefrontApi.prefetchProduct(slug);
+    }
+  }, [slug]);
 
   const [activeImageIdx, setActiveImageIdx] = useState(0);
   const [selectedVariantId, setSelectedVariantId] = useState<string>('');

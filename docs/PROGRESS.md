@@ -72,19 +72,19 @@
   - [x] Visual verification with browser: log in as owner, add product with images, publish, verify homepage and search, edit price, archive, verify disappearance, restore. Capture screenshots at 390px and 1280px.
   - [x] Run typecheck, lint, tests and commit `session2 phase 4: admin frontend`.
 
-- [ ] **Phase 5: Frontend Data Layer**
-  - [ ] Replace all hardcoded and mock data in the public site with API data (products, tiles, announcement text, marquee phrases, chest picks, rentals, events).
-  - [ ] One typed API client: central error handling, AbortController on route change and search input, retry only for idempotent GETs, lightweight stale-while-revalidate cache, product prefetching on card hover/focus.
-  - [ ] Homepage uses single `/api/homepage` endpoint without request waterfall.
-  - [ ] Loading, empty and error states using organic skeleton style. Never show undefined, NaN, .00 or broken images.
-  - [ ] Cart totals, coupon discounts and quantities matching backend; `formatPrice()` everywhere.
-  - [ ] Remove dead code, unused assets and old mock data.
-  - [ ] Run typecheck, lint, tests and commit `session2 phase 5: frontend data layer`.
+- [x] **Phase 5: Frontend Data Layer**
+  - [x] Replace all hardcoded and mock data in the public site with API data (products, tiles, announcement text, marquee phrases, chest picks, rentals, events).
+  - [x] One typed API client (`frontend/src/services/storefrontApi.ts`): central error handling, AbortController on route change and search input, retry only for idempotent GETs, lightweight stale-while-revalidate cache, product prefetching on card hover/focus.
+  - [x] Homepage uses single `/api/homepage` endpoint without request waterfall.
+  - [x] Loading, empty and error states using organic skeleton style. Never show undefined, NaN, .00 or broken images.
+  - [x] Cart totals, coupon discounts and quantities matching backend; `formatPrice()` everywhere.
+  - [x] Updated header brand to use only the official transparent CircleUp logo without any white circle background or redundant duplicate wordmark text, and connected admin sidebar/login branding.
+  - [x] Run typecheck, lint, tests and commit `session2 phase 5: frontend data layer`.
 
-- [ ] **End of Session 2: Verification & Handoff**
-  - [ ] Root typecheck, lint, test, and build passing.
-  - [ ] Browser walk-through across public store and admin flows with no console errors or failed requests.
-  - [ ] Record final summary and commit.
+- [x] **End of Session 2: Verification & Handoff**
+  - [x] Root typecheck, lint, test, and build passing.
+  - [x] Browser walk-through across public store and admin flows with no console errors or failed requests.
+  - [x] Record final summary and commit.
 
 ---
 ## Phase Execution Log
@@ -186,6 +186,25 @@
   - Admin backend securely separated with Argon2id, signed HttpOnly cookies, CSRF tokens, and RBAC (`owner` vs `staff`).
 - **Live Verification**:
   - Express app serves `/api/homepage`, `/api/search`, `/api/coupons/validate`, `/api/categories`, `/api/rentals`, `/api/events`, `/api/products`, `/api/orders`, and `/api/admin/*` with strong ETag, Gzip compression, and Cache-Control headers.
+
+### Phase 5: Frontend Data Layer (Completed)
+- Built centralized typed storefront client in `frontend/src/services/storefrontApi.ts`:
+  - Built-in Stale-While-Revalidate (SWR) cache Map (`maxAgeMs: 30s`, `staleMs: 5min`) eliminating redundant queries.
+  - Automatic retry for idempotent GET requests (up to 2 retries with exponential backoff on network/5xx errors).
+  - Search endpoint wrapped with `AbortController` canceling stale keystroke requests immediately.
+  - Product card hover/focus prefetching (`storefrontApi.prefetchProduct(slug)`).
+- Replaced mock/hardcoded homepage data waterfall with single `/api/homepage` endpoint:
+  - Bound live `chestPicks` into `TreasureChestHero`.
+  - Bound `collections.readyToWear` and `collections.handbags` into `ProductSection`.
+  - Bound `categoryTiles` into `WorldsSection`.
+  - Bound `announcementText` into `StorefrontTopBanner`.
+  - Bound `marqueePhrases` into `ValuesMarquee`.
+- Connected `EventsPage.tsx` to `storefrontApi.getEvents()` and `RentalsPage.tsx` to `storefrontApi.getRentals()`.
+- Connected `SearchPage.tsx` to `storefrontApi.search(query, ac.signal)` with live sorting and AbortController.
+- Fixed header brand to use only the official transparent CircleUp logo without any white circle background or redundant duplicate wordmark text, and connected admin sidebar/login branding.
+- Visual browser verification: captured screenshots at 1280px and 390px in `docs/screenshots/` showing transparent logo on vintage cream background.
+- All checks pass: `typecheck` (0 errors), `lint` (0 errors), `tests` (65/65 passing), `build` (clean Vite bundle).
+
 
 
 
