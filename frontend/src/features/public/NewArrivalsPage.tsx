@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { EmptyState } from '@/components/storefront/EmptyState';
 import { ProductCard } from '@/components/storefront/ProductCard';
 import { cn } from '@/lib/utils';
-import { formatInr } from '@/services/cartService';
+import { formatPrice } from '@/services/cartService';
 import { productService, type ProductSortOption } from '@/services/productService';
 import type { ProductCategorySlug } from '@/types/storefront';
 
@@ -107,7 +107,7 @@ export function NewArrivalsPage() {
             <p className="text-sm leading-relaxed text-foreground/85">{spotlight.description}</p>
             <div className="pt-2 flex flex-wrap items-center gap-6">
               <span className="text-xl font-bold text-primary tabular-nums">
-                {formatInr(spotlight.price)}
+                {formatPrice(spotlight.price)}
               </span>
               <span className="text-xs text-terracotta">
                 Condition: {spotlight.condition} · Sizes: {spotlight.sizes.join(', ')}

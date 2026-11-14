@@ -1,5 +1,5 @@
-import community1 from '@/assets/community-1.jpg';
-import community2 from '@/assets/community-2.jpg';
+import community1 from '@/assets/community-1.webp';
+import community2 from '@/assets/community-1.webp';
 import lookbook from '@/assets/lookbook.jpg';
 import type { EventItem } from '@/types/storefront';
 

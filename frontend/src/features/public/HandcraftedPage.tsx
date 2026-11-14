@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { formatInr } from '@/services/cartService';
+import { formatPrice } from '@/services/cartService';
 import { productService } from '@/services/productService';
 
 export function HandcraftedPage() {
@@ -54,7 +54,7 @@ export function HandcraftedPage() {
 
                 <div className="pt-2 flex flex-wrap items-center gap-6">
                   <span className="text-xl font-bold text-primary tabular-nums">
-                    {formatInr(product.price)}
+                    {formatPrice(product.price)}
                   </span>
                   <span className="text-xs text-terracotta">
                     {product.stock > 0 ? `${product.stock} piece(s) ready` : 'Currently sold out'}

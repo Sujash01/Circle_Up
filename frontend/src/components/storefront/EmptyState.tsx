@@ -25,7 +25,7 @@ export function EmptyState({
       {actionLabel && actionTo && (
         <Link
           to={actionTo}
-          className="mt-6 inline-block bg-primary px-6 py-2.5 text-xs font-semibold uppercase tracking-wider text-primary-foreground hover:bg-forest-deep transition-colors"
+          className="mt-6 inline-flex min-h-[44px] items-center justify-center bg-primary px-6 py-2.5 text-xs font-semibold uppercase tracking-wider text-primary-foreground hover:bg-forest-deep transition-colors"
         >
           {actionLabel}
         </Link>
@@ -34,7 +34,7 @@ export function EmptyState({
         <button
           type="button"
           onClick={onAction}
-          className="mt-6 inline-block bg-primary px-6 py-2.5 text-xs font-semibold uppercase tracking-wider text-primary-foreground hover:bg-forest-deep transition-colors"
+          className="mt-6 inline-flex min-h-[44px] items-center justify-center bg-primary px-6 py-2.5 text-xs font-semibold uppercase tracking-wider text-primary-foreground hover:bg-forest-deep transition-colors"
         >
           {actionLabel}
         </button>

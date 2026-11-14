@@ -1,6 +1,6 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import { cn } from '@/lib/utils';
-import { formatInr } from '@/services/cartService';
+import { formatPrice } from '@/services/cartService';
 import { rentalService } from '@/services/rentalService';
 import type { RentalProduct, SimulatedRentalRequest } from '@/types/storefront';
 
@@ -137,11 +137,11 @@ export function RentalsPage() {
                         {item.name}
                       </span>
                       <span className="text-xs font-bold text-primary shrink-0 tabular-nums">
-                        {formatInr(item.dailyRate)} / day
+                        {formatPrice(item.dailyRate)} / day
                       </span>
                     </div>
                     <p className="text-xs text-terracotta">
-                      Deposit: {formatInr(item.securityDeposit)} · {item.availabilityLabel}
+                      Deposit: {formatPrice(item.securityDeposit)} · {item.availabilityLabel}
                     </p>
                   </div>
                 </button>
@@ -254,21 +254,21 @@ export function RentalsPage() {
               <div className="flex justify-between">
                 <span className="text-terracotta">
                   Rental Fee ({quote.durationDays} day{quote.durationDays === 1 ? '' : 's'} ×{' '}
-                  {formatInr(selectedProduct.dailyRate)})
+                  {formatPrice(selectedProduct.dailyRate)})
                 </span>
                 <span className="font-medium tabular-nums">
-                  {formatInr(quote.estimatedRentalFee)}
+                  {formatPrice(quote.estimatedRentalFee)}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-terracotta">Refundable Security Deposit</span>
                 <span className="font-medium tabular-nums">
-                  {formatInr(quote.securityDeposit)}
+                  {formatPrice(quote.securityDeposit)}
                 </span>
               </div>
               <div className="flex justify-between pt-2 border-t border-foreground/10 font-bold text-cocoa">
                 <span>Estimated Initial Payable</span>
-                <span className="text-primary tabular-nums">{formatInr(quote.estimatedTotal)}</span>
+                <span className="text-primary tabular-nums">{formatPrice(quote.estimatedTotal)}</span>
               </div>
 
               {!quote.valid && quote.error && (
@@ -365,7 +365,7 @@ export function RentalsPage() {
                 to {latestRequest.endDate} ({latestRequest.durationDays} days)
               </p>
               <p className="text-terracotta">
-                Estimated total: {formatInr(latestRequest.estimatedTotal)} (incl. deposit). This is
+                Estimated total: {formatPrice(latestRequest.estimatedTotal)} (incl. deposit). This is
                 a frontend simulation, not a confirmed reservation.
               </p>
             </div>
@@ -390,7 +390,7 @@ export function RentalsPage() {
                   {req.startDate} → {req.endDate} ({req.durationDays} days)
                 </p>
                 <p className="font-semibold text-primary tabular-nums">
-                  Est. {formatInr(req.estimatedTotal)} (Simulated — not confirmed)
+                  Est. {formatPrice(req.estimatedTotal)} (Simulated — not confirmed)
                 </p>
               </div>
             ))}

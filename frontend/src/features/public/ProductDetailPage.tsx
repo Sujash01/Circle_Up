@@ -3,9 +3,10 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { EmptyState } from '@/components/storefront/EmptyState';
 import { ProductCard } from '@/components/storefront/ProductCard';
+import { Blob } from '@/components/ui/Blob';
 import { useStore } from '@/context/StoreContext';
 import { cn } from '@/lib/utils';
-import { formatInr } from '@/services/cartService';
+import { formatPrice } from '@/services/cartService';
 import { productService } from '@/services/productService';
 
 export function ProductDetailPage() {
@@ -72,11 +73,11 @@ export function ProductDetailPage() {
     <div className="space-y-16">
       {/* Breadcrumb navigation */}
       <nav aria-label="Breadcrumb" className="text-xs text-terracotta flex flex-wrap items-center gap-2">
-        <Link to="/" className="hover:text-primary">
+        <Link to="/" className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center hover:text-primary">
           Home
         </Link>
         <span>/</span>
-        <Link to={`/${product.category}`} className="hover:text-primary">
+        <Link to={`/${product.category}`} className="inline-flex min-h-[44px] items-center hover:text-primary">
           {product.categoryLabel}
         </Link>
         <span>/</span>
@@ -87,13 +88,17 @@ export function ProductDetailPage() {
       <section className="grid gap-10 lg:grid-cols-[1.08fr_0.92fr] items-start">
         {/* Image gallery */}
         <div className="space-y-4">
-          <div className="overflow-hidden bg-[#ece6d2]">
-            <img
-              src={product.images[activeImageIdx] ?? product.images[0]}
-              alt={`${product.name} view ${activeImageIdx + 1}`}
-              className="aspect-[4/4.6] w-full object-cover object-top"
-            />
-          </div>
+          <Blob
+            src={product.images[activeImageIdx] ?? product.images[0]}
+            alt={`${product.name} view ${activeImageIdx + 1}`}
+            width={1000}
+            height={1150}
+            loading="eager"
+            shape="wavy-oval"
+            outline
+            className="aspect-[4/4.6] w-full"
+            imageClassName="object-top"
+          />
 
           {product.images.length > 1 && (
             <div className="flex gap-3 overflow-x-auto pb-1">
@@ -104,13 +109,13 @@ export function ProductDetailPage() {
                   onClick={() => setActiveImageIdx(idx)}
                   aria-label={`View image ${idx + 1}`}
                   className={cn(
-                    'w-20 shrink-0 overflow-hidden border-2 transition-opacity',
+                    'w-20 shrink-0 overflow-hidden border-2 transition-opacity shape-arch',
                     activeImageIdx === idx
                       ? 'border-primary opacity-100'
                       : 'border-transparent opacity-65 hover:opacity-100',
                   )}
                 >
-                  <img src={imgSrc} alt="" className="aspect-[4/5] w-full object-cover object-top" />
+                  <img src={imgSrc} alt="" width={100} height={125} loading="lazy" decoding="async" className="aspect-[4/5] w-full object-cover object-top" />
                 </button>
               ))}
             </div>
@@ -134,11 +139,11 @@ export function ProductDetailPage() {
 
             <div className="pt-2 flex items-baseline gap-4">
               <span className="text-2xl font-bold text-primary tabular-nums">
-                {formatInr(activePrice)}
+                {formatPrice(activePrice)}
               </span>
               {product.originalPrice && product.originalPrice > activePrice && (
                 <span className="text-sm text-muted-foreground line-through tabular-nums">
-                  {formatInr(product.originalPrice)}
+                  {formatPrice(product.originalPrice)}
                 </span>
               )}
             </div>
@@ -206,7 +211,7 @@ export function ProductDetailPage() {
                       setAddedFeedback(false);
                     }}
                     className={cn(
-                      'px-4 py-2 text-xs font-medium border transition-colors',
+                      'organic-control px-4 py-2 text-xs font-medium border transition-colors',
                       soldOut && 'opacity-40 line-through cursor-not-allowed border-foreground/20',
                       !soldOut &&
                         isSelected &&
@@ -228,13 +233,13 @@ export function ProductDetailPage() {
             <span className="text-xs font-semibold uppercase tracking-wider text-cocoa">
               Quantity
             </span>
-            <div className="inline-flex items-center border border-foreground/30">
+            <div className="organic-control inline-flex items-center border border-foreground/30">
               <button
                 type="button"
                 aria-label="Decrease quantity"
                 disabled={quantity <= 1}
                 onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                className="p-2 text-cocoa disabled:opacity-35 hover:text-primary"
+                className="min-h-[44px] min-w-[44px] p-2 text-cocoa disabled:opacity-35 hover:text-primary"
               >
                 <Minus className="size-3.5" />
               </button>
@@ -244,7 +249,7 @@ export function ProductDetailPage() {
                 aria-label="Increase quantity"
                 disabled={!selectedVariant || quantity >= maxStock}
                 onClick={() => setQuantity((q) => Math.min(maxStock, q + 1))}
-                className="p-2 text-cocoa disabled:opacity-35 hover:text-primary"
+                className="min-h-[44px] min-w-[44px] p-2 text-cocoa disabled:opacity-35 hover:text-primary"
               >
                 <Plus className="size-3.5" />
               </button>
@@ -286,7 +291,7 @@ export function ProductDetailPage() {
           {addedFeedback && (
             <div className="flex items-center justify-between border border-primary/30 bg-accent/50 px-4 py-3 text-xs">
               <span className="text-cocoa font-medium">Item added to your shopping bag.</span>
-              <Link to="/cart" className="font-semibold text-primary underline underline-offset-4">
+              <Link to="/cart" className="inline-flex min-h-[44px] items-center font-semibold text-primary underline underline-offset-4">
                 View Bag &amp; WhatsApp Checkout →
               </Link>
             </div>
@@ -299,7 +304,7 @@ export function ProductDetailPage() {
         <section className="pt-8 border-t border-foreground/15 space-y-6">
           <div className="flex items-baseline justify-between">
             <h2 className="font-display text-2xl text-cocoa">You Might Also Like</h2>
-            <Link to={`/${product.category}`} className="text-xs text-terracotta hover:text-primary">
+            <Link to={`/${product.category}`} className="inline-flex min-h-[44px] items-center text-xs text-terracotta hover:text-primary">
               Explore {product.categoryLabel} →
             </Link>
           </div>

@@ -1,8 +1,9 @@
 import { Trash2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { EmptyState } from '@/components/storefront/EmptyState';
+import { Blob } from '@/components/ui/Blob';
 import { useStore } from '@/context/StoreContext';
-import { formatInr } from '@/services/cartService';
+import { formatPrice } from '@/services/cartService';
 import type { Product } from '@/types/storefront';
 
 export function WishlistPage() {
@@ -52,23 +53,27 @@ export function WishlistPage() {
           const singleStock = product.variants.filter((v) => v.stock > 0).length === 1;
           return (
             <article key={product.id} className="flex flex-col">
-              <Link to={`/product/${product.slug}`} className="block overflow-hidden bg-[#ece6d2]">
-                <img
+              <Link to={`/product/${product.slug}`} className="group block overflow-hidden bg-tile">
+                <Blob
                   src={product.images[0]}
                   alt={product.name}
-                  className="aspect-[4/5] w-full object-cover object-top hover:scale-[1.03] transition-transform duration-500"
+                  width={800}
+                  height={1000}
+                  shape="arch"
+                  className="aspect-[4/5] w-full"
+                  imageClassName="object-top transition-transform duration-500 group-hover:scale-[1.03]"
                 />
               </Link>
 
               <div className="mt-3 space-y-1 flex-1">
                 <Link
                   to={`/product/${product.slug}`}
-                  className="block text-sm font-medium text-cocoa hover:text-primary line-clamp-1"
+                  className="flex min-h-[44px] items-center text-sm font-medium text-cocoa hover:text-primary line-clamp-1"
                 >
                   {product.name}
                 </Link>
                 <p className="text-sm font-bold text-primary tabular-nums">
-                  {formatInr(product.price)}
+                  {formatPrice(product.price)}
                 </p>
                 <p className="text-xs text-terracotta">
                   {product.condition} · {product.availability}
@@ -80,7 +85,7 @@ export function WishlistPage() {
                   type="button"
                   disabled={product.stock <= 0}
                   onClick={() => handleMoveToBag(product)}
-                  className="flex-1 bg-primary py-2 text-[0.72rem] font-semibold uppercase tracking-wider text-primary-foreground hover:bg-forest-deep disabled:opacity-40"
+                  className="flex min-h-[44px] flex-1 items-center justify-center bg-primary py-2 text-[0.72rem] font-semibold uppercase tracking-wider text-primary-foreground hover:bg-forest-deep disabled:opacity-40"
                 >
                   {product.stock <= 0
                     ? 'Sold Out'
@@ -92,7 +97,7 @@ export function WishlistPage() {
                   type="button"
                   aria-label={`Remove ${product.name} from wishlist`}
                   onClick={() => removeFromWishlist(product.id)}
-                  className="border border-foreground/25 p-2 text-terracotta hover:text-destructive"
+                  className="flex min-h-[44px] min-w-[44px] items-center justify-center border border-foreground/25 p-2 text-terracotta hover:text-destructive"
                 >
                   <Trash2 className="size-4" />
                 </button>

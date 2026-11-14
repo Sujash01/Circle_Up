@@ -9,9 +9,12 @@ const CART_STORAGE_KEY = 'circleup_cart_v1';
 export const WHATSAPP_BUSINESS_NUMBER =
   import.meta.env.VITE_WHATSAPP_NUMBER || '910000000000';
 
-export function formatInr(amount: number): string {
-  return `₹ ${amount.toLocaleString('en-IN')}.00`;
+export function formatPrice(amount: number): string {
+  return `${String.fromCodePoint(0x20b9)}${amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 }
+
+/** @deprecated Use formatPrice for all storefront price labels. */
+export const formatInr = formatPrice
 
 export function generateCartId(): string {
   const now = new Date();

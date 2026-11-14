@@ -2,13 +2,20 @@ import { CheckCircle2, Copy, ExternalLink, Minus, Package, Plus, Trash2, X } fro
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { EmptyState } from '@/components/storefront/EmptyState';
+import { Blob } from '@/components/ui/Blob';
 import { useStore } from '@/context/StoreContext';
 import { apiClient } from '@/services/apiClient';
-import {
-  cartService,
-  formatInr,
-  WHATSAPP_BUSINESS_NUMBER,
-} from '@/services/cartService';
+import { cartService, formatPrice } from '@/services/cartService';
+
+type PaymentMethod = 'WHATSAPP_UPI' | 'CASH_ON_DELIVERY' | 'ONLINE_UPI';
+
+function isPaymentMethod(value: string): value is PaymentMethod {
+  return (
+    value === 'WHATSAPP_UPI' ||
+    value === 'CASH_ON_DELIVERY' ||
+    value === 'ONLINE_UPI'
+  );
+}
 
 interface PlacedOrderDetails {
   orderNumber: string;
@@ -52,7 +59,6 @@ export function CartPage() {
   const [promoInput, setPromoInput] = useState(cart.promoCode ?? '');
   const [promoError, setPromoError] = useState('');
   const [customerNote, setCustomerNote] = useState('');
-  const [whatsappOpened, setWhatsappOpened] = useState(false);
 
   // Direct Online Checkout state
   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
@@ -69,13 +75,13 @@ export function CartPage() {
     city: '',
     state: '',
     postalCode: '',
-    paymentMethod: 'WHATSAPP_UPI' as 'WHATSAPP_UPI' | 'CASH_ON_DELIVERY' | 'ONLINE_UPI',
+    paymentMethod: 'WHATSAPP_UPI' as PaymentMethod,
   });
 
   if (placedOrder) {
     return (
       <div className="max-w-2xl mx-auto py-12 px-4 space-y-8">
-        <div className="border border-foreground/15 bg-card p-8 sm:p-10 space-y-6 shadow-sm">
+        <div className="organic-panel border border-foreground/15 bg-card p-8 sm:p-10 space-y-6 shadow-sm">
           <div className="flex items-center gap-3 text-primary">
             <CheckCircle2 className="size-8" />
             <div>
@@ -106,7 +112,7 @@ export function CartPage() {
                     {it.size && <span className="ml-2 text-muted-foreground">Size: {it.size}</span>}
                   </div>
                   <span className="font-semibold text-cocoa">
-                    {formatInr(it.price * it.quantity)}
+                    {formatPrice(it.price * it.quantity)}
                   </span>
                 </div>
               ))}
@@ -114,7 +120,7 @@ export function CartPage() {
 
             <div className="pt-3 border-t border-foreground/15 flex justify-between text-sm font-bold text-cocoa">
               <span>Total Paid / Payable</span>
-              <span className="text-primary">{formatInr(placedOrder.totalAmount)}</span>
+              <span className="text-primary">{formatPrice(placedOrder.totalAmount)}</span>
             </div>
           </div>
 
@@ -238,7 +244,7 @@ export function CartPage() {
           <button
             type="button"
             onClick={clearCart}
-            className="text-destructive underline underline-offset-4 hover:opacity-80"
+            className="inline-flex min-h-[44px] items-center text-destructive underline underline-offset-4 hover:opacity-80"
           >
             Clear bag
           </button>
@@ -250,11 +256,15 @@ export function CartPage() {
         <div className="divide-y divide-foreground/15">
           {cart.items.map((item) => (
             <div key={item.key} className="py-6 first:pt-0 flex gap-5 items-start">
-              <Link to={`/product/${item.slug}`} className="w-24 sm:w-28 shrink-0 bg-[#ece6d2]">
-                <img
+              <Link to={`/product/${item.slug}`} className="w-24 sm:w-28 shrink-0 bg-tile">
+                <Blob
                   src={item.image}
                   alt={item.name}
-                  className="aspect-[4/5] w-full object-cover object-top"
+                  width={800}
+                  height={1000}
+                  shape="arch"
+                  className="aspect-[4/5] w-full"
+                  imageClassName="object-top"
                 />
               </Link>
 
@@ -263,7 +273,7 @@ export function CartPage() {
                   <div>
                     <Link
                       to={`/product/${item.slug}`}
-                      className="font-medium text-cocoa hover:text-primary block"
+                      className="inline-flex min-h-[44px] items-center font-medium text-cocoa hover:text-primary"
                     >
                       {item.name}
                     </Link>
@@ -272,7 +282,7 @@ export function CartPage() {
                     </span>
                   </div>
                   <span className="font-bold text-primary tabular-nums shrink-0">
-                    {formatInr(item.unitPrice * item.quantity)}
+                    {formatPrice(item.unitPrice * item.quantity)}
                   </span>
                 </div>
 
@@ -282,16 +292,16 @@ export function CartPage() {
                 </p>
 
                 <p className="text-xs text-muted-foreground">
-                  Price: {formatInr(item.unitPrice)} each
+                  Price: {formatPrice(item.unitPrice)} each
                 </p>
 
                 <div className="flex items-center gap-4 pt-2">
-                  <div className="inline-flex items-center border border-foreground/20">
+                  <div className="organic-control inline-flex items-center border border-foreground/20">
                     <button
                       type="button"
                       aria-label="Decrease quantity"
                       onClick={() => updateCartQuantity(item.key, item.quantity - 1)}
-                      className="px-2 py-1 text-cocoa hover:bg-secondary/60"
+                      className="min-h-[44px] min-w-[44px] px-2 py-1 text-cocoa hover:bg-secondary/60"
                     >
                       <Minus className="size-3" />
                     </button>
@@ -303,7 +313,7 @@ export function CartPage() {
                       aria-label="Increase quantity"
                       disabled={item.quantity >= item.maxStock}
                       onClick={() => updateCartQuantity(item.key, item.quantity + 1)}
-                      className="px-2 py-1 text-cocoa hover:bg-secondary/60 disabled:opacity-40"
+                      className="min-h-[44px] min-w-[44px] px-2 py-1 text-cocoa hover:bg-secondary/60 disabled:opacity-40"
                     >
                       <Plus className="size-3" />
                     </button>
@@ -312,7 +322,7 @@ export function CartPage() {
                   <button
                     type="button"
                     onClick={() => removeFromCart(item.key)}
-                    className="inline-flex items-center gap-1 text-xs text-destructive hover:underline"
+                    className="inline-flex min-h-[44px] items-center gap-1 text-xs text-destructive hover:underline"
                   >
                     <Trash2 className="size-3" />
                     <span>Remove</span>
@@ -330,7 +340,7 @@ export function CartPage() {
         </div>
 
         {/* Order Summary & Actions */}
-        <aside className="border border-foreground/15 bg-card p-6 space-y-6 shadow-sm">
+        <aside className="organic-panel border border-foreground/15 bg-card p-6 space-y-6 shadow-sm">
           <h2 className="font-display text-xl text-cocoa border-b border-foreground/15 pb-3">
             Bag Summary
           </h2>
@@ -366,12 +376,12 @@ export function CartPage() {
           <div className="space-y-2 border-y border-foreground/15 py-4 text-xs text-cocoa">
             <div className="flex justify-between">
               <span className="text-terracotta">Subtotal</span>
-              <span className="tabular-nums font-medium">{formatInr(totals.subtotal)}</span>
+              <span className="tabular-nums font-medium">{formatPrice(totals.subtotal)}</span>
             </div>
             {totals.discount > 0 && (
               <div className="flex justify-between text-primary">
                 <span>Discount ({totals.discountLabel || cart.promoCode})</span>
-                <span className="tabular-nums font-medium">-{formatInr(totals.discount)}</span>
+                <span className="tabular-nums font-medium">-{formatPrice(totals.discount)}</span>
               </div>
             )}
             <div className="flex justify-between">
@@ -387,7 +397,7 @@ export function CartPage() {
             )}
             <div className="flex justify-between pt-2 border-t border-foreground/10 font-bold text-base text-cocoa">
               <span>Estimated Total</span>
-              <span className="text-primary tabular-nums">{formatInr(totals.estimatedTotal)}</span>
+              <span className="text-primary tabular-nums">{formatPrice(totals.estimatedTotal)}</span>
             </div>
           </div>
 
@@ -421,7 +431,6 @@ export function CartPage() {
               href={whatsapp.url}
               target="_blank"
               rel="noopener noreferrer"
-              onClick={() => setWhatsappOpened(true)}
               className="flex w-full items-center justify-center gap-2 border border-primary px-6 py-3 text-xs font-semibold uppercase tracking-widest text-primary transition-colors hover:bg-primary/10"
             >
               <span>Enquire on WhatsApp</span>
@@ -544,10 +553,28 @@ export function CartPage() {
               </div>
 
               <div className="space-y-1">
+                <label htmlFor="checkout-note" className="font-semibold uppercase tracking-wider text-cocoa">
+                  Order note (optional)
+                </label>
+                <textarea
+                  id="checkout-note"
+                  rows={3}
+                  value={customerNote}
+                  onChange={(event) => setCustomerNote(event.target.value)}
+                  placeholder="Anything we should know about your order?"
+                  className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
                 <label className="font-semibold uppercase tracking-wider text-cocoa">Payment Option</label>
                 <select
                   value={formData.paymentMethod}
-                  onChange={(e) => setFormData({ ...formData, paymentMethod: e.target.value as any })}
+                  onChange={(event) => {
+                    if (isPaymentMethod(event.target.value)) {
+                      setFormData({ ...formData, paymentMethod: event.target.value });
+                    }
+                  }}
                   className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
                 >
                   <option value="WHATSAPP_UPI">WhatsApp UPI / Pay on Chat</option>
@@ -558,7 +585,7 @@ export function CartPage() {
 
               <div className="border-t border-foreground/15 pt-3 flex justify-between font-bold text-sm text-cocoa">
                 <span>Total Amount Due</span>
-                <span className="text-primary">{formatInr(totals.estimatedTotal)}</span>
+                <span className="text-primary">{formatPrice(totals.estimatedTotal)}</span>
               </div>
 
               <button

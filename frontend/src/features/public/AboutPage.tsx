@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import community2 from '@/assets/community-2.jpg';
+import community2 from '@/assets/community-1.webp';
 import story1 from '@/assets/story-1.jpg';
 import story2 from '@/assets/story-2.jpg';
 

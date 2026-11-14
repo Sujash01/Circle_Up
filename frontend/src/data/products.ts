@@ -2,11 +2,10 @@ import bag1 from '@/assets/bag-1.jpg';
 import bag2 from '@/assets/bag-2.jpg';
 import bag3 from '@/assets/bag-3.jpg';
 import bag4 from '@/assets/bag-4.jpg';
-import community1 from '@/assets/community-1.jpg';
-import community2 from '@/assets/community-2.jpg';
+import community1 from '@/assets/community-1.webp';
+import community2 from '@/assets/community-1.webp';
 import heroDetail1 from '@/assets/hero-detail-1.jpg';
 import heroDetail2 from '@/assets/hero-detail-2.jpg';
-import heroModel from '@/assets/hero-model.jpg';
 import lookbook from '@/assets/lookbook.jpg';
 import rtw1 from '@/assets/rtw-1.jpg';
 import rtw2 from '@/assets/rtw-2.jpg';
@@ -112,7 +111,7 @@ export const PRODUCTS: Product[] = [
       'Utility-stitched rigid cotton denim jumpsuit with cinch waist and deep patch pockets. Authentic vintage fade.',
     price: 4950,
     originalPrice: 7800,
-    images: [rtw4, heroModel],
+    images: [rtw4, heroDetail1],
     category: 'womens-one-piece',
     categoryLabel: "Women's One Piece",
     subcategory: 'Jumpsuits / Rompers',
@@ -219,7 +218,7 @@ export const PRODUCTS: Product[] = [
       'Relaxed high-rise olive cotton cargo trousers with bellows side pockets and adjustable ankle toggles.',
     price: 1890,
     originalPrice: 3400,
-    images: [heroDetail2, heroModel],
+    images: [heroDetail2, winter1],
     category: 'womens-bottomwear',
     categoryLabel: "Women's Bottomwear",
     subcategory: 'Pants',

@@ -5,7 +5,7 @@ import {
   eventService,
   reviewService,
 } from '../src/services/communityServices';
-import { cartService } from '../src/services/cartService';
+import { cartService, formatInr, formatPrice } from '../src/services/cartService';
 import { productService } from '../src/services/productService';
 import { rentalService } from '../src/services/rentalService';
 import { wishlistService } from '../src/services/wishlistService';
@@ -37,6 +37,11 @@ describe('CircleUp Storefront Services & LocalStorage Persistence', () => {
   });
 
   it('persists cart in LocalStorage, enforces stock limits, calculates discounts, and formats WhatsApp checkout', () => {
+    expect(formatPrice(4000)).toBe('₹4,000');
+    expect(formatPrice(123456)).toBe('₹1,23,456');
+    expect(formatPrice(1950.5)).toBe('₹1,950.5');
+    expect(formatInr(4000)).toBe(formatPrice(4000));
+
     const initial = cartService.loadCart();
     expect(initial.cartId).toMatch(/^CU-CART-\d{8}-[A-Z0-9]{4}$/);
 

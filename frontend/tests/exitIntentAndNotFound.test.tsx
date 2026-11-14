@@ -12,7 +12,7 @@ describe('ExitIntentModal & Custom NotFoundPage', () => {
     window.localStorage.clear();
   });
 
-  it('opens exit-intent modal immediately into document.body when cursor leaves top edge', () => {
+  it('opens the exit offer only when the pointer leaves through the top edge', () => {
     const host = document.createElement('div');
     document.body.appendChild(host);
     const root = createRoot(host);
@@ -29,9 +29,15 @@ describe('ExitIntentModal & Custom NotFoundPage', () => {
 
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
 
-    // Pointer leaves top edge -> triggers immediately without artificial delay
+    // Leaving from another edge should not interrupt browsing.
     act(() => {
-      document.dispatchEvent(new MouseEvent('mouseleave', { clientY: 4 }));
+      document.dispatchEvent(new MouseEvent('mouseout', { clientY: 180 }));
+    });
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+
+    // The top edge remains the exit-intent trigger.
+    act(() => {
+      document.dispatchEvent(new MouseEvent('mouseout', { clientY: 0 }));
     });
 
     const dialog = document.body.querySelector('[role="dialog"]');

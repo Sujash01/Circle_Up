@@ -1,6 +1,5 @@
 import heroDetail1 from '@/assets/hero-detail-1.jpg';
 import heroDetail2 from '@/assets/hero-detail-2.jpg';
-import heroModel from '@/assets/hero-model.jpg';
 import rtw1 from '@/assets/rtw-1.jpg';
 import story1 from '@/assets/story-1.jpg';
 import story2 from '@/assets/story-2.jpg';
@@ -57,7 +56,7 @@ export const SAMPLE_COMMUNITY_POSTS: CommunitySubmission[] = [
     displayName: 'Maya L.',
     handle: '@maya.circles',
     caption: 'Styled full-frame look from the autumn studio curation.',
-    image: heroModel,
+    image: rtw1,
     createdAt: '2026-10-12T16:00:00Z',
   },
 ];
