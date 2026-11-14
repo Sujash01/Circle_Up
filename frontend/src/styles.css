@@ -1128,23 +1128,25 @@ button.organic-control:focus-visible {
  .storefront-wordmark { font-size:1.9rem; }
  .storefront-brand-caption { font-size:.44rem; }
  .storefront-header-actions { gap:0; }
- .storefront-header-tools { gap:4px; }
- .storefront-header-tools > a { flex:0 0 44px; }
+ .storefront-header-tools { gap:6px; align-items:center; }
+ .storefront-header-tools > a:not(.storefront-signup-cta) { flex:0 0 44px; }
  .storefront-browse-cta { display:none; }
  .leaf-cta { min-width:250px; min-height:78px; font-size:.9rem; }
 }
 
 @media (max-width: 639px) {
   .home-vine-frame {
-    --vine-gutter: 48px;
+    --vine-gutter: 20px;
   }
 
   .home-vine-layer {
-    opacity: 0.85;
+    left: 4px;
+    width: 20px;
+    opacity: 0.55;
   }
 
   .home-vine-layer [data-vine-stem] {
-    stroke-width: 3.8px;
+    stroke-width: 3.2px;
   }
 
   .storefront-brand-caption {
@@ -1169,17 +1171,19 @@ button.organic-control:focus-visible {
     background: transparent;
   }
 
-  .storefront-header-tools > a {
+  .storefront-header-tools > a:not(.storefront-signup-cta) {
     width: 44px;
     height: 44px;
   }
 
   .home-vine-frame .home-vine-section {
-    padding-inline-start: calc(var(--vine-gutter) + 5rem);
+    padding-inline-start: 1.25rem;
+    padding-inline-end: 1.25rem;
   }
 
   .home-vine-frame .home-vine-footer footer > div:first-child {
-    padding-inline-start: calc(var(--vine-gutter) + 5rem);
+    padding-inline-start: 1.25rem;
+    padding-inline-end: 1.25rem;
   }
 }
 
@@ -1606,9 +1610,34 @@ button.organic-control:focus-visible {
     font-size: 1.95rem;
   }
 
-  .storefront-header .storefront-header-tools > a {
+  .storefront-header .storefront-header-tools > a:not(.storefront-signup-cta) {
     background: transparent !important;
   }
+}
+
+.storefront-signup-cta {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px !important;
+  height: 38px !important;
+  padding: 6px 14px !important;
+  border-radius: 9999px !important;
+  border: 1px solid color-mix(in srgb, var(--primary) 40%, transparent) !important;
+  background-color: color-mix(in srgb, var(--primary) 12%, transparent) !important;
+  color: var(--primary) !important;
+  font-size: 0.72rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+  white-space: nowrap !important;
+  flex: 0 0 auto !important;
+  width: auto !important;
+}
+
+.storefront-signup-cta:hover {
+  background-color: var(--primary) !important;
+  color: var(--primary-foreground) !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

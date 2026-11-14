@@ -432,7 +432,7 @@ export function StorefrontHeader({ preserveHomeHeader = false }: { preserveHomeH
               <Link
                 to="/admin"
                 aria-label={`Account (${currentUser.fullName})`}
-                className="flex min-h-[44px] items-center gap-1.5 rounded-full border-2 border-foreground/20 bg-card/90 px-3.5 py-1.5 text-xs font-semibold text-cocoa shadow-xs transition-all hover:border-primary hover:text-primary hover:shadow-sm"
+                className="storefront-account-link flex min-h-[44px] items-center gap-1.5 rounded-full border-2 border-foreground/20 bg-card/90 px-3.5 py-1.5 text-xs font-semibold text-cocoa shadow-xs transition-all hover:border-primary hover:text-primary hover:shadow-sm"
               >
                 <User className="size-4 text-primary" />
                 <span className="hidden md:inline max-w-[90px] truncate">{currentUser.fullName.split(' ')[0]}</span>
@@ -440,7 +440,7 @@ export function StorefrontHeader({ preserveHomeHeader = false }: { preserveHomeH
             ) : (
               <Link
                 to="/signup"
-                className="inline-flex min-h-[40px] items-center rounded-full border border-primary/40 bg-primary/10 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-primary transition-all hover:bg-primary hover:text-primary-foreground hover:shadow-xs"
+                className="storefront-signup-cta inline-flex min-h-[38px] items-center rounded-full border border-primary/40 bg-primary/10 px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider text-primary transition-all hover:bg-primary hover:text-primary-foreground hover:shadow-xs shrink-0"
               >
                 Sign Up
               </Link>

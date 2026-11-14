@@ -224,6 +224,25 @@
   - `npm test`: 65/65 passing (45 backend unit/integration tests + 20 frontend Vitest tests).
   - Browser verification screenshots saved in `docs/screenshots/verify-golden-chest-header.png`, `verify-signin-page.png`, `verify-signup-page.png`, and `verify-womens-upperwear-refined.png`.
 
+### Phase 7: Mobile View Realignment & Responsive Layout Optimization (Completed)
+- **Resolved 128px Asymmetrical Gutter Defect**:
+  - Identified root cause in `frontend/src/styles.css`: `.home-vine-frame .home-vine-section` had an erroneous `padding-inline-start: calc(var(--vine-gutter) + 5rem)` inside `@media (max-width: 639px)` which pushed all homepage content 128px to the right on mobile screens.
+  - Corrected to balanced `padding-inline-start: 1.25rem; padding-inline-end: 1.25rem;` (20px left and right), eliminating the asymmetrical shift and restoring symmetrical centering across all sections (Ready-to-Wear, Handbags, Worlds, Story, Winter, Community, Footer).
+- **Header Tools & Sign Up Button Geometry Fix**:
+  - Excluded `.storefront-signup-cta` from `.storefront-header-tools > a` max-width and background reset rules that were squashing the button into a transparent 44px box.
+  - Dedicated mobile styling for `.storefront-signup-cta`: 80px pill width, 38px height, 6px 14px padding, clear legible uppercase typography, and subtle pill background.
+- **Treasure Chest Hero Mobile Centering & Shadow Fix**:
+  - In `TreasureChestHero.tsx`: Fixed shadow animation transform override bug where `scale(...)` wiped out `translate(-50%, -50%)`, which previously pushed the contact shadow 100px to the right and caused a 3px horizontal page overflow.
+  - In `TreasureChestHero.css`: Simplified mobile hero layout at `@media (max-width: 760px)` by hiding desktop-only tilted collage (`.tc-collage`) on small screens, allowing the golden keepsake chest and glowing watercolor backdrop (`.tc-sun`) to sit prominently and symmetrically centered beneath the headline with zero horizontal overflow.
+- **Verification & Empirical Audit**:
+  - Verified with Chromium headless audit at 390×844 and 360×780:
+    - `winWidth: 390`, `docScrollWidth: 390`, `bodyScrollWidth: 390` (`hasOverflow: false` — 0px horizontal overflow).
+    - `ready-to-wear`, `handbags`, `worlds`: `left: 0, right: 390, width: 390, paddingLeft: 20px, paddingRight: 20px`.
+    - `signup`: width 80px, height 38px, centered in header tools.
+  - `npm run typecheck`: 0 errors.
+  - `npm test`: 65/65 passed across shared, backend, and frontend.
+  - Verification screenshots captured: `docs/screenshots/verify-mobile-hero-fixed.png` and `docs/screenshots/verify-mobile-rtw-fixed.png`.
+
 
 
 

@@ -213,7 +213,7 @@ export function TreasureChestHero({ picks }: { picks?: ChestProduct[] } = {}) {
       }
 
       if (shadowRef.current) {
-        shadowRef.current.style.transform = `scale(${(1 + o * 0.08).toFixed(3)},${(1 - o * 0.12).toFixed(3)})`;
+        shadowRef.current.style.transform = `translate(-50%, -50%) scale(${(1 + o * 0.08).toFixed(3)},${(1 - o * 0.12).toFixed(3)})`;
         shadowRef.current.style.opacity = `${(0.82 - o * 0.18).toFixed(3)}`;
       }
       const slide = easeInOut(clamp((p - 0.08) / 0.36));
