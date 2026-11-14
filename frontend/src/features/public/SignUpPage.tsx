@@ -372,14 +372,16 @@ export function SignUpPage() {
           </button>
         </form>
 
-        {/* Footer redirection */}
-        <div className="border-t border-foreground/15 pt-5 text-center text-xs text-foreground/80">
-          <span>Already registered with CircleUp? </span>
+        {/* Footer redirection with prominent Sign In button */}
+        <div className="border-t border-foreground/15 pt-5 text-center space-y-3">
+          <p className="text-xs text-foreground/80">
+            Already have a CircleUp account?
+          </p>
           <Link
             to={redirectTarget !== '/' ? `/signin?redirect=${encodeURIComponent(redirectTarget)}` : '/signin'}
-            className="font-semibold text-primary hover:underline underline-offset-4"
+            className="inline-flex min-h-[42px] w-full items-center justify-center rounded-full border-2 border-foreground/25 bg-card/80 py-2.5 px-4 text-xs font-bold uppercase tracking-wider text-cocoa transition-all hover:border-primary hover:text-primary hover:bg-forest/5 shadow-xs"
           >
-            Sign In →
+            Sign In to Existing Account →
           </Link>
         </div>
       </div>

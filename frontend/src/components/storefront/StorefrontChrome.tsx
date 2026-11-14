@@ -438,27 +438,12 @@ export function StorefrontHeader({ preserveHomeHeader = false }: { preserveHomeH
                 <span className="hidden md:inline max-w-[90px] truncate">{currentUser.fullName.split(' ')[0]}</span>
               </Link>
             ) : (
-              <div className="flex items-center gap-1 sm:gap-1.5">
-                <Link
-                  to="/signin"
-                  className="hidden md:inline-flex min-h-[40px] items-center rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider text-cocoa transition-colors hover:text-primary hover:bg-forest/5"
-                >
-                  Sign In
-                </Link>
-                <Link
-                  to="/signup"
-                  className="hidden sm:inline-flex min-h-[40px] items-center rounded-full border border-primary/40 bg-primary/10 px-3.5 py-1 text-xs font-bold uppercase tracking-wider text-primary transition-all hover:bg-primary hover:text-primary-foreground hover:shadow-xs"
-                >
-                  Sign Up
-                </Link>
-                <Link
-                  to="/signin"
-                  aria-label="Sign In"
-                  className="flex sm:hidden size-[44px] items-center justify-center rounded-full border-2 border-foreground/20 bg-card/90 text-cocoa shadow-xs transition-all hover:border-primary hover:text-primary"
-                >
-                  <User className="size-4" />
-                </Link>
-              </div>
+              <Link
+                to="/signup"
+                className="inline-flex min-h-[40px] items-center rounded-full border border-primary/40 bg-primary/10 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-primary transition-all hover:bg-primary hover:text-primary-foreground hover:shadow-xs"
+              >
+                Sign Up
+              </Link>
             )}
 
             <Link
@@ -558,9 +543,6 @@ export function StorefrontHeader({ preserveHomeHeader = false }: { preserveHomeH
               </div>
 
               <div className="flex items-center gap-3.5 font-semibold uppercase tracking-wider text-xs">
-                <Link to="/signin" className="text-cocoa hover:text-primary underline underline-offset-4">
-                  Sign In
-                </Link>
                 <Link to="/signup" className="text-primary hover:text-primary underline underline-offset-4">
                   Sign Up
                 </Link>
@@ -615,18 +597,12 @@ export function StorefrontHeader({ preserveHomeHeader = false }: { preserveHomeH
           <p className="text-[0.68rem] font-bold uppercase tracking-[0.18em] text-terracotta mb-2">
             Account & Access
           </p>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-            <Link
-              to="/signin"
-              className="flex min-h-[48px] items-center text-sm font-semibold text-cocoa hover:text-primary"
-            >
-              Sign In
-            </Link>
+          <div>
             <Link
               to="/signup"
-              className="flex min-h-[48px] items-center text-sm font-semibold text-primary hover:text-primary/80"
+              className="flex min-h-[44px] items-center text-sm font-semibold text-primary hover:text-primary/80"
             >
-              Create Account
+              Create Account (Sign Up) →
             </Link>
           </div>
         </div>
@@ -717,7 +693,6 @@ export function StorefrontFooter() {
             title="Company"
             links={[
               { label: 'About Us', to: '/about' },
-              { label: 'Sign In', to: '/signin' },
               { label: 'Create Account', to: '/signup' },
               { label: 'Contact', to: '/contact' },
               { label: 'Shopping Bag', to: '/cart' },
