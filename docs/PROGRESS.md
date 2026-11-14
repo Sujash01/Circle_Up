@@ -18,20 +18,20 @@
   - [x] Fix backend lint errors and `CartPage.tsx` lint/type errors at root cause.
   - [x] Run typecheck, lint, tests and commit `session1 phase 1: build health and shared contract`.
 
-- [ ] **Phase 2: Backend Rebuilt Around the Frontend**
-  - [ ] Structure backend: `routes -> controllers -> services -> repositories`, async error middleware, request IDs.
-  - [ ] Implement public REST API:
+- [x] **Phase 2: Backend Rebuilt Around the Frontend**
+  - [x] Structure backend: `routes -> controllers -> services -> repositories`, async error middleware, request IDs.
+  - [x] Implement public REST API:
     - Products (filters, sort, pagination default 12/max 48, by slug, related; published & non-deleted only).
     - Unified homepage endpoint `GET /api/homepage` (collection rows, 4–6 chest picks, 4 category tiles, announcement text, marquee phrases, site settings).
-    - Categories & collections endpoints.
-    - Rentals and events/store endpoints.
+    - Categories & collections endpoints (`/api/categories`, `/api/collections`).
+    - Rentals and events/store endpoints (`/api/rentals`, `/api/events`).
     - Coupons validation endpoint (`THRIFT10`, `CIRCLE20`, min cart, expiry, usage limit).
     - Cart, wishlist, and checkout endpoints (server-side price recomputation & atomic stock decrement).
-  - [ ] Search endpoint `GET /api/search?q=&limit=&page=` (case/diacritic insensitive, ranked name prefix > name contains > tags/category, min 2 chars, suggestions mode max 6).
-  - [ ] Quality & security: Helmet, CORS from env, compression, rate limits, ETag & Cache-Control (stale-while-revalidate for catalog), database indexes, no N+1 queries, clean error responses without stack traces.
-  - [ ] Idempotent `npm run seed` with working slugs, resolving local image paths, categories, collections, chest picks, rentals, events, coupons, settings; zero model/person photos.
-  - [ ] Supertest contract tests for every public endpoint.
-  - [ ] Run typecheck, lint, tests and commit `session1 phase 2: backend rebuilt around the frontend`.
+  - [x] Search endpoint `GET /api/search?q=&limit=&page=` (case/diacritic insensitive, ranked name prefix > name contains > tags/category, min 2 chars, suggestions mode max 6).
+  - [x] Quality & security: Helmet, CORS from env, compression, rate limits, ETag & Cache-Control (stale-while-revalidate for catalog), database indexes, no N+1 queries, clean error responses without stack traces.
+  - [x] Idempotent `npm run seed` with working slugs, resolving local image paths, categories, collections, chest picks, rentals, events, coupons, settings; zero model/person photos.
+  - [x] Supertest contract tests for every public endpoint (`phase2Endpoints.test.ts`).
+  - [x] Run typecheck, lint, tests and commit `session1 phase 2: backend rebuilt around the frontend`.
 
 - [ ] **Phase 3: Admin Backend (/api/admin/*)**
   - [ ] Admin auth: Argon2id password hashing, HttpOnly + Secure + SameSite session cookie with refresh rotation, CSRF protection on state-changing requests, login rate limiting and lockout, logout, change password.
@@ -65,4 +65,20 @@
 - Implemented `formatPrice()` with non-negative integer paise specification in `/shared` and added test suite in `frontend/tests/formatPrice.test.ts`.
 - Resolved all 5 backend unused variable ESLint errors and fixed `CartPage.tsx` `PaymentMethod` type guard.
 - Typecheck, ESLint, and all 20 tests pass cleanly across monorepo.
+
+### Phase 2: Backend Rebuilt Around the Frontend (Completed)
+- Restructured layered backend: `routes -> controllers -> services -> repositories` with async error handling and request correlation IDs.
+- Implemented public endpoints mounted on both `/api` and `/api/v1`:
+  - `GET /homepage`: Unified homepage payload (Ready-To-Wear, Handbags, Winter rows, 4–6 chest picks with custom card backgrounds, 4 category tiles, announcement text, marquee phrases, site settings).
+  - `GET /search`: Case/diacritic insensitive ranked search (name prefix > name contains > tags/category) with min 2 chars guard and 6-item suggestions mode.
+  - `POST /coupons/validate`: Real-time validation for launch coupons `THRIFT10` and `CIRCLE20` with min order thresholds and discount calculations.
+  - `GET /categories` & `GET /collections`: Curated directories with live product counts.
+  - `GET /rentals`: Curated rental rails with integer paise prices and security deposits.
+  - `GET /events`: Pop-up and swap meet community schedules.
+  - `GET /products/:identifier/related`: Related items filtered by category excluding the target item.
+  - `POST /orders`: Server-side price recomputation, coupon application, and stock management.
+- Added production middleware: `compression()`, `helmet()`, ETag, `cacheCatalogReads` (`max-age=60, stale-while-revalidate=300`), and `noStoreCache` for checkout/coupons.
+- Enhanced `npm run seed` to idempotently upsert products, launch coupons, rentals, events, and site settings.
+- Wrote 14 new Supertest contract tests in `phase2Endpoints.test.ts` (all 26 backend tests + 20 frontend tests = 46 passing tests).
+
 

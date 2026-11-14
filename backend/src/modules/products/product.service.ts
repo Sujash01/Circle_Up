@@ -37,7 +37,8 @@ export const productService = {
 
     if (isDatabaseConnected()) {
       const filter: Record<string, unknown> = {
-        status: { $ne: 'ARCHIVED' },
+        status: { $in: ['ACTIVE', 'PUBLISHED'] },
+        deletedAt: null,
       };
 
       if (category && category !== 'all') {
@@ -182,6 +183,33 @@ export const productService = {
       throw new NotFoundError(`Product not found for identifier "${identifier}"`, 'PRODUCT_NOT_FOUND');
     }
     return found;
+  },
+
+  async getRelatedProducts(identifier: string, limit = 4) {
+    const target = await this.getProductByIdentifier(identifier);
+    if (isDatabaseConnected()) {
+      const targetId = (target as Record<string, unknown>)._id || target.id;
+      const filter: Record<string, unknown> = {
+        category: target.category,
+        status: { $in: ['ACTIVE', 'PUBLISHED'] },
+        deletedAt: null,
+      };
+      if (targetId && mongoose.isValidObjectId(targetId)) {
+        filter._id = { $ne: targetId };
+      } else {
+        filter.serialNumber = { $ne: target.serialNumber };
+      }
+
+      const related = await Product.find(filter).limit(limit).lean();
+      return (related as unknown as Array<Record<string, unknown>>).map((p) => ({
+        ...p,
+        id: p._id ? String(p._id) : undefined,
+      }));
+    }
+
+    return (SEED_PRODUCTS as unknown as IProductItem[])
+      .filter((p) => p.serialNumber !== target.serialNumber && p.category === target.category)
+      .slice(0, limit);
   },
 
   async createProduct(payload: Partial<IProductItem>) {

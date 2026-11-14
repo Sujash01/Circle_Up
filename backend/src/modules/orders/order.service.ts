@@ -1,6 +1,9 @@
 import mongoose from 'mongoose';
 import { Order } from '../../models/Order.js';
 import { Product } from '../../models/Product.js';
+import { SEED_PRODUCTS } from '../../data/seedProducts.js';
+import { couponService } from '../../services/coupon.service.js';
+import { couponRepository } from '../../repositories/coupon.repository.js';
 import { BadRequestError, NotFoundError } from '../../errors/AppError.js';
 import { buildPaginationMeta, parsePagination } from '../../utils/pagination.js';
 import type { CreateOrderPayload } from '@circleup/shared';
@@ -32,28 +35,47 @@ export const orderService = {
     }
 
     if (!isDatabaseConnected()) {
-      // Degraded simulation response if DB is not connected yet
-      const subtotal = items.reduce((acc, item) => acc + (item.quantity || 1) * 1500, 0);
-      const deliveryFee = subtotal >= 1999 ? 0 : 120;
-      const totalAmount = subtotal + deliveryFee;
+      // Offline/simulation mode: resolve against seed catalog
+      let subtotal = 0;
+      const resolvedItems = items.map((it) => {
+        const seed = SEED_PRODUCTS.find((p) => p.serialNumber.toUpperCase() === it.serialNumber.toUpperCase());
+        const price = seed ? seed.price : 150000;
+        const name = seed ? seed.name : `Thrift Item ${it.serialNumber}`;
+        const qty = it.quantity || 1;
+        subtotal += price * qty;
+        return {
+          serialNumber: it.serialNumber.toUpperCase(),
+          name,
+          price,
+          quantity: qty,
+          size: it.size || seed?.sizes?.[0] || 'Free Size',
+          image: seed?.images?.[0] || '',
+          slug: seed?.slug || '',
+        };
+      });
+
+      let discount = 0;
+      if (promoCode) {
+        const val = await couponService.validateCoupon(promoCode, subtotal);
+        if (val.valid) discount = val.discountInPaise;
+      }
+
+      const deliveryFee = subtotal - discount >= 150000 ? 0 : 9000;
+      const totalAmount = Math.max(0, subtotal - discount + deliveryFee);
+
       return {
         orderNumber: generateOrderNumber(),
         customer,
         shippingAddress,
-        items: items.map((it) => ({
-          serialNumber: it.serialNumber,
-          name: `Thrift Item ${it.serialNumber}`,
-          price: 1500,
-          quantity: it.quantity || 1,
-          size: it.size || 'Free Size',
-        })),
+        items: resolvedItems,
         subtotal,
-        discount: 0,
+        discount,
         deliveryFee,
         totalAmount,
         status: 'CONFIRMED',
         paymentMethod: paymentMethod || 'WHATSAPP_UPI',
         paymentStatus: 'PENDING',
+        promoCode: promoCode || '',
         notes: notes || '',
         createdAt: new Date().toISOString(),
       };
@@ -67,7 +89,7 @@ export const orderService = {
       const serialNumber = cartItem.serialNumber.trim().toUpperCase();
       const quantity = Math.max(1, cartItem.quantity || 1);
 
-      const product = await Product.findOne({ serialNumber });
+      const product = await Product.findOne({ serialNumber, deletedAt: null });
       if (!product) {
         throw new NotFoundError(`Product with serial number "${serialNumber}" does not exist in catalog.`, 'PRODUCT_NOT_FOUND');
       }
@@ -94,20 +116,17 @@ export const orderService = {
       });
     }
 
-    // Apply promo discounts
+    // Apply promo discounts via couponService
     let discount = 0;
     if (promoCode) {
-      const upperCode = promoCode.trim().toUpperCase();
-      if (upperCode === 'CIRCLEUP10') {
-        discount = Math.round(subtotal * 0.1);
-      } else if (upperCode === 'FIRST100') {
-        discount = Math.min(subtotal, 100);
-      } else if (upperCode === 'VINTAGE20') {
-        discount = Math.round(subtotal * 0.2);
+      const couponResult = await couponService.validateCoupon(promoCode, subtotal);
+      if (couponResult.valid) {
+        discount = couponResult.discountInPaise;
+        await couponRepository.incrementUsage(promoCode);
       }
     }
 
-    const deliveryFee = subtotal - discount >= 1999 ? 0 : 120;
+    const deliveryFee = subtotal - discount >= 150000 ? 0 : 9000;
     const totalAmount = Math.max(0, subtotal - discount + deliveryFee);
 
     // Atomically decrement inventory for each item
@@ -146,6 +165,7 @@ export const orderService = {
       status: 'CONFIRMED',
       paymentMethod: paymentMethod || 'WHATSAPP_UPI',
       paymentStatus: 'PENDING',
+      promoCode: promoCode || '',
       notes: notes || '',
     });
 

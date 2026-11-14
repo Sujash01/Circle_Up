@@ -40,6 +40,17 @@ export const productController = {
     }
   },
 
+  async getRelated(req: Request, res: Response, next: NextFunction) {
+    try {
+      const identifier = String(req.params.identifier || '');
+      const limit = req.query.limit ? Math.min(Number(req.query.limit), 12) : 4;
+      const related = await productService.getRelatedProducts(identifier, limit);
+      return sendSuccess(res, related);
+    } catch (error) {
+      next(error);
+    }
+  },
+
   async create(req: Request, res: Response, next: NextFunction) {
     try {
       const product = await productService.createProduct(req.body);

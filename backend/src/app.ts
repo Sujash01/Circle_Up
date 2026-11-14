@@ -1,3 +1,4 @@
+import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express, { type Express } from 'express';
@@ -15,6 +16,12 @@ import { healthRouter } from './modules/health/health.routes.js';
 import { productRouter } from './modules/products/product.routes.js';
 import { orderRouter } from './modules/orders/order.routes.js';
 import { contactRouter } from './modules/contact/contact.routes.js';
+import { homepageRouter } from './routes/homepage.routes.js';
+import { searchRouter } from './routes/search.routes.js';
+import { couponRouter } from './routes/coupon.routes.js';
+import { categoryRouter } from './routes/category.routes.js';
+import { rentalRouter } from './routes/rental.routes.js';
+import { eventRouter } from './routes/event.routes.js';
 
 /**
  * Constructs and configures the modular Express application without binding a port,
@@ -24,13 +31,15 @@ export function createApp(): Express {
   const app = express();
 
   app.set('trust proxy', 1);
+  app.set('etag', 'strong');
 
   // 1. Request correlation & structured logging
   app.use(attachRequestId);
   app.use(httpLogger);
 
-  // 2. Security headers, strict CORS, body/cookie parsing, NoSQL sanitization & rate limit
+  // 2. Security headers, gzip/brotli compression, strict CORS, body/cookie parsing, NoSQL sanitization & rate limit
   app.use(helmet());
+  app.use(compression());
   app.use(cors(corsOptions));
   app.use(express.json({ limit: '100kb' }));
   app.use(express.urlencoded({ extended: false, limit: '100kb' }));
@@ -46,11 +55,29 @@ export function createApp(): Express {
     next();
   });
 
-  // 3. Versioned API routes
-  app.use('/api/v1/health', healthRouter);
-  app.use('/api/v1/products', productRouter);
-  app.use('/api/v1/orders', orderRouter);
-  app.use('/api/v1/contact', contactRouter);
+  // 3. Mount public endpoints on both /api and /api/v1 for seamless frontend client compatibility
+  const apiRouters = [
+    { path: '/homepage', router: homepageRouter },
+    { path: '/search', router: searchRouter },
+    { path: '/coupons', router: couponRouter },
+    { path: '/', router: categoryRouter }, // /categories and /collections
+    { path: '/rentals', router: rentalRouter },
+    { path: '/events', router: eventRouter },
+    { path: '/products', router: productRouter },
+    { path: '/orders', router: orderRouter },
+    { path: '/contact', router: contactRouter },
+    { path: '/health', router: healthRouter },
+  ];
+
+  for (const prefix of ['/api', '/api/v1']) {
+    for (const { path: routePath, router } of apiRouters) {
+      if (routePath === '/') {
+        app.use(prefix, router);
+      } else {
+        app.use(`${prefix}${routePath}`, router);
+      }
+    }
+  }
 
   // 4. 404 fallback & global error serialization
   app.use((_req, _res, next) => {

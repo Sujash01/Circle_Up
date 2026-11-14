@@ -7,6 +7,7 @@ export interface IProductDocument extends Document {
   description: string;
   price: number;
   originalPrice?: number;
+  compareAtPrice?: number;
   stock: number;
   images: string[];
   sizes: string[];
@@ -21,6 +22,11 @@ export interface IProductDocument extends Document {
   tags: string[];
   featured: boolean;
   isNewArrival: boolean;
+  chestPick: boolean;
+  badge?: string;
+  sku?: string;
+  seoTitle?: string;
+  seoDescription?: string;
   status: 'ACTIVE' | 'PUBLISHED' | 'SOLD_OUT' | 'DRAFT' | 'ARCHIVED';
   variants: Array<{
     id: string;
@@ -29,6 +35,7 @@ export interface IProductDocument extends Document {
     stock: number;
     priceOverride?: number;
   }>;
+  deletedAt?: Date | null;
   availability: 'In Stock' | 'Low Stock' | 'Sold Out';
   createdAt: Date;
   updatedAt: Date;
@@ -80,6 +87,10 @@ const ProductSchema = new Schema<IProductDocument>(
       min: 0,
     },
     originalPrice: {
+      type: Number,
+      min: 0,
+    },
+    compareAtPrice: {
       type: Number,
       min: 0,
     },
@@ -150,6 +161,32 @@ const ProductSchema = new Schema<IProductDocument>(
       default: true,
       index: true,
     },
+    chestPick: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    badge: {
+      type: String,
+      default: '',
+    },
+    sku: {
+      type: String,
+      default: '',
+    },
+    seoTitle: {
+      type: String,
+      default: '',
+    },
+    seoDescription: {
+      type: String,
+      default: '',
+    },
+    deletedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
     status: {
       type: String,
       enum: ['ACTIVE', 'PUBLISHED', 'SOLD_OUT', 'DRAFT', 'ARCHIVED'],
@@ -180,6 +217,10 @@ ProductSchema.virtual('availability').get(function (this: IProductDocument) {
   if (this.stock <= 2) return 'Low Stock';
   return 'In Stock';
 });
+
+ProductSchema.index({ status: 1, deletedAt: 1, category: 1 });
+ProductSchema.index({ status: 1, deletedAt: 1, chestPick: 1 });
+ProductSchema.index({ status: 1, deletedAt: 1, isNewArrival: 1 });
 
 // Full-text search index across name, serialNumber, description, subcategory, tags
 ProductSchema.index({

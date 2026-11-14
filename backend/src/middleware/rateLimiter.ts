@@ -36,7 +36,13 @@ export const adminAuthRateLimiter = createRateLimiter(
 
 export const checkoutRateLimiter = createRateLimiter(
   TEN_MINUTES_MS,
-  5,
+  15,
   'Too many checkout attempts, please wait before trying again',
+);
+
+export const searchRateLimiter = createRateLimiter(
+  60 * 1000,
+  60,
+  'Too many search queries, please slow down',
 );
 

@@ -34,6 +34,7 @@ export interface IOrderDocument extends Document {
   status: 'PENDING' | 'CONFIRMED' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
   paymentMethod: 'WHATSAPP_UPI' | 'CASH_ON_DELIVERY' | 'ONLINE_UPI';
   paymentStatus: 'PENDING' | 'PAID';
+  promoCode?: string;
   notes?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -99,6 +100,7 @@ const OrderSchema = new Schema<IOrderDocument>(
       enum: ['PENDING', 'PAID'],
       default: 'PENDING',
     },
+    promoCode: { type: String, default: '' },
     notes: { type: String, default: '' },
   },
   {
