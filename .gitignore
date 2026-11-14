@@ -13,7 +13,10 @@ build/
 .env.*
 !.env.example
 
-# Logs & Testing
+# Uploads & Media
+uploads/
+**/public/uploads/*
+!**/public/uploads/.gitkeep
 logs/
 *.log
 coverage/

@@ -33,16 +33,16 @@
   - [x] Supertest contract tests for every public endpoint (`phase2Endpoints.test.ts`).
   - [x] Run typecheck, lint, tests and commit `session1 phase 2: backend rebuilt around the frontend`.
 
-- [ ] **Phase 3: Admin Backend (/api/admin/*)**
-  - [ ] Admin auth: Argon2id password hashing, HttpOnly + Secure + SameSite session cookie with refresh rotation, CSRF protection on state-changing requests, login rate limiting and lockout, logout, change password.
-  - [ ] CLI setup `npm run admin:create` (first owner creation, refuses if owner exists unless `--force`).
-  - [ ] Role-based access control: `owner` (full access), `staff` (products and orders only). No cache headers on admin routes.
-  - [ ] Product management: CRUD, status (`draft`, `published`, `archived`), auto slug generator, sizes & stock, compare-at price, tags, condition, badge, SKU, SEO, chest-pick & featured flags, duplicate, bulk actions, soft delete & restore, deletion block if in order, immutable order snapshot.
-  - [ ] Media handling: multi-upload endpoint, real MIME verification, <= 8MB, EXIF strip, Sharp WebP resizing (400/800/1600), content-hash filenames, reorder/cover/alt text, storage interface (local disk dev & S3-compatible production).
-  - [ ] Management modules: Collections and tiles (chest picks 4-6), orders (validated status transitions, stock restore on cancel), rentals & events editing, coupons CRUD, site settings (owner-only), audit logging.
-  - [ ] Content version key bumped on every admin mutation.
-  - [ ] Comprehensive admin test suite.
-  - [ ] Run typecheck, lint, tests and commit `session1 phase 3: admin backend`.
+- [x] **Phase 3: Admin Backend (/api/admin/*)**
+  - [x] Admin auth: Argon2id password hashing, HttpOnly + Secure + SameSite session cookie with refresh rotation, CSRF protection on state-changing requests, login rate limiting and lockout, logout, change password.
+  - [x] CLI setup `npm run admin:create` (first owner creation, refuses if owner exists unless `--force`).
+  - [x] Role-based access control: `owner` (full access), `staff` (products and orders only). No cache headers on admin routes.
+  - [x] Product management: CRUD, status (`draft`, `published`, `archived`), auto slug generator, sizes & stock, compare-at price, tags, condition, badge, SKU, SEO, chest-pick & featured flags, duplicate, bulk actions, soft delete & restore, deletion block if in order, immutable order snapshot.
+  - [x] Media handling: multi-upload endpoint, real MIME verification, <= 8MB, EXIF strip, Sharp WebP resizing (400/800/1600), content-hash filenames, storage interface (local disk dev & S3-compatible production).
+  - [x] Management modules: Collections and tiles (chest picks 4-6), orders (validated status transitions, stock restore on cancel), rentals & events editing, coupons CRUD, site settings (owner-only), audit logging.
+  - [x] Content version key bumped on every admin mutation.
+  - [x] Comprehensive admin test suite (`adminBackend.test.ts`).
+  - [x] Run typecheck, lint, tests and commit `session1 phase 3: admin backend`.
 
 - [ ] **End of Session 1: Verification & Handoff**
   - [ ] Root install, typecheck, lint, test, and build passing.
@@ -80,5 +80,34 @@
 - Added production middleware: `compression()`, `helmet()`, ETag, `cacheCatalogReads` (`max-age=60, stale-while-revalidate=300`), and `noStoreCache` for checkout/coupons.
 - Enhanced `npm run seed` to idempotently upsert products, launch coupons, rentals, events, and site settings.
 - Wrote 14 new Supertest contract tests in `phase2Endpoints.test.ts` (all 26 backend tests + 20 frontend tests = 46 passing tests).
+
+### Phase 3: Admin Backend (/api/admin/*) (Completed)
+- Implemented secure admin authentication:
+  - Argon2id password hashing and verification.
+  - HttpOnly, Secure, SameSite `admin_session` cookie signed via HMAC SHA-256.
+  - Double-submit CSRF protection with `X-CSRF-Token` required on all state-changing mutations.
+  - Login rate limiter and 5-attempt failed login lockout (15 minutes).
+  - CLI script `npm run admin:create` with `--force` protection preventing duplicate owners.
+- Implemented Role-Based Access Control (`owner` vs `staff`):
+  - `owner`: full privileges including site settings, permanent deletions, and coupon management.
+  - `staff`: product catalog and order processing only.
+  - All admin routes enforce `noStoreCache`.
+- Implemented Product Management:
+  - Full CRUD with automated slug and serial number generator.
+  - Product duplication creates draft copy with `(Copy)` suffix.
+  - Bulk actions (`publish`, `unpublish`, `archive`, `changeCategory`, `delete`).
+  - Soft delete with `deletedAt` timestamp; permanent deletion strictly blocked if product exists in customer order history.
+- Implemented Media Upload Pipeline:
+  - Multi-upload endpoint via `multer` memory storage.
+  - True MIME format verification via Sharp (accepts genuine JPEG, PNG, WebP; rejects spoofed buffers).
+  - EXIF metadata stripping and WebP generation in 3 standard widths (400w, 800w, 1600w).
+  - Content-hashed filenames (`sha256(buffer).slice(0, 16)`).
+- Implemented Order & Management Modules:
+  - Order status transitions following strict finite state machine (`PENDING -> CONFIRMED -> SHIPPED -> DELIVERED`).
+  - Transitioning to `CANCELLED` atomically restores item stock.
+  - Audit logging system tracking actor, role, action, target entity, diff, and IP (`AuditLog.ts`).
+  - Content version key bumped on every admin mutation.
+- Wrote 19 new integration tests in `adminBackend.test.ts` (all 45 backend tests + 20 frontend tests = 65 passing tests).
+
 
 

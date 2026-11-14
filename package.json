@@ -15,6 +15,7 @@
     "dev:frontend": "npm run dev --workspace=@circleup/frontend",
     "build": "npm run build:shared && npm run build --workspace=@circleup/backend && npm run build --workspace=@circleup/frontend",
     "seed": "npm run seed --workspace=@circleup/backend",
+    "admin:create": "npm run admin:create --workspace=@circleup/backend --",
     "typecheck": "npm run typecheck --workspace=@circleup/shared && npm run typecheck --workspace=@circleup/backend && npm run typecheck --workspace=@circleup/frontend",
     "test": "npm run test --workspace=@circleup/backend && npm run test --workspace=@circleup/frontend",
     "lint": "npm run lint --workspace=@circleup/backend && npm run lint --workspace=@circleup/frontend"

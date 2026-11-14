@@ -19,6 +19,8 @@ const envSchema = z.object({
   JWT_ADMIN_ACCESS_SECRET: z.string().default(''),
   JWT_ACCESS_TTL: z.string().default('15m'),
   JWT_ADMIN_ACCESS_TTL: z.string().default('10m'),
+  SESSION_SECRET: z.string().default('circleup-super-secret-admin-session-signing-key-32chars'),
+  STORAGE_CDN_URL: z.string().optional(),
   COOKIE_DOMAIN: z.string().optional(),
   CORS_ALLOWED_ORIGINS: z
     .string()

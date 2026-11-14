@@ -22,6 +22,7 @@ import { couponRouter } from './routes/coupon.routes.js';
 import { categoryRouter } from './routes/category.routes.js';
 import { rentalRouter } from './routes/rental.routes.js';
 import { eventRouter } from './routes/event.routes.js';
+import { adminRouter } from './routes/admin/admin.routes.js';
 
 /**
  * Constructs and configures the modular Express application without binding a port,
@@ -70,6 +71,7 @@ export function createApp(): Express {
   ];
 
   for (const prefix of ['/api', '/api/v1']) {
+    app.use(`${prefix}/admin`, adminRouter);
     for (const { path: routePath, router } of apiRouters) {
       if (routePath === '/') {
         app.use(prefix, router);
