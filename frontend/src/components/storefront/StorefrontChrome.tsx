@@ -769,3 +769,19 @@ export function StorefrontLayout() {
   );
 }
 
+/**
+ * Clean layout for auth and standalone pages (without notebook spiral binding).
+ */
+export function StorefrontCleanLayout() {
+  return (
+    <StorefrontPaperWrapper>
+      <StorefrontTopBanner />
+      <StorefrontHeader />
+      <main id="main" className="min-h-[calc(100vh-220px)] flex items-center justify-center py-8 px-4 sm:px-6">
+        <Outlet />
+      </main>
+      <StorefrontFooter />
+    </StorefrontPaperWrapper>
+  );
+}
+

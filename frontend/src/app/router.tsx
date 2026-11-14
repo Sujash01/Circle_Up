@@ -9,7 +9,7 @@ import {
   useRouteError,
 } from 'react-router-dom';
 import { ExitIntentModal } from '@/components/storefront/ExitIntentModal';
-import { StorefrontLayout } from '@/components/storefront/StorefrontChrome';
+import { StorefrontCleanLayout, StorefrontLayout } from '@/components/storefront/StorefrontChrome';
 import { AboutPage } from '@/features/public/AboutPage';
 import { CartPage } from '@/features/public/CartPage';
 import { CategoryListingPage } from '@/features/public/CategoryListingPage';
@@ -155,18 +155,23 @@ export const router = createBrowserRouter([
           { path: 'events/:id', element: <EventDetailPage /> },
           { path: 'thriftcrew', element: <ThriftCrewPage /> },
 
-          // Authentication routes
-          { path: 'signin', element: <SignInPage /> },
-          { path: 'signup', element: <SignUpPage /> },
-          { path: 'login', element: <Navigate to="/signin" replace /> },
-          { path: 'register', element: <Navigate to="/signup" replace /> },
-
           // Clean route aliases
           { path: 'thrift-crew', element: <Navigate to="/thriftcrew" replace /> },
           { path: 'checkout/whatsapp', element: <Navigate to="/cart" replace /> },
 
           // 404 fallback
           { path: '*', element: <NotFoundPage /> },
+        ],
+      },
+
+      // Authentication routes (clean layout without notebook spiral binding)
+      {
+        element: <StorefrontCleanLayout />,
+        children: [
+          { path: 'signin', element: <SignInPage /> },
+          { path: 'signup', element: <SignUpPage /> },
+          { path: 'login', element: <Navigate to="/signin" replace /> },
+          { path: 'register', element: <Navigate to="/signup" replace /> },
         ],
       },
     ],
