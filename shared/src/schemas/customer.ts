@@ -22,3 +22,4 @@ export const customerSchema = z.object({
 });
 
 export type Customer = z.infer<typeof customerSchema>;
+
