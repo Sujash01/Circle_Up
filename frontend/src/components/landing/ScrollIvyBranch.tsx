@@ -198,20 +198,21 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
       }
       const wrapperRect = wrapper.getBoundingClientRect();
       const containerRect = (anchor ?? container).getBoundingClientRect();
-      const width = Math.max(44, Math.round(wrapperRect.width || size.width));
-      const height = Math.max(1, Math.round(anchor ? wrapperRect.height : containerRect.height) || size.height);
+      const width = Math.max(44, Math.round(wrapperRect.width || 112));
+      const height = Math.max(600, Math.round(anchor ? wrapperRect.height : containerRect.height));
       metricsRef.current.docTop = containerRect.top + window.scrollY;
       metricsRef.current.height = height;
       updatePageYLookup();
       setSize((current) =>
-        current.width === width && current.height === height ? current : { width, height },
+        Math.abs(current.width - width) < 2 && Math.abs(current.height - height) < 6
+          ? current
+          : { width, height },
       );
     };
 
     measure();
     const observer =
       typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
-    observer?.observe(wrapper);
     observer?.observe(container);
     container.addEventListener('load', measure, true);
     const fonts = document.fonts;
@@ -226,7 +227,7 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
       container.removeEventListener('load', measure, true);
       fonts?.removeEventListener('loadingdone', measure);
     };
-  }, [containerRef, size.height, size.width]);
+  }, [containerRef]);
 
   useLayoutEffect(() => {
     const path = measurePathRef.current;
@@ -238,10 +239,12 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
     if (!Number.isFinite(totalLength) || totalLength <= 0) return;
 
     metricsRef.current.totalLength = totalLength;
+    const currentProgress = metricsRef.current.progress || 0;
+    const initialDashOffset = totalLength * (1 - currentProgress);
     [stem, highlight].forEach((visiblePath) => {
       if (!visiblePath) return;
       visiblePath.style.strokeDasharray = `${totalLength}`;
-      visiblePath.style.strokeDashoffset = `${totalLength}`;
+      visiblePath.style.strokeDashoffset = initialDashOffset.toFixed(2);
     });
     const sampleCount = Math.min(800, Math.max(240, Math.ceil(size.height / 12)));
     metricsRef.current.points = Array.from({ length: sampleCount + 1 }, (_, index) => {
@@ -253,10 +256,11 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
       distance: (index / sampleCount) * totalLength,
     }));
 
-    const count = Math.max(8, Math.min(34, Math.floor(size.height / (size.width < 70 ? 260 : 190))));
+    const spacing = size.width < 70 ? 140 : 120;
+    const count = Math.max(14, Math.min(48, Math.floor(size.height / spacing)));
     const nextLeaves = Array.from({ length: count }, (_, index) => {
       const variation = createIvyLeafVariation(4817, index);
-      const t = 0.035 + ((index + 0.35 + variation.spacingJitter * 0.3) / count) * 0.93;
+      const t = 0.025 + ((index + 0.35 + variation.spacingJitter * 0.3) / count) * 0.94;
       const distance = t * totalLength;
       const point = path.getPointAtLength(distance);
       const before = path.getPointAtLength(Math.max(0, distance - 5));
@@ -269,7 +273,7 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
         y: point.y,
         side: variation.side,
         kind: variation.kind,
-        scale: variation.scale * (size.width < 70 ? 0.72 : 1),
+        scale: variation.scale * (size.width < 70 ? 0.76 : 1),
         angle: tangent - 90 + variation.side * variation.angleOffset,
         tone: variation.tone,
       } satisfies LeafSpec;
@@ -336,39 +340,40 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
       });
     };
 
-    // Let the vine reach most of the first screen on load, then keep its tip
-    // tracking just below the reader as they move down the journal.
-    const openingPageY = window.scrollY + window.innerHeight * 0.8;
+    const computeTipPageY = (scrollY: number, vh: number) => scrollY + vh * 0.95;
+
+    const openingPageY = computeTipPageY(window.scrollY, window.innerHeight);
     metricsRef.current.progress = metricsRef.current.totalLength > 0
       ? getLengthAtPageY(metricsRef.current.pageYLengths, openingPageY) / metricsRef.current.totalLength
       : 0;
     applyProgress(metricsRef.current.progress);
 
-    const targets = container.querySelectorAll('#ready-to-wear, section:not(#hero), footer');
-    const visibleTargets = new Set<Element>();
     let unsubscribe: (() => void) | null = null;
     let lastFrameTime = 0;
     const start = () => {
       if (unsubscribe || reducedMotion) return;
       unsubscribe = subscribeToScrollFrames((scrollY, _now, viewportHeight) => {
         const metrics = metricsRef.current;
-        const tipPageY = scrollY + viewportHeight * 0.8;
+        const tipPageY = computeTipPageY(scrollY, viewportHeight);
         const targetLength = getLengthAtPageY(metrics.pageYLengths, tipPageY);
         const targetProgress = metrics.totalLength > 0 ? targetLength / metrics.totalLength : 0;
         const elapsed = lastFrameTime === 0 ? 16 : clamp(_now - lastFrameTime, 0, 80);
         const smoothing = 1 - Math.exp(-elapsed / 72);
         lastFrameTime = _now;
         metrics.progress += (targetProgress - metrics.progress) * smoothing;
-        if (Math.abs(targetProgress - metrics.progress) < 0.0004) {
+        const remaining = Math.abs(targetProgress - metrics.progress);
+        if (remaining < 0.0004) {
           metrics.progress = targetProgress;
+          lastFrameTime = 0;
         }
         applyProgress(metrics.progress);
-        return Math.abs(targetProgress - metrics.progress) >= 0.0004;
+        return remaining >= 0.0004;
       });
     };
     const stop = () => {
       unsubscribe?.();
       unsubscribe = null;
+      lastFrameTime = 0;
     };
     const handleMotionChange = (event: MediaQueryListEvent) => {
       reducedMotion = event.matches;
@@ -376,7 +381,7 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
         stop();
         metricsRef.current.progress = 1;
         applyProgress(1);
-      } else if (visibleTargets.size > 0) {
+      } else {
         start();
       }
     };
@@ -384,30 +389,31 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
     if (reducedMotion) {
       metricsRef.current.progress = 1;
       applyProgress(1);
+    } else {
+      start();
     }
 
-    if (typeof IntersectionObserver === 'undefined') {
-      start();
-    } else {
+    if (typeof IntersectionObserver !== 'undefined') {
       const observer = new IntersectionObserver(
         (entries) => {
-          entries.forEach((entry) => {
-            if (entry.isIntersecting) visibleTargets.add(entry.target);
-            else visibleTargets.delete(entry.target);
-          });
-          if (visibleTargets.size > 0) start();
+          const isNear = entries.some((entry) => entry.isIntersecting);
+          if (isNear) start();
           else stop();
         },
-        { rootMargin: '120px 0px' },
+        { rootMargin: '800px 0px 800px 0px' },
       );
-      targets.forEach((target) => observer.observe(target));
-      if (targets.length === 0) observer.observe(container);
+      observer.observe(container);
       return () => {
         observer.disconnect();
         stop();
         motionQuery?.removeEventListener?.('change', handleMotionChange);
       };
     }
+
+    return () => {
+      stop();
+      motionQuery?.removeEventListener?.('change', handleMotionChange);
+    };
 
     return () => {
       stop();

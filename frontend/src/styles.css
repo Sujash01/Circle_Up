@@ -1136,11 +1136,13 @@ button.organic-control:focus-visible {
 
 @media (max-width: 639px) {
   .home-vine-frame {
-    --vine-gutter: 48px;
+    --vine-gutter: 44px;
   }
 
   .home-vine-layer {
-    opacity: 0.85;
+    left: 4px;
+    width: var(--vine-gutter);
+    opacity: 0.92;
   }
 
   .home-vine-layer [data-vine-stem] {
@@ -1175,11 +1177,13 @@ button.organic-control:focus-visible {
   }
 
   .home-vine-frame .home-vine-section {
-    padding-inline-start: calc(var(--vine-gutter) + 5rem);
+    padding-inline-start: calc(var(--vine-gutter) + 0.65rem);
+    padding-inline-end: 1rem;
   }
 
   .home-vine-frame .home-vine-footer footer > div:first-child {
-    padding-inline-start: calc(var(--vine-gutter) + 5rem);
+    padding-inline-start: calc(var(--vine-gutter) + 0.65rem);
+    padding-inline-end: 1rem;
   }
 }
 
