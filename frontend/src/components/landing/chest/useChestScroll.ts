@@ -16,7 +16,6 @@ export function useChestScroll(
 
     let heroDocTop = 0;
     let heroTrack = 1;
-    let navHeight = 76;
     let current = 0;
     let unsubscribe: (() => void) | null = null;
     let reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
@@ -24,11 +23,10 @@ export function useChestScroll(
     const measure = () => {
       const heroRect = hero.getBoundingClientRect();
       const stageHeight = stage.getBoundingClientRect().height;
-      const header = document.querySelector('header');
-      navHeight = header?.getBoundingClientRect().height ?? 76;
       heroDocTop = heroRect.top + window.scrollY;
       heroTrack = Math.max(1, heroRect.height - stageHeight);
-      current = clamp((window.scrollY - heroDocTop + navHeight) / heroTrack);
+      const scrollOffset = Math.max(0, window.scrollY - heroDocTop);
+      current = clamp(scrollOffset / heroTrack);
     };
 
     measure();
@@ -42,7 +40,8 @@ export function useChestScroll(
       if (unsubscribe || reducedMotion) return;
       hero.classList.add('tc-is-visible');
       unsubscribe = subscribeToScrollFrames((scrollY, now) => {
-        const target = clamp((scrollY - heroDocTop + navHeight) / heroTrack);
+        const scrollOffset = Math.max(0, scrollY - heroDocTop);
+        const target = clamp(scrollOffset / heroTrack);
         current += (target - current) * 0.14;
         if (Math.abs(target - current) < 0.0005) current = target;
         rendererRef.current?.(current, now);
@@ -57,7 +56,7 @@ export function useChestScroll(
     const handleMotionChange = (event: MediaQueryListEvent) => {
       reducedMotion = event.matches;
       stop();
-      if (reducedMotion) rendererRef.current?.(1, 0);
+      if (reducedMotion) rendererRef.current?.(0, 0);
       else if (isVisible) start();
     };
     let isVisible = false;
@@ -65,7 +64,7 @@ export function useChestScroll(
     motionQuery?.addEventListener?.('change', handleMotionChange);
 
     if (reducedMotion) {
-      requestAnimationFrame(() => rendererRef.current?.(1, 0));
+      rendererRef.current?.(0, 0);
     } else if (typeof IntersectionObserver === 'undefined') {
       isVisible = true;
       start();

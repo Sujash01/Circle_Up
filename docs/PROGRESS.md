@@ -205,6 +205,26 @@
 - Visual browser verification: captured screenshots at 1280px and 390px in `docs/screenshots/` showing transparent logo on vintage cream background.
 - All checks pass: `typecheck` (0 errors), `lint` (0 errors), `tests` (65/65 passing), `build` (clean Vite bundle).
 
+### Phase 6: Refined Golden Chest Blending, Minimal Category Pages & Auth Navigation (Completed)
+- **Golden Treasure Chest & Seamless Paper Blending**:
+  - Re-engineered chest materials in `TreasureChestHero.css` with a lustrous antique gold / aged brass finish (`#d6af48`, `#f9e8a2`, `#b78625`, `#c8962c`).
+  - Removed heavy dark border outlines (`border: 2px solid #422204`); replaced with delicate beveled burnished bronze seams and warm highlights.
+  - Reduced idle perspective angles from `-22deg` yaw / `-11deg` pitch down to a flattering, subtle `-10deg` / `-5.5deg`, eliminating boxy distortion on the right face.
+  - Softened the background sage blob (`.tc-collage-blob` and `.tc-sun`) with `mix-blend-mode: multiply`, `opacity: 0.45`, reduced inset, and feathered radial blur (`filter: blur(12px)`), transforming it into a soft watercolor wash that naturally stains into the cream paper without cutting awkwardly into the photos or chest.
+  - Grounded chest contact shadow with centered placement directly under the base (`mix-blend-mode: multiply`).
+- **Sign In & Sign Up Storefront Integration**:
+  - In `StorefrontChrome.tsx`: Added visible **Sign In** and **Sign Up** links/pills in the desktop header tools, tablet/mobile touch target `User` icon button, mobile directory drawer section ("Account & Access"), desktop Collections dropdown footer, and site footer under "Company".
+  - Connected session state via Redux: displays user's first name and account link when logged in.
+  - Registered `/signin`, `/signup`, `/login`, `/register` routes with full input validation in `SignInPage.tsx` and `SignUpPage.tsx`.
+- **Minimal Category Pages**:
+  - Removed subcategory selection and sidebar clutter in `CategoryListingPage.tsx`, displaying full curated pieces directly with inline size filters and sort controls.
+- **Verification**:
+  - `npm run typecheck`: 0 errors across shared, backend, and frontend.
+  - `npm run lint`: 0 errors.
+  - `npm test`: 65/65 passing (45 backend unit/integration tests + 20 frontend Vitest tests).
+  - Browser verification screenshots saved in `docs/screenshots/verify-golden-chest-header.png`, `verify-signin-page.png`, `verify-signup-page.png`, and `verify-womens-upperwear-refined.png`.
+
+
 
 
 

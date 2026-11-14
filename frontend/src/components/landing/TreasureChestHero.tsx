@@ -135,14 +135,13 @@ export function TreasureChestHero({ picks }: { picks?: ChestProduct[] } = {}) {
   const asideRef = useRef<HTMLDivElement>(null);
   const taglineRef = useRef<HTMLDivElement>(null);
   const exploreBtnRef = useRef<HTMLAnchorElement>(null);
-  const countRef = useRef<HTMLSpanElement>(null);
-  const hudActionsRef = useRef<HTMLDivElement>(null);
+  const seamGlintRef = useRef<HTMLDivElement>(null);
 
   const cardRefs = useRef<Array<HTMLAnchorElement | null>>([]);
   const garmentRefs = useRef<Array<HTMLDivElement | null>>([]);
   const frameRendererRef = useRef<(progress: number, now: number) => void>(() => {});
 
-  const visibleProducts = picks && picks.length > 0 ? picks.slice(0, 6) : CHEST_PRODUCTS;
+  const visibleProducts = picks !== undefined ? (picks && picks.length > 0 ? picks.slice(0, 6) : []) : CHEST_PRODUCTS;
   useChestScroll(heroRef, stageRef, frameRendererRef);
 
   useEffect(() => {
@@ -161,7 +160,6 @@ export function TreasureChestHero({ picks }: { picks?: ChestProduct[] } = {}) {
 
     let u = 1;
     let cardU = 1;
-    let displayedFindCount = -1;
     let navHeight = 76;
     const headerEl = document.querySelector('header');
     const bannerEl = headerEl?.previousElementSibling;
@@ -201,11 +199,19 @@ export function TreasureChestHero({ picks }: { picks?: ChestProduct[] } = {}) {
     const render = (p: number, now: number) => {
       const slots = window.innerWidth < 760 ? SLOTS_MOBILE : SLOTS_DESKTOP;
       const shift = window.innerWidth < 760 ? SHIFT_MOBILE : SHIFT_DESKTOP;
-      const N = slots.length;
+      const N = Math.min(slots.length, visibleProducts.length);
 
-      const o = clamp((p - 0.01) / 0.36);
-      const lidAng = 16 + 96 * easeOutCubic(o);
+      // Fully closed at scroll 0 and first paint: lid down (0deg), lock visible, no cards
+      const o = clamp(p / 0.32);
+      const lidAng = Math.min(106, 106 * easeOutCubic(o));
       lid.style.setProperty('--lid', `${lidAng.toFixed(2)}deg`);
+
+      if (seamGlintRef.current) {
+        // Soft gold glint at the lid seam only when closed or near-closed
+        const glintOp = p < 0.08 ? (1 - p / 0.08) * (0.35 + 0.35 * Math.sin(now / 750)) : 0;
+        seamGlintRef.current.style.opacity = glintOp.toFixed(3);
+      }
+
       if (shadowRef.current) {
         shadowRef.current.style.transform = `scale(${(1 + o * 0.08).toFixed(3)},${(1 - o * 0.12).toFixed(3)})`;
         shadowRef.current.style.opacity = `${(0.82 - o * 0.18).toFixed(3)}`;
@@ -214,7 +220,7 @@ export function TreasureChestHero({ picks }: { picks?: ChestProduct[] } = {}) {
 
       const first = 0.16;
       const dur = 0.42;
-      const step = (0.86 - first - dur) / Math.max(1, N - 1);
+      const step = N > 1 ? (0.86 - first - dur) / (N - 1) : 0;
       let kick = 0;
       let kickZ = 0;
       for (let i = 0; i < N; i++) {
@@ -223,22 +229,21 @@ export function TreasureChestHero({ picks }: { picks?: ChestProduct[] } = {}) {
         kickZ += (i % 2 ? -1 : 1) * k * 1.1;
       }
 
-      const amp = p < 0.1 ? 1 - p / 0.1 : 0;
-      const shakeX = Math.sin(now / 820) * 1.2 * u * amp;
-      const shakeZ = Math.sin(now / 920) * 0.6 * amp;
+      const amp = p < 0.08 ? (1 - p / 0.08) : 0;
+      const shakeX = Math.sin(now / 1200) * 0.5 * u * amp;
+      const shakeZ = Math.sin(now / 1300) * 0.3 * amp;
       const turn = shift ? 1 : 0.25;
-      // Gentler 2.5D angles for a flatter, crisp storybook-chest presentation
       const yaw =
-        lerp(-22, -12, easeOutCubic(clamp(p / 0.2))) -
-        14 * slide * turn +
-        Math.sin(now / 1700) * 1.5 +
-        sx * 3.5;
-      const pitch = -11 - 5 * slide * turn + Math.sin(now / 2100) * 0.8 - sy * 1.5;
-      const rz = shakeZ - 3 * slide * turn + kickZ * 0.7;
-      const bob = Math.sin(now / 1000) * 3.5 * u;
+        lerp(-10, -5, easeOutCubic(clamp(p / 0.2))) -
+        8 * slide * turn +
+        Math.sin(now / 2200) * 0.8 +
+        sx * 2.0;
+      const pitch = -5.5 - 3 * slide * turn + Math.sin(now / 2600) * 0.5 - sy * 1.0;
+      const rz = shakeZ - 1.5 * slide * turn + kickZ * 0.5;
+      const bob = Math.sin(now / 1600) * 1.1 * u;
       const bump =
-        (1 + Math.sin(Math.PI * clamp((p - 0.06) / 0.12)) * 0.05 + kick * 0.025) *
-        (1 - 0.08 * slide);
+        (1 + Math.sin(Math.PI * clamp((p - 0.06) / 0.12)) * 0.04 + kick * 0.02) *
+        (1 - 0.06 * slide);
 
       const tf = `translate3d(${shakeX.toFixed(1)}px,${bob.toFixed(1)}px,0) rotateZ(${rz.toFixed(2)}deg) rotateX(${pitch.toFixed(2)}deg) rotateY(${yaw.toFixed(2)}deg) scale3d(${bump.toFixed(3)},${bump.toFixed(3)},${bump.toFixed(3)})`;
       if (backRigRef.current) backRigRef.current.style.transform = tf;
@@ -252,53 +257,56 @@ export function TreasureChestHero({ picks }: { picks?: ChestProduct[] } = {}) {
         el.style.opacity = g.toFixed(3);
       });
 
-      if (glowRef.current) glowRef.current.style.opacity = (0.24 + o * 0.52).toFixed(3);
-      if (underglowRef.current) underglowRef.current.style.opacity = (0.12 + o * 0.45).toFixed(3);
+      if (glowRef.current) glowRef.current.style.opacity = (o * 0.72).toFixed(3);
+      if (underglowRef.current) underglowRef.current.style.opacity = (o * 0.48).toFixed(3);
       if (raysRef.current) {
-        raysRef.current.style.opacity = (o * 0.7 * (1 - clamp((p - 0.9) / 0.1) * 0.5)).toFixed(3);
+        raysRef.current.style.opacity = o > 0.05 ? (o * 0.7 * (1 - clamp((p - 0.9) / 0.1) * 0.5)).toFixed(3) : '0';
         raysRef.current.style.transform = `rotate(${(now / 120 + p * 160).toFixed(1)}deg)`;
       }
-      if (sparksRef.current) sparksRef.current.style.opacity = o > 0.6 ? '1' : '0';
+      if (sparksRef.current) sparksRef.current.style.opacity = o > 0.35 ? '1' : '0';
 
       garmentRefs.current.forEach((garmentEl, i) => {
         const g = garmentPhysics[i];
         if (!garmentEl || !g) return;
-        const t = clamp((p - (0.03 + i * 0.012)) / 0.38);
+        const t = clamp((p - (0.05 + i * 0.012)) / 0.38);
+        if (t <= 0) {
+          garmentEl.style.opacity = '0';
+          return;
+        }
         const e = easeOutCubic(t);
         const x = g.vx * u * e;
         const y = -55 * u - g.h * u * 4 * t * (1 - t) + 135 * u * t * t;
         const sway = Math.sin(now / 360 + i * 1.4) * 8 + g.tilt * e;
         const sc = 0.72 + 0.4 * Math.sin(Math.PI * t);
-        const op = t <= 0 ? (i < 3 ? 0.72 : 0) : t > 0.78 ? 1 - (t - 0.78) / 0.22 : 1;
+        const op = t > 0.78 ? 1 - (t - 0.78) / 0.22 : 1;
         garmentEl.style.opacity = op.toFixed(2);
         garmentEl.style.transform = `translate(-50%,-50%) translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0) rotate(${sway.toFixed(1)}deg) scale(${sc.toFixed(2)})`;
       });
 
-      let findsOut = 0;
       for (let i = 0; i < N; i++) {
         const cardEl = cardRefs.current[i];
         const s = slots[i];
         if (!cardEl || !s) continue;
 
         const t = clamp((p - (first + i * step)) / dur);
-        if (t >= 0.95) findsOut += 1;
-        const e = clamp(easeOutBack(t), 0, 1.08);
-        const fb = Math.sin((now / 1000) * 1.3 + i * 1.7) * 5 * cardU * e;
-        const x = lerp(0, s.x * cardU - off, e);
-        const y = lerp(-60 * cardU, s.y * cardU, e) - Math.sin(Math.PI * t) * 120 * cardU + fb;
-        const rot = s.r + (1 - e) * (s.r >= 0 ? -25 : 25);
-        const sc = 0.35 + 0.65 * e;
-        cardEl.style.opacity = clamp(t * 3.5).toFixed(3);
+        if (t <= 0) {
+          cardEl.style.opacity = '0';
+          cardEl.style.pointerEvents = 'none';
+          cardEl.tabIndex = -1;
+          cardEl.style.transform = 'translate(-50%,-50%) translate3d(0,0,0) scale(0)';
+          continue;
+        }
+        const e = clamp(easeOutBack(t), 0, 1.05);
+        const fb = Math.sin((now / 1000) * 1.2 + i * 1.6) * 4 * cardU * e;
+        const x = lerp(0, s.x * cardU, e);
+        const y = lerp(0, s.y * cardU, e) + fb;
+        const rot = s.r + (1 - e) * (s.r >= 0 ? -15 : 15);
+        const sc = 0.2 + 0.8 * e;
+        cardEl.style.opacity = clamp(t * 2.5).toFixed(3);
         cardEl.style.pointerEvents = t >= 0.85 ? 'auto' : 'none';
         cardEl.tabIndex = t >= 0.85 ? 0 : -1;
         cardEl.style.transform = `translate(-50%,-50%) translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0) rotate(${rot.toFixed(2)}deg) scale(${sc.toFixed(3)})`;
       }
-
-      if (findsOut !== displayedFindCount) {
-        displayedFindCount = findsOut;
-        if (countRef.current) countRef.current.textContent = `${findsOut} of ${N} finds out`;
-      }
-      hudActionsRef.current?.classList.toggle('on', findsOut === N);
 
       const fo = (1 - clamp((p - 0.02) / 0.1)).toFixed(3);
       if (asideRef.current) asideRef.current.style.opacity = fo;
@@ -320,7 +328,7 @@ export function TreasureChestHero({ picks }: { picks?: ChestProduct[] } = {}) {
       resizeObserver?.disconnect();
       window.removeEventListener('pointermove', onPointerMove);
     };
-  }, []);
+  }, [visibleProducts.length]);
 
   return (
     <section ref={heroRef} className="tc-hero" id="hero" aria-label="CircleUp — Fashion That Lasts">
@@ -458,15 +466,7 @@ export function TreasureChestHero({ picks }: { picks?: ChestProduct[] } = {}) {
             sideFaceRef={sideFaceRef}
           />
 
-          <div className="tc-hud">
-            <span ref={countRef} className="tc-count">0 of 6 finds out</span>
-            <div ref={hudActionsRef} className="tc-hud-actions">
-              <Link className="tc-cta" to="/new-arrivals">
-                See all six finds
-                <span aria-hidden="true">→</span>
-              </Link>
-            </div>
-          </div>
+          <div ref={seamGlintRef} className="tc-seam-glint" aria-hidden="true" />
         </div>
 
       </div>

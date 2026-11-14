@@ -1,7 +1,9 @@
-import { ChevronDown, Heart, Menu, Search, ShoppingBag, X } from 'lucide-react';
+import { ChevronDown, Heart, Menu, Search, ShoppingBag, User, X } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { useSelector } from 'react-redux';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import type { RootState } from '@/app/store';
 import bag1 from '@/assets/bag-1.jpg';
 import circleUpLogo from '@/assets/circle-up-logo.png';
 import crumpledPaper from '@/assets/crumpled-paper.jpg';
@@ -243,6 +245,7 @@ function NavPill({ to, children }: { to: string; children: ReactNode }) {
  */
 export function StorefrontHeader({ preserveHomeHeader = false }: { preserveHomeHeader?: boolean }) {
   const { totals, wishlistIds, openSearch } = useStore();
+  const currentUser = useSelector((state: RootState) => state.auth.user);
   const [shopMenuOpen, setShopMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const headerRef = useRef<HTMLElement>(null);
@@ -405,6 +408,39 @@ export function StorefrontHeader({ preserveHomeHeader = false }: { preserveHomeH
               <Search className="size-4" />
             </button>
 
+            {currentUser ? (
+              <Link
+                to="/admin"
+                aria-label={`Account (${currentUser.fullName})`}
+                className="flex min-h-[44px] items-center gap-1.5 rounded-full border-2 border-foreground/20 bg-card/90 px-3.5 py-1.5 text-xs font-semibold text-cocoa shadow-xs transition-all hover:border-primary hover:text-primary hover:shadow-sm"
+              >
+                <User className="size-4 text-primary" />
+                <span className="hidden md:inline max-w-[90px] truncate">{currentUser.fullName.split(' ')[0]}</span>
+              </Link>
+            ) : (
+              <div className="flex items-center gap-1 sm:gap-1.5">
+                <Link
+                  to="/signin"
+                  className="hidden md:inline-flex min-h-[40px] items-center rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider text-cocoa transition-colors hover:text-primary hover:bg-forest/5"
+                >
+                  Sign In
+                </Link>
+                <Link
+                  to="/signup"
+                  className="hidden sm:inline-flex min-h-[40px] items-center rounded-full border border-primary/40 bg-primary/10 px-3.5 py-1 text-xs font-bold uppercase tracking-wider text-primary transition-all hover:bg-primary hover:text-primary-foreground hover:shadow-xs"
+                >
+                  Sign Up
+                </Link>
+                <Link
+                  to="/signin"
+                  aria-label="Sign In"
+                  className="flex sm:hidden size-[44px] items-center justify-center rounded-full border-2 border-foreground/20 bg-card/90 text-cocoa shadow-xs transition-all hover:border-primary hover:text-primary"
+                >
+                  <User className="size-4" />
+                </Link>
+              </div>
+            )}
+
             <Link
               to="/wishlist"
               aria-label={`Wishlist (${wishlistIds.length} saved)`}
@@ -501,7 +537,14 @@ export function StorefrontHeader({ preserveHomeHeader = false }: { preserveHomeH
                 </Link>
               </div>
 
-              <div className="flex items-center gap-4 font-semibold uppercase tracking-wider">
+              <div className="flex items-center gap-3.5 font-semibold uppercase tracking-wider text-xs">
+                <Link to="/signin" className="text-cocoa hover:text-primary underline underline-offset-4">
+                  Sign In
+                </Link>
+                <Link to="/signup" className="text-primary hover:text-primary underline underline-offset-4">
+                  Sign Up
+                </Link>
+                <span className="text-foreground/20" aria-hidden="true">|</span>
                 <Link to="/cart" className="text-primary underline underline-offset-4">
                   Bag ({totals.itemCount})
                 </Link>
@@ -547,6 +590,26 @@ export function StorefrontHeader({ preserveHomeHeader = false }: { preserveHomeH
             </div>
           </div>
         ))}
+
+        <div className="border-t border-foreground/15 pt-4 mt-2">
+          <p className="text-[0.68rem] font-bold uppercase tracking-[0.18em] text-terracotta mb-2">
+            Account & Access
+          </p>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+            <Link
+              to="/signin"
+              className="flex min-h-[48px] items-center text-sm font-semibold text-cocoa hover:text-primary"
+            >
+              Sign In
+            </Link>
+            <Link
+              to="/signup"
+              className="flex min-h-[48px] items-center text-sm font-semibold text-primary hover:text-primary/80"
+            >
+              Create Account
+            </Link>
+          </div>
+        </div>
       </nav>
 
       <SearchOverlay />
@@ -634,6 +697,8 @@ export function StorefrontFooter() {
             title="Company"
             links={[
               { label: 'About Us', to: '/about' },
+              { label: 'Sign In', to: '/signin' },
+              { label: 'Create Account', to: '/signup' },
               { label: 'Contact', to: '/contact' },
               { label: 'Shopping Bag', to: '/cart' },
               { label: 'Saved Wishlist', to: '/wishlist' },

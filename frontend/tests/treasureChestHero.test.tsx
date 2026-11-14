@@ -26,8 +26,8 @@ describe('TreasureChestHero', () => {
     expect(host.querySelector('.tc-hint')).toBeNull();
     expect(host.querySelector('.tc-mouse')).toBeNull();
     expect(host.querySelectorAll('.tc-card').length).toBe(6);
-    expect(host.querySelector('.tc-count')?.textContent).toBe('0 of 6 finds out');
-    expect(host.querySelector('.tc-hud-actions a')?.getAttribute('href')).toBe('/new-arrivals');
+    expect(host.querySelector('.tc-hud')).toBeNull();
+    expect(host.querySelector('.tc-count')).toBeNull();
     expect(host.textContent?.toLowerCase()).not.toContain('circleup cache');
     expect(host.querySelectorAll('.tc-ivy').length).toBe(2);
     expect(host.querySelector('.tc-vine')).toBeNull();

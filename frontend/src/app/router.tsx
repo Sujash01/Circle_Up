@@ -17,6 +17,8 @@ import { ProductDetailPage } from '@/features/public/ProductDetailPage';
 import { RentalsPage } from '@/features/public/RentalsPage';
 import { ReviewsPage } from '@/features/public/ReviewsPage';
 import { SearchPage } from '@/features/public/SearchPage';
+import { SignInPage } from '@/features/public/SignInPage';
+import { SignUpPage } from '@/features/public/SignUpPage';
 import { ThriftCrewPage } from '@/features/public/ThriftCrewPage';
 import { ThriftedTreasurePage } from '@/features/public/ThriftedTreasurePage';
 import { WishlistPage } from '@/features/public/WishlistPage';
@@ -108,6 +110,12 @@ export const router = createBrowserRouter([
           { path: 'events', element: <EventsPage /> },
           { path: 'events/:id', element: <EventDetailPage /> },
           { path: 'thriftcrew', element: <ThriftCrewPage /> },
+
+          // Authentication routes
+          { path: 'signin', element: <SignInPage /> },
+          { path: 'signup', element: <SignUpPage /> },
+          { path: 'login', element: <Navigate to="/signin" replace /> },
+          { path: 'register', element: <Navigate to="/signup" replace /> },
 
           // Clean route aliases
           { path: 'thrift-crew', element: <Navigate to="/thriftcrew" replace /> },
