@@ -1,5 +1,13 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { createBrowserRouter, Navigate, Outlet, useLocation } from 'react-router-dom';
+import {
+  createBrowserRouter,
+  isRouteErrorResponse,
+  Link,
+  Navigate,
+  Outlet,
+  useLocation,
+  useRouteError,
+} from 'react-router-dom';
 import { ExitIntentModal } from '@/components/storefront/ExitIntentModal';
 import { StorefrontLayout } from '@/components/storefront/StorefrontChrome';
 import { AboutPage } from '@/features/public/AboutPage';
@@ -38,10 +46,45 @@ function RootScrollWrapper() {
   );
 }
 
+function RouteErrorBoundary() {
+  const error = useRouteError();
+  const message = isRouteErrorResponse(error)
+    ? `${error.status} ${error.statusText}`
+    : error instanceof Error
+      ? error.message
+      : 'An unexpected application error occurred.';
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-6 bg-[#f8f4e2] text-[#272727]">
+      <div className="max-w-md w-full bg-card p-8 rounded-2xl border-2 border-foreground/20 text-center space-y-4 shadow-md">
+        <p className="text-xs font-bold uppercase tracking-widest text-terracotta">CircleUp</p>
+        <h1 className="font-display text-2xl sm:text-3xl text-forest-deep">Something took a wrong turn</h1>
+        <p className="text-sm text-foreground/70">{message}</p>
+        <div className="pt-2 flex justify-center gap-3">
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="rounded-full bg-forest-deep px-5 py-2 text-xs font-bold text-white hover:bg-forest transition-colors"
+          >
+            Reload
+          </button>
+          <Link
+            to="/"
+            className="rounded-full border border-forest/30 px-5 py-2 text-xs font-bold text-forest hover:bg-forest/5 transition-colors"
+          >
+            Go Home
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export const router = createBrowserRouter([
   // Admin App: Lazy-loaded independently outside storefront chrome and exit modals
   {
     path: 'admin/*',
+    errorElement: <RouteErrorBoundary />,
     element: (
       <Suspense fallback={null}>
         <AdminApp />
@@ -50,6 +93,7 @@ export const router = createBrowserRouter([
   },
   {
     element: <RootScrollWrapper />,
+    errorElement: <RouteErrorBoundary />,
     children: [
       // Preserved landing homepage
       {

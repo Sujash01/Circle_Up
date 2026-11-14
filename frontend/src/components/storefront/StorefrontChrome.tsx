@@ -1,9 +1,9 @@
 import { ChevronDown, Heart, Menu, Search, ShoppingBag, User, X } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { useSelector } from 'react-redux';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import type { RootState } from '@/app/store';
+import { store } from '@/app/store';
+import { authService } from '@/services/authService';
 import bag1 from '@/assets/bag-1.jpg';
 import circleUpLogo from '@/assets/circle-up-logo.png';
 import crumpledPaper from '@/assets/crumpled-paper.jpg';
@@ -245,7 +245,27 @@ function NavPill({ to, children }: { to: string; children: ReactNode }) {
  */
 export function StorefrontHeader({ preserveHomeHeader = false }: { preserveHomeHeader?: boolean }) {
   const { totals, wishlistIds, openSearch } = useStore();
-  const currentUser = useSelector((state: RootState) => state.auth.user);
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      return store.getState().auth.user || authService.getStoredSession()?.user || null;
+    } catch {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    const sync = () => {
+      try {
+        const stateUser = store.getState().auth.user;
+        setCurrentUser(stateUser || authService.getStoredSession()?.user || null);
+      } catch {
+        setCurrentUser(null);
+      }
+    };
+    sync();
+    return store.subscribe(sync);
+  }, []);
+
   const [shopMenuOpen, setShopMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const headerRef = useRef<HTMLElement>(null);
