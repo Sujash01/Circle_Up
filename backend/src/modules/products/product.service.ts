@@ -1,16 +1,12 @@
 import mongoose from 'mongoose';
-import { Product, type IProductDocument } from '../../models/Product.js';
+import { Product } from '../../models/Product.js';
 import { SEED_PRODUCTS } from '../../data/seedProducts.js';
 import { BadRequestError, NotFoundError } from '../../errors/AppError.js';
-import { buildPaginationMeta, parsePagination, type ParsedPagination } from '../../utils/pagination.js';
+import { buildPaginationMeta, parsePagination } from '../../utils/pagination.js';
 import type { IProductItem, ProductListQuery } from '@circleup/shared';
 
 function isDatabaseConnected(): boolean {
   return mongoose.connection.readyState === 1;
-}
-
-function normalizeToken(value: string): string {
-  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
 }
 
 function slugify(name: string): string {

@@ -7,7 +7,7 @@ import { useStore } from '@/context/StoreContext';
 import { apiClient } from '@/services/apiClient';
 import { cartService, formatPrice } from '@/services/cartService';
 
-type PaymentMethod = 'WHATSAPP_UPI' | 'CASH_ON_DELIVERY' | 'ONLINE_UPI';
+import type { PaymentMethod } from '@circleup/shared';
 
 function isPaymentMethod(value: string): value is PaymentMethod {
   return (

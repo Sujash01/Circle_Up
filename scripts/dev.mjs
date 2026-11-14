@@ -72,5 +72,16 @@ function startWorkspace(label, scriptName) {
 process.on('SIGINT', () => shutdown(0));
 process.on('SIGTERM', () => shutdown(0));
 
+// Build shared contract first so backend & frontend have fresh types/dist
+console.log('[setup] Building @circleup/shared...');
+const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+try {
+  execFileSync(npmCmd, ['run', 'build:shared'], { cwd: rootDir, stdio: 'inherit' });
+} catch (err) {
+  console.error('[setup] Failed to build @circleup/shared:', err);
+  process.exit(1);
+}
+
+startWorkspace('shared', 'dev --workspace=@circleup/shared');
 startWorkspace('backend', 'dev:backend');
 startWorkspace('frontend', 'dev:frontend');

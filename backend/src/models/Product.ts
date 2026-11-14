@@ -21,7 +21,7 @@ export interface IProductDocument extends Document {
   tags: string[];
   featured: boolean;
   isNewArrival: boolean;
-  status: 'ACTIVE' | 'SOLD_OUT' | 'DRAFT' | 'ARCHIVED';
+  status: 'ACTIVE' | 'PUBLISHED' | 'SOLD_OUT' | 'DRAFT' | 'ARCHIVED';
   variants: Array<{
     id: string;
     label: string;
@@ -152,7 +152,7 @@ const ProductSchema = new Schema<IProductDocument>(
     },
     status: {
       type: String,
-      enum: ['ACTIVE', 'SOLD_OUT', 'DRAFT', 'ARCHIVED'],
+      enum: ['ACTIVE', 'PUBLISHED', 'SOLD_OUT', 'DRAFT', 'ARCHIVED'],
       default: 'ACTIVE',
       index: true,
     },

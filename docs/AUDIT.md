@@ -116,3 +116,4 @@
   - **Status**: **Tracked in Git** (added in commit `5fb76f6`).
   - **Secret Exposure**: **NONE**. The file contains local defaults (`mongodb://127.0.0.1:27017/circleup_dev`) and generic placeholders (`replace-with-32-plus-char-customer-access-secret`).
   - **Action Required**: Run `git rm --cached backend/.env` in Phase 1, ensure `.gitignore` covers all `.env` files, and maintain `backend/.env.example`.
+

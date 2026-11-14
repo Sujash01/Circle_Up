@@ -1,6 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { Inquiry } from '../../models/Inquiry.js';
-import { sendCreated, sendSuccess } from '../../utils/apiResponse.js';
+import { sendCreated } from '../../utils/apiResponse.js';
 import { BadRequestError } from '../../errors/AppError.js';
 import mongoose from 'mongoose';
 

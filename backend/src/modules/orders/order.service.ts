@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { Order, type IOrderDocument } from '../../models/Order.js';
+import { Order } from '../../models/Order.js';
 import { Product } from '../../models/Product.js';
 import { BadRequestError, NotFoundError } from '../../errors/AppError.js';
 import { buildPaginationMeta, parsePagination } from '../../utils/pagination.js';

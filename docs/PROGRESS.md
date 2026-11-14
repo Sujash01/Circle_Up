@@ -8,15 +8,15 @@
   - [x] Write `docs/AUDIT.md`.
   - [x] Run typecheck, lint, tests and commit `session1 phase 0: rules and audit`.
 
-- [ ] **Phase 1: Build Health and Shared Contract**
-  - [ ] Fix workspace build order so shared builds first (`build:shared`, `dev`, `seed`, `test`, `build`).
-  - [ ] Verify `backend/.env` git tracking; if tracked, untrack with `git rm --cached`, add to `.gitignore`, keep `.env.example`.
-  - [ ] Add Zod schemas and inferred types in `/shared`:
+- [x] **Phase 1: Build Health and Shared Contract**
+  - [x] Fix workspace build order so shared builds first (`build:shared`, `dev`, `seed`, `test`, `build`).
+  - [x] Verify `backend/.env` git tracking; if tracked, untrack with `git rm --cached`, add to `.gitignore`, keep `.env.example`.
+  - [x] Add Zod schemas and inferred types in `/shared`:
     - `Product`, `ProductImage`, `Category`, `Collection`, `Coupon`, `Order`, `OrderItem`, `CartItem`, `RentalItem`, `StoreEvent`, `SiteSettings`, `AdminUser`.
     - Pagination envelope and error shape `{ error: { code, message } }`.
-  - [ ] Document integer money format (paise integer storage) and add `formatPrice()` with unit test.
-  - [ ] Fix backend lint errors and `CartPage.tsx` lint/type errors at root cause.
-  - [ ] Run typecheck, lint, tests and commit `session1 phase 1: build health and shared contract`.
+  - [x] Document integer money format (paise integer storage) and add `formatPrice()` with unit test.
+  - [x] Fix backend lint errors and `CartPage.tsx` lint/type errors at root cause.
+  - [x] Run typecheck, lint, tests and commit `session1 phase 1: build health and shared contract`.
 
 - [ ] **Phase 2: Backend Rebuilt Around the Frontend**
   - [ ] Structure backend: `routes -> controllers -> services -> repositories`, async error middleware, request IDs.
@@ -57,4 +57,12 @@
 - Audited all frontend data needs, backend state, contracts, test/build status, and git tracking in `docs/AUDIT.md`.
 - Verified typecheck, test suites, and build across `@circleup/shared`, `@circleup/backend`, and `@circleup/frontend`.
 - Discovered 5 backend unused variable lint errors and identified `backend/.env` git tracking to fix in Phase 1.
+
+### Phase 1: Build Health and Shared Contract (Completed)
+- Configured root script `build:shared` and updated `scripts/dev.mjs` to compile shared schemas before starting dev processes.
+- Untracked `backend/.env` from git (`git rm --cached`), verified `.gitignore`, and completed `backend/.env.example`.
+- Created comprehensive Zod schemas and inferred types in `@circleup/shared`: `Product`, `ProductImage`, `ProductVariant`, `Category`, `Collection`, `Coupon`, `Order`, `OrderItem`, `CartItem`, `RentalItem`, `StoreEvent`, `SiteSettings`, `AdminUser`, `PaginationMeta`, and `ApiErrorResponse`.
+- Implemented `formatPrice()` with non-negative integer paise specification in `/shared` and added test suite in `frontend/tests/formatPrice.test.ts`.
+- Resolved all 5 backend unused variable ESLint errors and fixed `CartPage.tsx` `PaymentMethod` type guard.
+- Typecheck, ESLint, and all 20 tests pass cleanly across monorepo.
 
