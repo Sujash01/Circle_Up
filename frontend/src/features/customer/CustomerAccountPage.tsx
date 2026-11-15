@@ -4,15 +4,10 @@ import { useSelector } from 'react-redux';
 import {
   User,
   ShoppingBag,
-  Heart,
   MapPin,
-  Leaf,
   Sparkles,
   LogOut,
   Package,
-  Calendar,
-  Clock,
-  ArrowRight,
   ShieldCheck,
   CreditCard,
   Plus,
@@ -21,18 +16,11 @@ import {
   Truck,
   ExternalLink,
   Download,
-  RotateCcw,
-  Tag,
-  AlertCircle,
   FileText,
-  Phone,
-  Mail,
-  Edit2,
   CheckCircle2,
 } from 'lucide-react';
 import type { RootState } from '@/app/store';
 import { authService } from '@/services/authService';
-import { useStore } from '@/context/StoreContext';
 import { formatPrice } from '@circleup/shared';
 
 // Safe product imagery imports adhering to AGENTS.md (zero model photos)
@@ -42,6 +30,8 @@ import rtw3 from '@/assets/rtw-3.jpg';
 import bag1 from '@/assets/bag-1.jpg';
 import bag2 from '@/assets/bag-2.jpg';
 import winter1 from '@/assets/winter-1.jpg';
+
+type TabType = 'orders' | 'purchases' | 'addresses' | 'payments';
 
 interface SavedAddress {
   id: string;
@@ -73,16 +63,21 @@ interface SavedCard {
   isDefault: boolean;
 }
 
+const TABS: { id: TabType; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { id: 'orders', label: 'Orders', icon: Package },
+  { id: 'purchases', label: 'Purchases', icon: ShoppingBag },
+  { id: 'addresses', label: 'Address Details', icon: MapPin },
+  { id: 'payments', label: 'Payment Methods', icon: CreditCard },
+];
+
 export function CustomerAccountPage() {
   const navigate = useNavigate();
   const currentUser = useSelector((state: RootState) => state.auth.user);
-  const { wishlistIds } = useStore();
 
-  const [activeTab, setActiveTab] = useState<'orders' | 'purchases' | 'addresses' | 'payments' | 'sustainability'>('orders');
+  const [activeTab, setActiveTab] = useState<TabType>('orders');
   const [orderFilter, setOrderFilter] = useState<'all' | 'in_transit' | 'delivered'>('all');
   const [selectedOrderTracking, setSelectedOrderTracking] = useState<string | null>(null);
   const [showInvoiceModal, setShowInvoiceModal] = useState<string | null>(null);
-  const [reCircleSuccess, setReCircleSuccess] = useState<string | null>(null);
 
   // Addresses State
   const [addresses, setAddresses] = useState<SavedAddress[]>([
@@ -183,7 +178,7 @@ export function CustomerAccountPage() {
     });
   };
 
-  // Orders data with rich timestamps and paise currency amounts
+  // Orders data with timestamps and paise currency amounts
   const demoOrders = [
     {
       id: 'CU-88421',
@@ -192,7 +187,7 @@ export function CustomerAccountPage() {
       courier: 'Bluedart Express',
       trackingNumber: 'BD-774921049',
       status: 'IN_TRANSIT',
-      step: 3, // 1: Placed, 2: Packed, 3: Dispatched, 4: Delivered
+      step: 3,
       shippingAddress: 'Flat 402, Sea Green Apartments, Hill Road, Bandra West, Mumbai 400050',
       totalAmount: 255000,
       items: [
@@ -258,7 +253,7 @@ export function CustomerAccountPage() {
     },
   ];
 
-  // Purchases & Wardrobe catalog
+  // Purchases catalog
   const ownedPurchases = [
     {
       id: 'pur-1',
@@ -270,7 +265,6 @@ export function CustomerAccountPage() {
       price: 255000,
       image: rtw1,
       tag: '1990s Italian Tailoring',
-      co2Saved: '3.8 kg',
     },
     {
       id: 'pur-2',
@@ -282,7 +276,6 @@ export function CustomerAccountPage() {
       price: 295000,
       image: rtw2,
       tag: 'Circa 1984 Artisan Piece',
-      co2Saved: '4.2 kg',
     },
     {
       id: 'pur-3',
@@ -294,7 +287,6 @@ export function CustomerAccountPage() {
       price: 195000,
       image: bag1,
       tag: 'Full Grain Hand-Stitched',
-      co2Saved: '2.2 kg',
     },
     {
       id: 'pur-4',
@@ -306,7 +298,6 @@ export function CustomerAccountPage() {
       price: 320000,
       image: winter1,
       tag: 'Zero-Waste Wool Revival',
-      co2Saved: '5.1 kg',
     },
   ];
 
@@ -321,7 +312,6 @@ export function CustomerAccountPage() {
       rentalFee: 145000,
       image: rtw3,
       status: 'Active — Return in 6 Days',
-      isDueSoon: false,
     },
     {
       id: 'rent-2',
@@ -332,7 +322,6 @@ export function CustomerAccountPage() {
       rentalFee: 95000,
       image: bag2,
       status: 'Returned & Inspected',
-      isDueSoon: false,
     },
   ];
 
@@ -356,10 +345,10 @@ export function CustomerAccountPage() {
               Member Portal
             </p>
             <h1 className="font-display text-2xl sm:text-3xl font-bold text-cocoa">
-              Sign In to Access Your Wardrobe
+              Sign In to Access Your Profile
             </h1>
             <p className="text-xs text-foreground/75 max-w-sm mx-auto leading-relaxed">
-              Track orders, manage delivery addresses, saved payment methods, and your circular wardrobe archive.
+              Track orders, view past purchases, manage delivery addresses, and saved payment methods.
             </p>
           </div>
 
@@ -388,7 +377,7 @@ export function CustomerAccountPage() {
                 className="w-full py-2.5 px-4 rounded-full border border-terracotta/40 bg-terracotta/5 hover:bg-terracotta/10 text-xs font-bold text-terracotta transition-colors flex items-center justify-center gap-2"
               >
                 <Sparkles className="size-3.5" />
-                <span>Explore Demo Collector Profile (Aanya Sharma)</span>
+                <span>Explore Demo Profile (Aanya Sharma)</span>
               </button>
             </div>
           </div>
@@ -497,11 +486,6 @@ export function CustomerAccountPage() {
     showNotification('Payment card securely tokenized per RBI guidelines.');
   };
 
-  const handleReCircleGarment = (title: string) => {
-    setReCircleSuccess(title);
-    setTimeout(() => setReCircleSuccess(null), 4000);
-  };
-
   return (
     <div className="max-w-5xl mx-auto space-y-6 sm:space-y-8 py-4 sm:py-8 px-3 sm:px-4">
       {/* Toast notification banner */}
@@ -546,7 +530,7 @@ export function CustomerAccountPage() {
                   </>
                 )}
                 <span>•</span>
-                <span className="text-terracotta font-medium">Founding Collector</span>
+                <span className="text-terracotta font-medium">Verified Member</span>
               </p>
             </div>
           </div>
@@ -571,110 +555,86 @@ export function CustomerAccountPage() {
           </div>
         </div>
 
-        {/* Circular Fashion Impact Ticker */}
-        <div className="mt-6 grid grid-cols-3 gap-3 pt-6 border-t border-foreground/10 text-center">
-          <div className="space-y-1">
-            <div className="inline-flex items-center gap-1 text-[0.65rem] font-bold uppercase tracking-wider text-terracotta">
-              <Leaf className="size-3 text-primary" />
-              <span>Garments Rehomed</span>
-            </div>
-            <p className="font-serif text-xl sm:text-2xl font-bold text-cocoa">4 pieces</p>
-          </div>
-          <div className="space-y-1">
-            <div className="inline-flex items-center gap-1 text-[0.65rem] font-bold uppercase tracking-wider text-terracotta">
-              <Sparkles className="size-3 text-amber-700" />
-              <span>CO₂ Avoided</span>
-            </div>
-            <p className="font-serif text-xl sm:text-2xl font-bold text-cocoa">15.3 kg</p>
-          </div>
-          <div className="space-y-1">
-            <div className="inline-flex items-center gap-1 text-[0.65rem] font-bold uppercase tracking-wider text-terracotta">
-              <ShieldCheck className="size-3 text-primary" />
-              <span>Water Conserved</span>
-            </div>
-            <p className="font-serif text-xl sm:text-2xl font-bold text-cocoa">7,800 L</p>
-          </div>
+        {/* Clean Account Overview Metrics */}
+        <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-3 pt-6 border-t border-foreground/10 text-center">
+          <button
+            type="button"
+            onClick={() => setActiveTab('orders')}
+            className="space-y-1 p-2 rounded-xl hover:bg-secondary/40 transition-colors text-center"
+          >
+            <span className="text-[0.68rem] font-bold uppercase tracking-wider text-terracotta block">
+              Orders
+            </span>
+            <p className="font-serif text-xl sm:text-2xl font-bold text-cocoa">{demoOrders.length}</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('purchases')}
+            className="space-y-1 p-2 rounded-xl hover:bg-secondary/40 transition-colors text-center"
+          >
+            <span className="text-[0.68rem] font-bold uppercase tracking-wider text-terracotta block">
+              Purchases
+            </span>
+            <p className="font-serif text-xl sm:text-2xl font-bold text-cocoa">{ownedPurchases.length}</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('addresses')}
+            className="space-y-1 p-2 rounded-xl hover:bg-secondary/40 transition-colors text-center"
+          >
+            <span className="text-[0.68rem] font-bold uppercase tracking-wider text-terracotta block">
+              Address Details
+            </span>
+            <p className="font-serif text-xl sm:text-2xl font-bold text-cocoa">{addresses.length}</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('payments')}
+            className="space-y-1 p-2 rounded-xl hover:bg-secondary/40 transition-colors text-center"
+          >
+            <span className="text-[0.68rem] font-bold uppercase tracking-wider text-terracotta block">
+              Payment Methods
+            </span>
+            <p className="font-serif text-xl sm:text-2xl font-bold text-cocoa">
+              {savedUpis.length + savedCards.length}
+            </p>
+          </button>
         </div>
       </div>
 
-      {/* Navigation Tabs - Clean, responsive pill buttons */}
+      {/* Navigation Tabs - Consistent, clean, uniform headings without random numbers */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none border-b border-foreground/15 text-xs font-bold uppercase tracking-wider">
-        <button
-          type="button"
-          onClick={() => setActiveTab('orders')}
-          className={`pb-2.5 px-4 border-b-2 transition-all whitespace-nowrap flex items-center gap-1.5 ${
-            activeTab === 'orders'
-              ? 'border-primary text-primary font-bold'
-              : 'border-transparent text-cocoa/60 hover:text-cocoa'
-          }`}
-        >
-          <Package className="size-3.5" />
-          <span>Orders ({demoOrders.length})</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('purchases')}
-          className={`pb-2.5 px-4 border-b-2 transition-all whitespace-nowrap flex items-center gap-1.5 ${
-            activeTab === 'purchases'
-              ? 'border-primary text-primary font-bold'
-              : 'border-transparent text-cocoa/60 hover:text-cocoa'
-          }`}
-        >
-          <ShoppingBag className="size-3.5" />
-          <span>Purchases & Wardrobe ({ownedPurchases.length})</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('addresses')}
-          className={`pb-2.5 px-4 border-b-2 transition-all whitespace-nowrap flex items-center gap-1.5 ${
-            activeTab === 'addresses'
-              ? 'border-primary text-primary font-bold'
-              : 'border-transparent text-cocoa/60 hover:text-cocoa'
-          }`}
-        >
-          <MapPin className="size-3.5" />
-          <span>Address Details ({addresses.length})</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('payments')}
-          className={`pb-2.5 px-4 border-b-2 transition-all whitespace-nowrap flex items-center gap-1.5 ${
-            activeTab === 'payments'
-              ? 'border-primary text-primary font-bold'
-              : 'border-transparent text-cocoa/60 hover:text-cocoa'
-          }`}
-        >
-          <CreditCard className="size-3.5" />
-          <span>Payment Methods</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('sustainability')}
-          className={`pb-2.5 px-4 border-b-2 transition-all whitespace-nowrap flex items-center gap-1.5 ${
-            activeTab === 'sustainability'
-              ? 'border-primary text-primary font-bold'
-              : 'border-transparent text-cocoa/60 hover:text-cocoa'
-          }`}
-        >
-          <Leaf className="size-3.5" />
-          <span>Circular Impact</span>
-        </button>
+        {TABS.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`pb-2.5 px-4 border-b-2 transition-all whitespace-nowrap flex items-center gap-2 ${
+                isActive
+                  ? 'border-primary text-primary font-bold'
+                  : 'border-transparent text-cocoa/60 hover:text-cocoa'
+              }`}
+            >
+              <Icon className="size-4" />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* ========================================================================= */}
-      {/* TAB 1: ORDERS & TRACKING                                                  */}
+      {/* TAB 1: ORDERS                                                             */}
       {/* ========================================================================= */}
       {activeTab === 'orders' && (
         <div className="space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-foreground/10 pb-4">
             <div>
-              <h2 className="font-serif text-lg font-bold text-cocoa">Your Order History</h2>
-              <p className="text-xs text-foreground/70">
-                Track live consignments, view packaging timeline, and access official tax invoices.
+              <h2 className="font-serif text-xl font-bold text-cocoa">Orders</h2>
+              <p className="text-xs text-foreground/70 mt-1">
+                Track your active consignments, delivery timelines, and tax invoices.
               </p>
             </div>
 
@@ -689,7 +649,7 @@ export function CustomerAccountPage() {
                     : 'text-cocoa/70 hover:text-cocoa'
                 }`}
               >
-                All ({demoOrders.length})
+                All
               </button>
               <button
                 type="button"
@@ -700,7 +660,7 @@ export function CustomerAccountPage() {
                     : 'text-cocoa/70 hover:text-cocoa'
                 }`}
               >
-                Active (1)
+                In Transit
               </button>
               <button
                 type="button"
@@ -711,7 +671,7 @@ export function CustomerAccountPage() {
                     : 'text-cocoa/70 hover:text-cocoa'
                 }`}
               >
-                Delivered (2)
+                Delivered
               </button>
             </div>
           </div>
@@ -817,7 +777,7 @@ export function CustomerAccountPage() {
                           </p>
                           <span className="inline-flex items-center gap-1 text-[0.65rem] font-semibold text-terracotta mt-1">
                             <ShieldCheck className="size-3" />
-                            <span>100% Curated Circular Vintage</span>
+                            <span>Authentic Verified Find</span>
                           </span>
                         </div>
                       </div>
@@ -871,15 +831,15 @@ export function CustomerAccountPage() {
                       <div className="flex items-start gap-2">
                         <span className="size-2 rounded-full bg-primary mt-1.5 shrink-0" />
                         <div>
-                          <p className="font-semibold text-cocoa">Dispatched from Bandra Sorting Hub</p>
+                          <p className="font-semibold text-cocoa">Dispatched from Sorting Hub</p>
                           <p className="text-[0.68rem] text-muted-foreground">Nov 13, 2026 • 09:45 AM — Package in transit with Bluedart courier</p>
                         </div>
                       </div>
                       <div className="flex items-start gap-2">
                         <span className="size-2 rounded-full bg-primary/50 mt-1.5 shrink-0" />
                         <div>
-                          <p className="font-semibold text-cocoa">Quality Inspected & Sealed in Crumbled Paper Wrapping</p>
-                          <p className="text-[0.68rem] text-muted-foreground">Nov 12, 2026 • 04:30 PM — CircleUp Archival Care Center</p>
+                          <p className="font-semibold text-cocoa">Quality Inspected & Packed</p>
+                          <p className="text-[0.68rem] text-muted-foreground">Nov 12, 2026 • 04:30 PM — CircleUp Quality Care Center</p>
                         </div>
                       </div>
                       <div className="flex items-start gap-2">
@@ -899,36 +859,17 @@ export function CustomerAccountPage() {
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 2: PURCHASES & CIRCULAR WARDROBE                                      */}
+      {/* TAB 2: PURCHASES                                                          */}
       {/* ========================================================================= */}
       {activeTab === 'purchases' && (
         <div className="space-y-8">
-          {/* Re-Circle Notification Toast */}
-          {reCircleSuccess && (
-            <div className="p-4 rounded-2xl bg-primary/10 border border-primary/30 flex items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2 text-primary font-semibold">
-                <CheckCircle2 className="size-4 shrink-0" />
-                <span>
-                  Re-Circle request initiated for <strong>{reCircleSuccess}</strong>! A consignment prepaid shipping label will arrive in your email shortly.
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setReCircleSuccess(null)}
-                className="text-primary hover:underline font-bold text-[0.68rem]"
-              >
-                Dismiss
-              </button>
-            </div>
-          )}
-
-          {/* Section 1: Owned Garments */}
-          <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          {/* Section 1: Owned Purchases */}
+          <div className="space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-foreground/10 pb-4">
               <div>
-                <h2 className="font-serif text-lg font-bold text-cocoa">Your Circular Wardrobe Archive</h2>
-                <p className="text-xs text-foreground/70">
-                  Every curated piece you own, its provenance tag, and the circular credit you can claim whenever you wish to re-home it.
+                <h2 className="font-serif text-xl font-bold text-cocoa">Purchases</h2>
+                <p className="text-xs text-foreground/70 mt-1">
+                  All your past orders and acquired pieces from CircleUp collections.
                 </p>
               </div>
 
@@ -936,8 +877,7 @@ export function CustomerAccountPage() {
                 to="/new-arrivals"
                 className="text-xs font-semibold text-primary hover:underline flex items-center gap-1 self-start sm:self-center"
               >
-                <span>Discover new drops</span>
-                <ArrowRight className="size-3" />
+                <span>Discover new arrivals →</span>
               </Link>
             </div>
 
@@ -964,11 +904,11 @@ export function CustomerAccountPage() {
                         {item.title}
                       </h3>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        {item.category} • Acquired {item.acquiredDate}
+                        {item.category} • Purchased {item.acquiredDate}
                       </p>
                     </div>
 
-                    <div className="flex items-center justify-between text-xs pt-1 border-t border-foreground/10">
+                    <div className="flex items-center justify-between text-xs pt-2 border-t border-foreground/10">
                       <div>
                         <span className="text-[0.68rem] uppercase font-bold text-terracotta block">
                           Condition
@@ -977,7 +917,7 @@ export function CustomerAccountPage() {
                       </div>
                       <div className="text-right">
                         <span className="text-[0.68rem] uppercase font-bold text-terracotta block">
-                          Purchase Value
+                          Price
                         </span>
                         <span className="font-bold text-crimson tabular-nums text-sm">
                           {formatPrice(item.price)}
@@ -986,19 +926,17 @@ export function CustomerAccountPage() {
                     </div>
                   </div>
 
-                  <div className="pt-2 border-t border-foreground/10 flex items-center justify-between gap-2">
-                    <span className="inline-flex items-center gap-1 text-[0.68rem] text-primary font-bold">
-                      <Leaf className="size-3" />
-                      <span>{item.co2Saved} CO₂ Saved</span>
+                  <div className="pt-2 border-t border-foreground/10 flex items-center justify-between gap-2 text-xs">
+                    <span className="text-muted-foreground text-[0.72rem]">
+                      Ref: {item.orderId}
                     </span>
 
                     <button
                       type="button"
-                      onClick={() => handleReCircleGarment(item.title)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-terracotta/40 bg-terracotta/5 hover:bg-terracotta text-terracotta hover:text-white text-xs font-bold transition-all shadow-xs"
+                      onClick={() => setActiveTab('orders')}
+                      className="text-xs font-semibold text-primary hover:underline"
                     >
-                      <RotateCcw className="size-3" />
-                      <span>Re-Circle Garment</span>
+                      View Order Details →
                     </button>
                   </div>
                 </div>
@@ -1006,12 +944,12 @@ export function CustomerAccountPage() {
             </div>
           </div>
 
-          {/* Section 2: Active & Upcoming Rentals */}
-          <div className="space-y-4 pt-4 border-t border-foreground/15">
+          {/* Section 2: Rentals */}
+          <div className="space-y-5 pt-4 border-t border-foreground/15">
             <div>
-              <h2 className="font-serif text-lg font-bold text-cocoa">Active & Past Rentals</h2>
-              <p className="text-xs text-foreground/70">
-                Temporary zero-waste wardrobe statements for weddings, events, and shoots.
+              <h3 className="font-serif text-lg font-bold text-cocoa">Rentals</h3>
+              <p className="text-xs text-foreground/70 mt-1">
+                Active and completed rentals for events, shoots, and special occasions.
               </p>
             </div>
 
@@ -1029,7 +967,7 @@ export function CustomerAccountPage() {
                     />
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <h3 className="font-serif font-bold text-sm text-cocoa truncate">{rent.title}</h3>
+                        <h4 className="font-serif font-bold text-sm text-cocoa truncate">{rent.title}</h4>
                         <span className="px-2 py-0.5 rounded-full text-[0.62rem] font-bold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20 shrink-0">
                           {rent.status}
                         </span>
@@ -1051,7 +989,7 @@ export function CustomerAccountPage() {
                       to="/rentals"
                       className="text-xs font-semibold text-primary hover:underline flex items-center gap-1"
                     >
-                      <span>Extend or Return</span>
+                      <span>Rental Details</span>
                       <ExternalLink className="size-3" />
                     </Link>
                   </div>
@@ -1067,11 +1005,11 @@ export function CustomerAccountPage() {
       {/* ========================================================================= */}
       {activeTab === 'addresses' && (
         <div className="space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-foreground/10 pb-4">
             <div>
-              <h2 className="font-serif text-lg font-bold text-cocoa">Saved Delivery Addresses</h2>
-              <p className="text-xs text-foreground/70">
-                Manage where your circular packages and curated vintage parcels are dispatched.
+              <h2 className="font-serif text-xl font-bold text-cocoa">Address Details</h2>
+              <p className="text-xs text-foreground/70 mt-1">
+                Manage delivery and billing addresses for your account.
               </p>
             </div>
 
@@ -1319,11 +1257,11 @@ export function CustomerAccountPage() {
       {/* ========================================================================= */}
       {activeTab === 'payments' && (
         <div className="space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-foreground/10 pb-4">
             <div>
-              <h2 className="font-serif text-lg font-bold text-cocoa">Payment Methods</h2>
-              <p className="text-xs text-foreground/70">
-                Seamless and tokenized checkouts compliant with Reserve Bank of India (RBI) tokenization guidelines.
+              <h2 className="font-serif text-xl font-bold text-cocoa">Payment Methods</h2>
+              <p className="text-xs text-foreground/70 mt-1">
+                Manage your saved UPI accounts and tokenized payment cards.
               </p>
             </div>
 
@@ -1392,7 +1330,7 @@ export function CustomerAccountPage() {
             >
               <h3 className="font-serif text-base font-bold text-cocoa">Add Tokenized Card</h3>
               <p className="text-xs text-foreground/70">
-                Card details are tokenized securely under RBI COFT framework. Zero CVV stored.
+                Card details are tokenized securely under RBI framework. Zero raw CVV stored.
               </p>
 
               <div className="space-y-3 text-xs">
@@ -1529,7 +1467,7 @@ export function CustomerAccountPage() {
             <div className="flex items-center justify-between">
               <h3 className="font-serif text-base font-bold text-cocoa flex items-center gap-2">
                 <CreditCard className="size-4 text-primary" />
-                <span>Saved Credit & Debit Cards (RBI Tokenized)</span>
+                <span>Saved Credit & Debit Cards</span>
               </h3>
               <span className="inline-flex items-center gap-1 text-[0.65rem] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
                 <ShieldCheck className="size-3" />
@@ -1575,7 +1513,7 @@ export function CustomerAccountPage() {
               <div>
                 <h4 className="font-serif text-sm font-bold text-cocoa">Pay on Delivery (COD)</h4>
                 <p className="text-xs text-foreground/70">
-                  Allow cash/UPI on delivery for eligible domestic PIN codes.
+                  Allow cash or UPI on delivery for domestic orders.
                 </p>
               </div>
               <input
@@ -1594,68 +1532,8 @@ export function CustomerAccountPage() {
           <div className="flex items-start gap-3 p-4 rounded-2xl bg-secondary/50 border border-foreground/10 text-xs text-foreground/75 leading-relaxed">
             <ShieldCheck className="size-5 text-primary shrink-0 mt-0.5" />
             <p>
-              <strong>Security Guarantee:</strong> CircleUp uses 256-bit bank-grade encryption. Sensitive payment card credentials are tokenized directly with banking networks pursuant to RBI Master Directions. No sensitive card numbers or CVVs are stored on our servers.
+              <strong>Security Guarantee:</strong> CircleUp uses 256-bit bank-grade encryption. Payment card credentials are tokenized directly with banking networks pursuant to RBI Master Directions. No card CVVs are stored on our servers.
             </p>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* TAB 5: CIRCULAR SUSTAINABILITY IMPACT                                     */}
-      {/* ========================================================================= */}
-      {activeTab === 'sustainability' && (
-        <div className="rounded-3xl border border-foreground/15 bg-card/95 p-6 sm:p-8 space-y-6 shadow-sm">
-          <div>
-            <span className="text-[0.68rem] uppercase font-bold tracking-[0.2em] text-terracotta">
-              Your Environmental Legacy
-            </span>
-            <h2 className="font-display text-2xl font-bold text-cocoa mt-1">
-              The Impact of Your Circular Fashion Choices
-            </h2>
-            <p className="text-xs text-foreground/75 mt-2 max-w-2xl leading-relaxed">
-              Every garment circulated through CircleUp preserves natural water reservoirs, avoids industrial synthetic dye runoff, and offsets fresh textile manufacturing emissions.
-            </p>
-          </div>
-
-          <div className="grid sm:grid-cols-3 gap-4 pt-2">
-            <div className="p-5 rounded-2xl border border-primary/20 bg-primary/5 space-y-2">
-              <Leaf className="size-6 text-primary" />
-              <h3 className="font-serif text-xl font-bold text-cocoa">15.3 kg CO₂</h3>
-              <p className="text-xs text-foreground/70">
-                Emissions prevented by keeping 4 vintage garments out of landfills.
-              </p>
-            </div>
-
-            <div className="p-5 rounded-2xl border border-primary/20 bg-primary/5 space-y-2">
-              <Sparkles className="size-6 text-amber-700" />
-              <h3 className="font-serif text-xl font-bold text-cocoa">7,800 Litres</h3>
-              <p className="text-xs text-foreground/70">
-                Freshwater saved equivalent to 98 full laundry cycles.
-              </p>
-            </div>
-
-            <div className="p-5 rounded-2xl border border-primary/20 bg-primary/5 space-y-2">
-              <RotateCcw className="size-6 text-terracotta" />
-              <h3 className="font-serif text-xl font-bold text-cocoa">100% Circular</h3>
-              <p className="text-xs text-foreground/70">
-                All pieces are eligible for CircleUp Re-Circle consignment.
-              </p>
-            </div>
-          </div>
-
-          <div className="pt-4 border-t border-foreground/10 flex flex-wrap items-center justify-between gap-4">
-            <div className="space-y-0.5">
-              <p className="text-xs font-bold text-cocoa">Ready to pass on a piece you've cherished?</p>
-              <p className="text-xs text-muted-foreground">Receive up to 70% instant consignment credit on CircleUp drops.</p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('purchases')}
-              className="px-5 py-2 rounded-full bg-primary text-white text-xs font-bold hover:bg-forest-deep transition-all shadow-xs"
-            >
-              Browse Your Wardrobe to Re-Circle
-            </button>
           </div>
         </div>
       )}
@@ -1682,7 +1560,7 @@ export function CustomerAccountPage() {
 
             <div className="text-xs text-foreground/80 space-y-2 leading-relaxed">
               <p><strong>Customer:</strong> {currentUser.fullName}</p>
-              <p><strong>GSTIN:</strong> 27AABCC8812M1Z0 (CircleUp Circular Commerce LLP)</p>
+              <p><strong>GSTIN:</strong> 27AABCC8812M1Z0 (CircleUp Retail LLP)</p>
               <p><strong>Status:</strong> Paid in Full via Electronic Payment</p>
               <p className="text-muted-foreground text-[0.7rem]">A digital PDF copy has been prepared with full itemized breakdown.</p>
             </div>
