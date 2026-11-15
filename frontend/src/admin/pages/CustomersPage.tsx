@@ -2,15 +2,12 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   Users,
   Search,
-  Mail,
   Phone,
   MapPin,
-  ShoppingBag,
   Award,
   Sparkles,
   Leaf,
   X,
-  ExternalLink,
   ChevronRight,
   RefreshCw,
 } from 'lucide-react';

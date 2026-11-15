@@ -545,7 +545,7 @@ export function StorefrontHeader({ preserveHomeHeader = false }: { preserveHomeH
               <div className="flex items-center gap-3.5 font-semibold uppercase tracking-wider text-xs">
                 {currentUser ? (
                   <Link to="/account" className="text-primary hover:text-primary underline underline-offset-4">
-                    Profile ({currentUser.fullName.split(' ')[0]})
+                    Profile ({(currentUser.fullName || 'User').split(' ')[0]})
                   </Link>
                 ) : (
                   <Link to="/signup" className="text-primary hover:text-primary underline underline-offset-4">
@@ -609,7 +609,7 @@ export function StorefrontHeader({ preserveHomeHeader = false }: { preserveHomeH
                 to="/account"
                 className="flex min-h-[44px] items-center text-sm font-semibold text-primary hover:text-primary/80"
               >
-                My Profile & Orders ({currentUser.fullName.split(' ')[0]}) →
+                My Profile & Orders ({(currentUser.fullName || 'User').split(' ')[0]}) →
               </Link>
             ) : (
               <Link

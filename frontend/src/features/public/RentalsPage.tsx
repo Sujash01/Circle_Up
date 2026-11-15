@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { EmptyState } from '@/components/storefront/EmptyState';
 import { cn } from '@/lib/utils';
 import { formatPrice } from '@/services/cartService';
 import { rentalService } from '@/services/rentalService';
@@ -13,6 +15,7 @@ function addDaysIso(startIso: string, deltaDays: number): string {
 }
 
 export function RentalsPage() {
+  const navigate = useNavigate();
   const [rentals, setRentals] = useState<RentalProduct[]>(() => rentalService.getAllRentalProducts());
 
   useEffect(() => {
@@ -27,6 +30,29 @@ export function RentalsPage() {
       .catch(() => {});
     return () => ac.abort();
   }, []);
+
+  if (rentals.length === 0) {
+    return (
+      <div className="space-y-8 max-w-7xl mx-auto py-6">
+        <header className="border-b border-foreground/15 pb-6">
+          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.2em] text-terracotta">
+            CircleUp Rental Rails
+          </p>
+          <h1 className="mt-2 font-display text-4xl sm:text-5xl text-cocoa">Rental Rail</h1>
+          <p className="mt-3 max-w-xl text-sm leading-relaxed text-foreground/80">
+            Rent editorial pieces, jackets, and statement sets for your special occasions.
+          </p>
+        </header>
+        <EmptyState
+          title="Rental collection being refreshed"
+          description="Our circular rental pieces are currently being inspected and dry-cleaned. Please check back soon or browse our ready-to-wear arrivals."
+          actionLabel="Browse New Arrivals"
+          onAction={() => navigate('/new-arrivals')}
+        />
+      </div>
+    );
+  }
+
   const [selectedId, setSelectedId] = useState<string>(rentals[0]?.id ?? '');
   const selectedProduct: RentalProduct =
     rentals.find((r) => r.id === selectedId) ?? rentals[0]!;

@@ -51,91 +51,9 @@ interface ProductPreview {
   to: string;
 }
 
-const readyToWear: ProductPreview[] = [
-  {
-    id: 'cu-001',
-    img: rtw1,
-    name: 'Top & Skirt Co-Ord Set',
-    price: formatPrice(4000),
-    width: 912,
-    height: 1200,
-    aspect: 'aspect-[4/5]',
-    to: '/product/top-and-skirt-co-ord-set',
-  },
-  {
-    id: 'cu-002',
-    img: rtw2,
-    name: 'Denim Fit & Flare Co-Ord Set',
-    price: formatPrice(1950),
-    width: 912,
-    height: 1200,
-    aspect: 'aspect-[4/5]',
-    to: '/product/denim-fit-and-flare-co-ord-set',
-  },
-  {
-    id: 'cu-003',
-    img: rtw3,
-    name: 'Blazer With Skirt Co-Ord Set',
-    price: formatPrice(3550),
-    width: 912,
-    height: 1200,
-    aspect: 'aspect-[4/5]',
-    to: '/product/blazer-with-skirt-co-ord-set',
-  },
-  {
-    id: 'cu-004',
-    img: rtw4,
-    name: 'Denim Jumpsuit Co-Ord Set',
-    price: formatPrice(4950),
-    width: 912,
-    height: 1200,
-    aspect: 'aspect-[4/5]',
-    to: '/product/denim-jumpsuit-co-ord-set',
-  },
-];
+const readyToWear: ProductPreview[] = [];
 
-const handbags: ProductPreview[] = [
-  {
-    id: 'cu-029',
-    img: bag1,
-    name: 'Textured Handheld Bag',
-    price: formatPrice(2550),
-    width: 1008,
-    height: 1008,
-    aspect: 'aspect-square',
-    to: '/product/textured-handheld-bag',
-  },
-  {
-    id: 'cu-030',
-    img: bag2,
-    name: 'Textured Bowling Sling Bag',
-    price: formatPrice(1850),
-    width: 1008,
-    height: 1008,
-    aspect: 'aspect-square',
-    to: '/product/textured-bowling-sling-bag',
-  },
-  {
-    id: 'cu-031',
-    img: bag3,
-    name: 'PU Structured Handheld Bag',
-    price: formatPrice(5150),
-    width: 1008,
-    height: 1008,
-    aspect: 'aspect-square',
-    to: '/product/pu-structured-handheld-bag',
-  },
-  {
-    id: 'cu-032',
-    img: bag4,
-    name: 'Design Structured Satchel Bag',
-    price: formatPrice(9550),
-    width: 1008,
-    height: 1008,
-    aspect: 'aspect-square',
-    to: '/product/design-structured-satchel-bag',
-  },
-];
+const handbags: ProductPreview[] = [];
 
 const winterLooks = [
   { img: winter1, alt: 'Winter cardigan coat with cream trim' },
@@ -314,8 +232,19 @@ function ProductSection({
     <section id={id} className={cn('home-vine-section scroll-mt-28 py-12 lg:py-16', pad)}>
       <SectionHeading title={title} to={to} eyebrow={eyebrow} blurb={blurb} />
       {products.length === 0 ? (
-        <div className="mt-7 border border-dashed border-foreground/20 p-8 text-center text-xs text-muted-foreground">
-          No items listed yet in this section. Real items added to your database will appear here automatically.
+        <div className="mt-8 rounded-3xl border-2 border-dashed border-foreground/15 bg-card/40 p-8 sm:p-12 text-center space-y-3">
+          <p className="font-serif text-lg font-bold text-cocoa">Curating New Arrivals</p>
+          <p className="text-xs text-foreground/70 max-w-md mx-auto">
+            Our curators are currently sourcing and restoring unique pieces for this section. Check back soon or explore our full catalog!
+          </p>
+          <div className="pt-2">
+            <Link
+              to={to}
+              className="inline-flex items-center justify-center px-5 py-2 rounded-full border border-primary/40 bg-card hover:bg-primary/5 text-primary font-semibold text-xs uppercase tracking-wider transition-all"
+            >
+              Browse Catalog
+            </Link>
+          </div>
         </div>
       ) : (
         <div className="mt-6 grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-4">

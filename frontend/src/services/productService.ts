@@ -1,5 +1,5 @@
 import { CATEGORIES, CATEGORY_MAP } from '@/data/categories';
-import { PRODUCTS } from '@/data/products';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { apiClient } from '@/services/apiClient';
 import type {
   CategoryMeta,
@@ -28,19 +28,57 @@ function normalizeToken(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
 }
 
-// Tracks whether a live MongoDB database is connected
+// Tracks whether a live database connection is active
 let liveDatabaseConnected = false;
 
-// In-memory reactive product cache initialized with curated seed data for offline preview
-let productCache: Product[] = PRODUCTS.map((p) => ({
-  ...p,
-  serialNumber: p.serialNumber || p.id.toUpperCase(),
-}));
+// Production-ready in-memory reactive product cache (starts empty for production data)
+let productCache: Product[] = [];
 
 // Listeners for catalog state updates
 const listeners = new Set<() => void>();
 function notifyListeners() {
   listeners.forEach((fn) => fn());
+}
+
+/**
+ * Maps a Supabase `products` table row into the frontend `Product` domain model.
+ */
+function mapSupabaseRowToProduct(row: Record<string, unknown>): Product {
+  const stock = Number(row.stock ?? 1);
+  const images = Array.isArray(row.images) ? (row.images as string[]) : [];
+  const sizes = Array.isArray(row.sizes) ? (row.sizes as string[]) : [];
+  const tags = Array.isArray(row.tags) ? (row.tags as string[]) : [];
+
+  return {
+    id: (row.id as string) || (row.serial_number as string) || 'cu-unknown',
+    serialNumber: (row.serial_number as string) || (row.id as string)?.toUpperCase(),
+    name: (row.name as string) || 'Untitled Piece',
+    slug: (row.slug as string) || normalizeToken((row.name as string) || 'untitled-piece'),
+    description: (row.description as string) || '',
+    price: Number(row.price || 0),
+    originalPrice: row.original_price
+      ? Number(row.original_price)
+      : row.compare_at_price
+        ? Number(row.compare_at_price)
+        : undefined,
+    stock,
+    images,
+    sizes,
+    variants: Array.isArray(row.variants) ? (row.variants as Product['variants']) : [],
+    category: (row.category as ProductCategorySlug) || 'thrifted-treasure',
+    categoryLabel: (row.category_label as string) || (row.category as string) || 'Curated Piece',
+    subcategory: (row.subcategory as string) || '',
+    productType: (row.product_type as Product['productType']) || 'Pre-Loved',
+    condition: (row.condition as ProductCondition) || 'Gently Used',
+    gender: (row.gender as GenderTag) || 'Unisex',
+    measurements: (row.measurements as string) || undefined,
+    makerNote: (row.maker_note as string) || undefined,
+    tags,
+    featured: Boolean(row.featured),
+    isNewArrival: Boolean(row.is_new_arrival),
+    availability: stock > 0 ? (stock <= 2 ? 'Low Stock' : 'In Stock') : 'Sold Out',
+    createdAt: (row.created_at as string) || new Date().toISOString(),
+  };
 }
 
 export const productService = {
@@ -53,45 +91,54 @@ export const productService = {
     return liveDatabaseConnected;
   },
 
+  /**
+   * Directly sets the in-memory product cache (used for unit tests and local mock fixtures).
+   */
+  setProducts(products: Product[]): void {
+    productCache = products;
+    liveDatabaseConnected = true;
+    notifyListeners();
+  },
+
+  /**
+   * Initializes live catalog sync from Supabase database or backend API.
+   * If the connected database is empty, productCache remains empty ([])
+   * so no demo products are displayed.
+   */
   async initLiveSync(): Promise<void> {
     try {
-      // 1. Check if backend database is connected
-      const healthRes = await apiClient.get<{
-        success: true;
-        data: { db: string };
-      }>('/health').catch(() => null);
+      // 1. Try Supabase direct query if configured
+      if (isSupabaseConfigured()) {
+        const { data, error } = await supabase
+          .from('products')
+          .select('*')
+          .in('status', ['ACTIVE', 'PUBLISHED'])
+          .order('created_at', { ascending: false });
 
-      const isDbLive = healthRes?.data?.data?.db === 'connected';
-
-      // 2. Query products from API
-      const response = await apiClient.get<{ success: true; data: Product[] }>('/products?limit=100');
-
-      if (response.data?.success && Array.isArray(response.data.data)) {
-        if (isDbLive) {
-          // Live database connected! Replace demo cache with database items (even if empty [])
-          // This ensures demo products disappear to make space for the user's actual items.
-          productCache = response.data.data.map((item) => ({
-            ...item,
-            id: item.id || item.serialNumber || (item as unknown as { _id?: string })._id || 'cu-unknown',
-            serialNumber: item.serialNumber || item.id?.toUpperCase() || 'CU-UNKNOWN',
-          }));
+        if (!error && Array.isArray(data)) {
+          productCache = data.map(mapSupabaseRowToProduct);
           liveDatabaseConnected = true;
           notifyListeners();
-        } else if (response.data.data.length > 0) {
-          productCache = response.data.data.map((item) => ({
-            ...item,
-            id: item.id || item.serialNumber || (item as unknown as { _id?: string })._id || 'cu-unknown',
-            serialNumber: item.serialNumber || item.id?.toUpperCase() || 'CU-UNKNOWN',
-          }));
-          notifyListeners();
+          return;
         }
       }
+
+      // 2. Fallback to REST API /products endpoint
+      const response = await apiClient
+        .get<{ success: true; data: Array<Record<string, unknown>> }>('/products?limit=100')
+        .catch(() => null);
+
+      if (response?.data?.success && Array.isArray(response.data.data)) {
+        productCache = response.data.data.map(mapSupabaseRowToProduct);
+        liveDatabaseConnected = true;
+        notifyListeners();
+      }
     } catch {
-      // Offline fallback
+      // Offline fallback: retains current cache state
     }
   },
 
-  clearDemoCatalog(): void {
+  clearCatalog(): void {
     productCache = [];
     liveDatabaseConnected = true;
     notifyListeners();
@@ -230,7 +277,7 @@ export const productService = {
   },
 };
 
-// Initial sync triggered upon client load (skipped during unit tests)
+// Initial live sync triggered upon client load (skipped during unit tests)
 if (typeof window !== 'undefined' && import.meta.env.MODE !== 'test') {
   void productService.initLiveSync();
 }

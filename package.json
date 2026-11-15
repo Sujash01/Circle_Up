@@ -11,6 +11,7 @@
   "scripts": {
     "build:shared": "npm run build --workspace=@circleup/shared",
     "dev": "node scripts/dev.mjs",
+    "dev:shared": "npm run dev --workspace=@circleup/shared",
     "dev:backend": "npm run dev --workspace=@circleup/backend",
     "dev:frontend": "npm run dev --workspace=@circleup/frontend",
     "build": "npm run build:shared && npm run build --workspace=@circleup/backend && npm run build --workspace=@circleup/frontend",
@@ -26,5 +27,9 @@
   },
   "devDependencies": {
     "puppeteer-core": "^25.17.0"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.119.0"
   }
 }

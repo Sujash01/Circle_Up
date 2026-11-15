@@ -1,13 +1,15 @@
 import { ArrowRight, Check, CheckCircle2, Copy, Minus, Package, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
+import { useSelector } from 'react-redux';
+import type { RootState } from '@/app/store';
 import { EmptyState } from '@/components/storefront/EmptyState';
 import { Blob } from '@/components/ui/Blob';
 import { useStore } from '@/context/StoreContext';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/services/apiClient';
-import { authService } from '@/services/authService';
 import { cartService, formatPrice } from '@/services/cartService';
+import { orderService } from '@/services/orderService';
 
 import type { PaymentMethod } from '@circleup/shared';
 
@@ -86,16 +88,17 @@ export function CartPage() {
     paymentMethod: 'CASH_ON_DELIVERY' as PaymentMethod,
   });
 
+  const authUser = useSelector((state: RootState) => state.auth.user);
+
   const handleOpenCheckout = () => {
     setOrderError('');
     setCheckoutStep(1);
-    const session = authService.getStoredSession();
-    if (session?.user) {
+    if (authUser) {
       setFormData((prev) => ({
         ...prev,
-        name: prev.name || session.user.fullName || '',
-        email: prev.email || session.user.email || '',
-        phone: prev.phone || session.user.phone || '',
+        name: prev.name || authUser.fullName || '',
+        email: prev.email || authUser.email || '',
+        phone: prev.phone || authUser.phone || '',
       }));
     }
     setIsCheckoutModalOpen(true);
@@ -237,7 +240,9 @@ export function CartPage() {
 
     try {
       setIsSubmittingOrder(true);
-      const payload = {
+      const deliveryFee = totals.subtotal - totals.discount >= 150000 ? 0 : 9000;
+
+      const placed = await orderService.createOrder({
         customer: {
           name: formData.name,
           email: formData.email,
@@ -251,20 +256,51 @@ export function CartPage() {
         },
         items: cart.items.map((item) => ({
           serialNumber: item.productId.toUpperCase(),
+          name: item.name,
+          price: item.unitPrice,
           quantity: item.quantity,
           size: item.size,
+          image: item.image,
         })),
-        promoCode: cart.promoCode,
+        subtotal: totals.subtotal,
+        discount: totals.discount,
+        shippingFee: deliveryFee,
+        totalAmount: totals.estimatedTotal,
         paymentMethod: formData.paymentMethod,
         notes: customerNote,
-      };
+        customerId: authUser?.id,
+      });
 
-      const res = await apiClient.post<{ success: true; data: PlacedOrderDetails }>('/orders', payload);
-      if (res.data?.success && res.data.data) {
-        setPlacedOrder(res.data.data);
-        clearCart();
-        setIsCheckoutModalOpen(false);
-      }
+      setPlacedOrder({
+        orderNumber: placed.orderNumber,
+        customer: {
+          name: placed.customerName,
+          email: placed.customerEmail,
+          phone: placed.customerPhone || '',
+        },
+        shippingAddress: {
+          addressLine: formData.addressLine,
+          city: formData.city,
+          state: formData.state,
+          postalCode: formData.postalCode,
+        },
+        items: placed.items.map((it) => ({
+          serialNumber: it.serialNumber || it.name,
+          name: it.name,
+          price: it.price,
+          quantity: it.qty,
+          size: it.size,
+        })),
+        subtotal: placed.subtotal,
+        discount: placed.discount,
+        deliveryFee: placed.shippingFee,
+        totalAmount: placed.totalAmount,
+        paymentMethod: placed.paymentMethod,
+        createdAt: placed.createdAt,
+      });
+
+      clearCart();
+      setIsCheckoutModalOpen(false);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to place order. Please check item availability.';
       setOrderError(msg);

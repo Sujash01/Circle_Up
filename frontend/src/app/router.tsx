@@ -28,6 +28,11 @@ import { SearchPage } from '@/features/public/SearchPage';
 import { SignInPage } from '@/features/public/SignInPage';
 import { SignUpPage } from '@/features/public/SignUpPage';
 import { CustomerAccountPage } from '@/features/customer/CustomerAccountPage';
+import { ForgotPasswordPage } from '@/features/auth/ForgotPasswordPage';
+import { ResetPasswordPage } from '@/features/auth/ResetPasswordPage';
+import { AuthCallbackPage } from '@/features/auth/AuthCallbackPage';
+import { GuestRoute } from '@/components/auth/GuestRoute';
+import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { ThriftCrewPage } from '@/features/public/ThriftCrewPage';
 import { ThriftedTreasurePage } from '@/features/public/ThriftedTreasurePage';
 import { WishlistPage } from '@/features/public/WishlistPage';
@@ -165,16 +170,34 @@ export const router = createBrowserRouter([
         ],
       },
 
-      // Authentication and User Account routes (clean layout without notebook spiral binding)
+      // Authentication, Password Recovery and User Account routes
       {
         element: <StorefrontCleanLayout />,
         children: [
-          { path: 'signin', element: <SignInPage /> },
-          { path: 'signup', element: <SignUpPage /> },
-          { path: 'login', element: <Navigate to="/signin" replace /> },
-          { path: 'register', element: <Navigate to="/signup" replace /> },
-          { path: 'account', element: <CustomerAccountPage /> },
-          { path: 'profile', element: <Navigate to="/account" replace /> },
+          // Guest-only routes (redirect authenticated users away)
+          {
+            element: <GuestRoute />,
+            children: [
+              { path: 'signin', element: <SignInPage /> },
+              { path: 'signup', element: <SignUpPage /> },
+              { path: 'login', element: <Navigate to="/signin" replace /> },
+              { path: 'register', element: <Navigate to="/signup" replace /> },
+              { path: 'forgot-password', element: <ForgotPasswordPage /> },
+            ],
+          },
+          // Password reset & auth callback flows
+          { path: 'auth/callback', element: <AuthCallbackPage /> },
+          { path: 'auth/reset-password', element: <ResetPasswordPage /> },
+          { path: 'reset-password', element: <Navigate to="/auth/reset-password" replace /> },
+
+          // Protected user account routes (redirect unauthenticated users to /signin)
+          {
+            element: <ProtectedRoute />,
+            children: [
+              { path: 'account', element: <CustomerAccountPage /> },
+              { path: 'profile', element: <Navigate to="/account" replace /> },
+            ],
+          },
         ],
       },
     ],

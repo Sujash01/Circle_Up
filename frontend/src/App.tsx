@@ -13,7 +13,8 @@ import { ErrorBoundary } from './shared/components/guards/ErrorBoundary';
  */
 export function App() {
   useEffect(() => {
-    authService.initializeFromStorage();
+    const cleanup = authService.initAuthListener();
+    return cleanup;
   }, []);
 
   return (

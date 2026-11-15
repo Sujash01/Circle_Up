@@ -82,6 +82,6 @@ try {
   process.exit(1);
 }
 
-startWorkspace('shared', 'dev --workspace=@circleup/shared');
+startWorkspace('shared', 'dev:shared');
 startWorkspace('backend', 'dev:backend');
 startWorkspace('frontend', 'dev:frontend');

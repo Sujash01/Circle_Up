@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { Product, RentalProduct } from '../src/types/storefront';
 import {
   communityService,
   contactService,
@@ -10,14 +11,91 @@ import { productService } from '../src/services/productService';
 import { rentalService } from '../src/services/rentalService';
 import { wishlistService } from '../src/services/wishlistService';
 
+const MOCK_PRODUCTS: Product[] = [
+  {
+    id: 'cu-test-01',
+    serialNumber: 'CU-TEST-001',
+    name: 'Plaid Halter Corset Top',
+    slug: 'plaid-halter-corset-top',
+    category: 'womens-upperwear',
+    categoryLabel: 'Women',
+    subcategory: 'Corsets',
+    productType: 'Pre-Loved',
+    price: 1850,
+    originalPrice: 2200,
+    images: ['/test-corset.jpg'],
+    condition: 'Vintage Wear',
+    gender: 'Women',
+    sizes: ['S'],
+    stock: 1,
+    featured: true,
+    isNewArrival: true,
+    availability: 'In Stock',
+    description: 'Test vintage plaid corset.',
+    measurements: 'Bust: 34 in, Length: 16 in',
+    makerNote: 'Authentic 90s piece.',
+    variants: [{ id: 'var-1', size: 'S', stock: 1, label: 'Small' }],
+    tags: ['vintage', 'corset'],
+    createdAt: '2026-11-15T00:00:00Z',
+  },
+  {
+    id: 'cu-test-02',
+    serialNumber: 'CU-TEST-002',
+    name: 'Denim Jumpsuit Co-Ord Set',
+    slug: 'denim-jumpsuit-co-ord-set',
+    category: 'womens-one-piece',
+    categoryLabel: 'Women',
+    subcategory: 'Jumpsuits',
+    productType: 'Pre-Loved',
+    price: 4950,
+    originalPrice: 5500,
+    images: ['/test-jumpsuit.jpg'],
+    condition: 'Mint',
+    gender: 'Women',
+    sizes: ['M'],
+    stock: 1,
+    featured: true,
+    isNewArrival: false,
+    availability: 'In Stock',
+    description: 'Test denim jumpsuit.',
+    measurements: 'Bust: 36 in, Length: 54 in',
+    makerNote: 'Vintage Japanese denim.',
+    variants: [{ id: 'var-2', size: 'M', stock: 1, label: 'Medium' }],
+    tags: ['denim', 'jumpsuit'],
+    createdAt: '2026-11-15T00:00:00Z',
+  },
+];
+
+const MOCK_RENTALS: RentalProduct[] = [
+  {
+    id: 'rnt-test-01',
+    name: 'Embroidered Velvet Sherwani',
+    slug: 'embroidered-velvet-sherwani',
+    categoryLabel: 'Ethnic & Festive',
+    dailyRate: 1500,
+    securityDeposit: 3000,
+    minDays: 2,
+    maxDays: 14,
+    images: ['/test-rental.jpg'],
+    condition: 'Mint',
+    sizes: ['M', 'L'],
+    unavailableDates: ['2026-11-18', '2026-11-19', '2026-11-20'],
+    description: 'Test rental item',
+    terms: ['Dry clean before return'],
+    availabilityLabel: 'Available',
+  },
+];
+
 describe('CircleUp Storefront Services & LocalStorage Persistence', () => {
   beforeEach(() => {
     window.localStorage.clear();
+    productService.setProducts(MOCK_PRODUCTS);
+    rentalService.setRentalProducts(MOCK_RENTALS);
   });
 
   it('filters, searches, and sorts catalog products accurately', () => {
     const all = productService.getAllProducts();
-    expect(all.length).toBeGreaterThan(30);
+    expect(all.length).toBeGreaterThanOrEqual(2);
 
     const corsets = productService.queryProducts({
       category: 'womens-upperwear',

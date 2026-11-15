@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import {
@@ -18,20 +18,25 @@ import {
   Download,
   FileText,
   CheckCircle2,
+  Loader2,
 } from 'lucide-react';
 import type { RootState } from '@/app/store';
 import { authService } from '@/services/authService';
+import { orderService, type OrderRecord, type PurchaseRecord } from '@/services/orderService';
 import { formatPrice } from '@circleup/shared';
 
-// Safe product imagery imports adhering to AGENTS.md (zero model photos)
-import rtw1 from '@/assets/rtw-1.jpg';
-import rtw2 from '@/assets/rtw-2.jpg';
-import rtw3 from '@/assets/rtw-3.jpg';
-import bag1 from '@/assets/bag-1.jpg';
-import bag2 from '@/assets/bag-2.jpg';
-import winter1 from '@/assets/winter-1.jpg';
-
 type TabType = 'orders' | 'purchases' | 'addresses' | 'payments';
+
+interface RentalRecord {
+  id: string;
+  title: string;
+  rentalPeriod: string;
+  returnDueDate: string;
+  depositStatus: string;
+  rentalFee: number;
+  image: string;
+  status: string;
+}
 
 interface SavedAddress {
   id: string;
@@ -79,33 +84,53 @@ export function CustomerAccountPage() {
   const [selectedOrderTracking, setSelectedOrderTracking] = useState<string | null>(null);
   const [showInvoiceModal, setShowInvoiceModal] = useState<string | null>(null);
 
-  // Addresses State
-  const [addresses, setAddresses] = useState<SavedAddress[]>([
-    {
-      id: 'addr-1',
-      name: currentUser?.fullName || 'Aanya Sharma',
-      phone: currentUser?.phone || '+91 98201 44520',
-      street: 'Flat 402, Sea Green Apartments, Hill Road',
-      locality: 'Near St. Peter Church, Bandra West',
-      city: 'Mumbai',
-      state: 'Maharashtra',
-      pin: '400050',
-      type: 'Home',
-      isDefault: true,
-    },
-    {
-      id: 'addr-2',
-      name: currentUser?.fullName || 'Aanya Sharma',
-      phone: currentUser?.phone || '+91 98201 44520',
-      street: 'Studio 12, Indiranagar 100ft Road',
-      locality: 'Opposite Metro Pillar 84',
-      city: 'Bengaluru',
-      state: 'Karnataka',
-      pin: '560038',
-      type: 'Studio',
-      isDefault: false,
-    },
-  ]);
+  // Edit Profile State
+  const [showEditProfileModal, setShowEditProfileModal] = useState(false);
+  const [editFullName, setEditFullName] = useState(currentUser?.fullName || '');
+  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+
+  // Orders, Purchases, and Rentals Live State
+  const [orders, setOrders] = useState<OrderRecord[]>([]);
+  const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
+  const [rentals] = useState<RentalRecord[]>([]);
+  const [isLoadingOrders, setIsLoadingOrders] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadUserOrders() {
+      if (!currentUser) return;
+      setIsLoadingOrders(true);
+      try {
+        const list = await orderService.getOrders(currentUser.id, currentUser.email);
+        if (mounted) {
+          setOrders(list);
+          setPurchases(orderService.getPurchases(list));
+        }
+      } catch (err) {
+        console.warn('[CustomerAccountPage] Error loading orders:', err);
+      } finally {
+        if (mounted) {
+          setIsLoadingOrders(false);
+        }
+      }
+    }
+
+    loadUserOrders();
+
+    const handleOrdersUpdated = () => {
+      loadUserOrders();
+    };
+
+    window.addEventListener('circleup_orders_updated', handleOrdersUpdated);
+    return () => {
+      mounted = false;
+      window.removeEventListener('circleup_orders_updated', handleOrdersUpdated);
+    };
+  }, [currentUser]);
+
+  // Addresses State (Starts empty for authentic user accounts)
+  const [addresses, setAddresses] = useState<SavedAddress[]>([]);
 
   const [showAddAddress, setShowAddAddress] = useState(false);
   const [newAddr, setNewAddr] = useState({
@@ -120,32 +145,9 @@ export function CustomerAccountPage() {
     isDefault: false,
   });
 
-  // Payment Methods State
-  const [savedUpis, setSavedUpis] = useState<SavedUPI[]>([
-    { id: 'upi-1', upiId: 'aanya.sharma@okhdfcbank', appName: 'Google Pay', isDefault: true },
-    { id: 'upi-2', upiId: '9820144520@paytm', appName: 'Paytm UPI', isDefault: false },
-  ]);
-
-  const [savedCards, setSavedCards] = useState<SavedCard[]>([
-    {
-      id: 'card-1',
-      last4: '4242',
-      brand: 'Visa',
-      bankName: 'HDFC Bank Regalia',
-      holderName: currentUser?.fullName || 'AANYA SHARMA',
-      expiry: '08/29',
-      isDefault: true,
-    },
-    {
-      id: 'card-2',
-      last4: '8812',
-      brand: 'Mastercard',
-      bankName: 'ICICI Bank Coral',
-      holderName: currentUser?.fullName || 'AANYA SHARMA',
-      expiry: '11/28',
-      isDefault: false,
-    },
-  ]);
+  // Payment Methods State (Starts empty)
+  const [savedUpis, setSavedUpis] = useState<SavedUPI[]>([]);
+  const [savedCards, setSavedCards] = useState<SavedCard[]>([]);
 
   const [showAddUpi, setShowAddUpi] = useState(false);
   const [newUpiId, setNewUpiId] = useState('');
@@ -171,161 +173,28 @@ export function CustomerAccountPage() {
     navigate('/');
   };
 
-  const handleDemoSignIn = async () => {
-    await authService.signInWithGoogle({
-      fullName: 'Aanya Sharma',
-      email: 'aanya.sharma@example.com',
-    });
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    if (!editFullName.trim()) {
+      showNotification('Please enter a valid full name.');
+      return;
+    }
+    setIsUpdatingProfile(true);
+    try {
+      const res = await authService.updateProfile(currentUser.id, { fullName: editFullName.trim() });
+      if (res.success) {
+        showNotification('Profile updated successfully.');
+        setShowEditProfileModal(false);
+      } else {
+        showNotification(res.message || 'Failed to update profile.');
+      }
+    } finally {
+      setIsUpdatingProfile(false);
+    }
   };
 
-  // Orders data with timestamps and paise currency amounts
-  const demoOrders = [
-    {
-      id: 'CU-88421',
-      date: 'November 12, 2026',
-      estimatedDelivery: 'November 16, 2026',
-      courier: 'Bluedart Express',
-      trackingNumber: 'BD-774921049',
-      status: 'IN_TRANSIT',
-      step: 3,
-      shippingAddress: 'Flat 402, Sea Green Apartments, Hill Road, Bandra West, Mumbai 400050',
-      totalAmount: 255000,
-      items: [
-        {
-          name: 'Vintage Wool Houndstooth Blazer',
-          size: 'Size M',
-          color: 'Earthy Charcoal / Cream',
-          image: rtw1,
-          price: 255000,
-          qty: 1,
-        },
-      ],
-    },
-    {
-      id: 'CU-87910',
-      date: 'October 28, 2026',
-      estimatedDelivery: 'November 02, 2026',
-      courier: 'Delhivery Surface',
-      trackingNumber: 'DL-908123712',
-      status: 'DELIVERED',
-      step: 4,
-      shippingAddress: 'Flat 402, Sea Green Apartments, Hill Road, Bandra West, Mumbai 400050',
-      totalAmount: 490000,
-      items: [
-        {
-          name: 'Embroidered Kashmiri Velvet Waistcoat',
-          size: 'Size S',
-          color: 'Deep Forest Moss',
-          image: rtw2,
-          price: 295000,
-          qty: 1,
-        },
-        {
-          name: 'Structured Leather Saddle Bag',
-          size: 'One Size',
-          color: 'Warm Cocoa Tan',
-          image: bag1,
-          price: 195000,
-          qty: 1,
-        },
-      ],
-    },
-    {
-      id: 'CU-86542',
-      date: 'September 19, 2026',
-      estimatedDelivery: 'September 24, 2026',
-      courier: 'India Post Speed Post',
-      trackingNumber: 'EM-449102847IN',
-      status: 'DELIVERED',
-      step: 4,
-      shippingAddress: 'Studio 12, Indiranagar 100ft Road, Bengaluru 560038',
-      totalAmount: 320000,
-      items: [
-        {
-          name: 'Chunky Hand-Knit Wool Cardigan',
-          size: 'Size Free / Relaxed',
-          color: 'Oatmeal Tweed',
-          image: winter1,
-          price: 320000,
-          qty: 1,
-        },
-      ],
-    },
-  ];
-
-  // Purchases catalog
-  const ownedPurchases = [
-    {
-      id: 'pur-1',
-      title: 'Vintage Wool Houndstooth Blazer',
-      category: 'Jackets & Blazers',
-      condition: 'Pristine Archival (Grade A+)',
-      acquiredDate: 'November 12, 2026',
-      orderId: 'CU-88421',
-      price: 255000,
-      image: rtw1,
-      tag: '1990s Italian Tailoring',
-    },
-    {
-      id: 'pur-2',
-      title: 'Embroidered Kashmiri Velvet Waistcoat',
-      category: 'Ethnic & Heirloom',
-      condition: 'Restored Heritage Silk',
-      acquiredDate: 'October 28, 2026',
-      orderId: 'CU-87910',
-      price: 295000,
-      image: rtw2,
-      tag: 'Circa 1984 Artisan Piece',
-    },
-    {
-      id: 'pur-3',
-      title: 'Structured Leather Saddle Bag',
-      category: 'Handcrafted Accessories',
-      condition: 'Naturally Patinated Leather',
-      acquiredDate: 'October 28, 2026',
-      orderId: 'CU-87910',
-      price: 195000,
-      image: bag1,
-      tag: 'Full Grain Hand-Stitched',
-    },
-    {
-      id: 'pur-4',
-      title: 'Chunky Hand-Knit Wool Cardigan',
-      category: 'Winterwear & Knitwear',
-      condition: 'Pure Himalayan Wool',
-      acquiredDate: 'September 19, 2026',
-      orderId: 'CU-86542',
-      price: 320000,
-      image: winter1,
-      tag: 'Zero-Waste Wool Revival',
-    },
-  ];
-
-  // Active & Past Rentals
-  const rentalItems = [
-    {
-      id: 'rent-1',
-      title: 'Handcrafted Indigo Kantha Duster Jacket',
-      rentalPeriod: 'Nov 14 – Nov 21, 2026 (7 Days)',
-      returnDueDate: 'November 21, 2026',
-      depositStatus: 'Refundable Security Held',
-      rentalFee: 145000,
-      image: rtw3,
-      status: 'Active — Return in 6 Days',
-    },
-    {
-      id: 'rent-2',
-      title: 'Artisan Brass Inlay Structured Minaudière',
-      rentalPeriod: 'Oct 10 – Oct 14, 2026 (4 Days)',
-      returnDueDate: 'October 14, 2026',
-      depositStatus: 'Security Deposit Refunded (₹3,000)',
-      rentalFee: 95000,
-      image: bag2,
-      status: 'Returned & Inspected',
-    },
-  ];
-
-  const filteredOrders = demoOrders.filter((ord) => {
+  const filteredOrders = orders.filter((ord) => {
     if (orderFilter === 'in_transit') return ord.status === 'IN_TRANSIT' || ord.status === 'CONFIRMED';
     if (orderFilter === 'delivered') return ord.status === 'DELIVERED';
     return true;
@@ -366,27 +235,13 @@ export function CustomerAccountPage() {
             >
               Create New Account
             </Link>
-
-            <div className="pt-4 border-t border-foreground/15">
-              <p className="text-[0.68rem] uppercase tracking-wider text-muted-foreground mb-2">
-                Instant Verification Mode
-              </p>
-              <button
-                type="button"
-                onClick={handleDemoSignIn}
-                className="w-full py-2.5 px-4 rounded-full border border-terracotta/40 bg-terracotta/5 hover:bg-terracotta/10 text-xs font-bold text-terracotta transition-colors flex items-center justify-center gap-2"
-              >
-                <Sparkles className="size-3.5" />
-                <span>Explore Demo Profile (Aanya Sharma)</span>
-              </button>
-            </div>
           </div>
         </div>
       </div>
     );
   }
 
-  const initials = currentUser.fullName
+  const initials = (currentUser?.fullName || currentUser?.email || 'User')
     .split(' ')
     .filter(Boolean)
     .map((p) => p[0])
@@ -511,6 +366,16 @@ export function CustomerAccountPage() {
                 <h1 className="font-serif text-2xl sm:text-3xl font-bold text-cocoa tracking-tight">
                   {currentUser.fullName}
                 </h1>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditFullName(currentUser.fullName);
+                    setShowEditProfileModal(true);
+                  }}
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[0.65rem] font-semibold text-terracotta border border-terracotta/30 hover:bg-terracotta/10 transition-colors cursor-pointer"
+                >
+                  Edit Name
+                </button>
                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-primary/10 border border-primary/25 text-[0.65rem] font-bold uppercase tracking-wider text-primary">
                   <Sparkles className="size-3" />
                   Circle Insider
@@ -565,7 +430,7 @@ export function CustomerAccountPage() {
             <span className="text-[0.68rem] font-bold uppercase tracking-wider text-terracotta block">
               Orders
             </span>
-            <p className="font-serif text-xl sm:text-2xl font-bold text-cocoa">{demoOrders.length}</p>
+            <p className="font-serif text-xl sm:text-2xl font-bold text-cocoa">{orders.length}</p>
           </button>
           <button
             type="button"
@@ -575,7 +440,7 @@ export function CustomerAccountPage() {
             <span className="text-[0.68rem] font-bold uppercase tracking-wider text-terracotta block">
               Purchases
             </span>
-            <p className="font-serif text-xl sm:text-2xl font-bold text-cocoa">{ownedPurchases.length}</p>
+            <p className="font-serif text-xl sm:text-2xl font-bold text-cocoa">{purchases.length}</p>
           </button>
           <button
             type="button"
@@ -676,7 +541,33 @@ export function CustomerAccountPage() {
             </div>
           </div>
 
-          <div className="space-y-4">
+          {isLoadingOrders ? (
+            <div className="rounded-3xl border border-foreground/15 bg-card/60 p-12 text-center space-y-3">
+              <Loader2 className="size-6 animate-spin text-primary mx-auto" />
+              <p className="text-xs text-foreground/70">Synchronizing your orders...</p>
+            </div>
+          ) : filteredOrders.length === 0 ? (
+            <div className="rounded-3xl border border-foreground/15 bg-card/60 p-10 text-center space-y-4">
+              <div className="size-14 rounded-full bg-primary/10 border border-primary/20 text-primary flex items-center justify-center mx-auto">
+                <Package className="size-6" />
+              </div>
+              <div className="space-y-1.5 max-w-sm mx-auto">
+                <h3 className="font-serif text-lg font-bold text-cocoa">No Orders Found</h3>
+                <p className="text-xs text-foreground/70 leading-relaxed">
+                  {orderFilter === 'all'
+                    ? "You haven't placed any orders yet. Browse our curated collections to find your first statement piece."
+                    : `No ${orderFilter === 'in_transit' ? 'in-transit' : 'delivered'} orders found.`}
+                </p>
+              </div>
+              <Link
+                to="/new-arrivals"
+                className="inline-flex items-center justify-center px-6 py-2.5 rounded-full bg-primary text-primary-foreground font-semibold text-xs uppercase tracking-wider hover:bg-forest-deep transition-all shadow-xs"
+              >
+                Explore Curated Collection
+              </Link>
+            </div>
+          ) : (
+            <div className="space-y-4">
             {filteredOrders.map((ord) => (
               <div
                 key={ord.id}
@@ -765,11 +656,17 @@ export function CustomerAccountPage() {
                   {ord.items.map((item) => (
                     <div key={item.name} className="pt-3 first:pt-0 flex items-center justify-between gap-4">
                       <div className="flex items-center gap-3.5 min-w-0">
-                        <img
-                          src={item.image}
-                          alt={item.name}
-                          className="size-14 sm:size-16 rounded-xl object-cover shrink-0 border border-foreground/10 shadow-xs"
-                        />
+                        {item.image ? (
+                          <img
+                            src={item.image}
+                            alt={item.name}
+                            className="size-14 sm:size-16 rounded-xl object-cover shrink-0 border border-foreground/10 shadow-xs"
+                          />
+                        ) : (
+                          <div className="size-14 sm:size-16 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
+                            <Package className="size-6" />
+                          </div>
+                        )}
                         <div className="min-w-0">
                           <p className="font-serif font-bold text-sm text-cocoa truncate">{item.name}</p>
                           <p className="text-xs text-foreground/60 mt-0.5">
@@ -855,6 +752,7 @@ export function CustomerAccountPage() {
               </div>
             ))}
           </div>
+        )}
         </div>
       )}
 
@@ -881,67 +779,93 @@ export function CustomerAccountPage() {
               </Link>
             </div>
 
-            <div className="grid sm:grid-cols-2 gap-4">
-              {ownedPurchases.map((item) => (
-                <div
-                  key={item.id}
-                  className="rounded-3xl border border-foreground/15 bg-card/90 p-5 shadow-xs flex flex-col justify-between space-y-4 hover:border-primary/40 transition-all"
-                >
-                  <div className="space-y-3">
-                    <div className="relative rounded-2xl overflow-hidden aspect-4/3 border border-foreground/10 bg-secondary/30">
-                      <img
-                        src={item.image}
-                        alt={item.title}
-                        className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
-                      />
-                      <span className="absolute top-2.5 left-2.5 bg-card/90 backdrop-blur-xs px-2.5 py-0.5 rounded-full text-[0.65rem] font-bold uppercase tracking-wider text-primary border border-primary/20">
-                        {item.tag}
-                      </span>
-                    </div>
-
-                    <div>
-                      <h3 className="font-serif text-base font-bold text-cocoa leading-tight">
-                        {item.title}
-                      </h3>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {item.category} • Purchased {item.acquiredDate}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center justify-between text-xs pt-2 border-t border-foreground/10">
-                      <div>
-                        <span className="text-[0.68rem] uppercase font-bold text-terracotta block">
-                          Condition
-                        </span>
-                        <span className="font-medium text-cocoa text-[0.78rem]">{item.condition}</span>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-[0.68rem] uppercase font-bold text-terracotta block">
-                          Price
-                        </span>
-                        <span className="font-bold text-crimson tabular-nums text-sm">
-                          {formatPrice(item.price)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-foreground/10 flex items-center justify-between gap-2 text-xs">
-                    <span className="text-muted-foreground text-[0.72rem]">
-                      Ref: {item.orderId}
-                    </span>
-
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('orders')}
-                      className="text-xs font-semibold text-primary hover:underline"
-                    >
-                      View Order Details →
-                    </button>
-                  </div>
+            {purchases.length === 0 ? (
+              <div className="rounded-3xl border border-foreground/15 bg-card/60 p-10 text-center space-y-4">
+                <div className="size-14 rounded-full bg-primary/10 border border-primary/20 text-primary flex items-center justify-center mx-auto">
+                  <ShoppingBag className="size-6" />
                 </div>
-              ))}
-            </div>
+                <div className="space-y-1.5 max-w-sm mx-auto">
+                  <h3 className="font-serif text-lg font-bold text-cocoa">Your Archival Locker is Empty</h3>
+                  <p className="text-xs text-foreground/70 leading-relaxed">
+                    Pieces you acquire from CircleUp will be cataloged here with their provenance and archival authentication details.
+                  </p>
+                </div>
+                <Link
+                  to="/thrifted-treasure"
+                  className="inline-flex items-center justify-center px-6 py-2.5 rounded-full bg-primary text-primary-foreground font-semibold text-xs uppercase tracking-wider hover:bg-forest-deep transition-all shadow-xs"
+                >
+                  Discover Archival Finds
+                </Link>
+              </div>
+            ) : (
+              <div className="grid sm:grid-cols-2 gap-4">
+                {purchases.map((item) => (
+                  <div
+                    key={item.id}
+                    className="rounded-3xl border border-foreground/15 bg-card/90 p-5 shadow-xs flex flex-col justify-between space-y-4 hover:border-primary/40 transition-all"
+                  >
+                    <div className="space-y-3">
+                      <div className="relative rounded-2xl overflow-hidden aspect-4/3 border border-foreground/10 bg-secondary/30">
+                        {item.image ? (
+                          <img
+                            src={item.image}
+                            alt={item.title}
+                            className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-primary/10 flex items-center justify-center text-primary">
+                            <ShoppingBag className="size-10" />
+                          </div>
+                        )}
+                        <span className="absolute top-2.5 left-2.5 bg-card/90 backdrop-blur-xs px-2.5 py-0.5 rounded-full text-[0.65rem] font-bold uppercase tracking-wider text-primary border border-primary/20">
+                          {item.tag}
+                        </span>
+                      </div>
+
+                      <div>
+                        <h3 className="font-serif text-base font-bold text-cocoa leading-tight">
+                          {item.title}
+                        </h3>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {item.category} • Purchased {item.acquiredDate}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center justify-between text-xs pt-2 border-t border-foreground/10">
+                        <div>
+                          <span className="text-[0.68rem] uppercase font-bold text-terracotta block">
+                            Condition
+                          </span>
+                          <span className="font-medium text-cocoa text-[0.78rem]">{item.condition}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[0.68rem] uppercase font-bold text-terracotta block">
+                            Price
+                          </span>
+                          <span className="font-bold text-crimson tabular-nums text-sm">
+                            {formatPrice(item.price)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-foreground/10 flex items-center justify-between gap-2 text-xs">
+                      <span className="text-muted-foreground text-[0.72rem]">
+                        Ref: {item.orderId}
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('orders')}
+                        className="text-xs font-semibold text-primary hover:underline"
+                      >
+                        View Order Details →
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Section 2: Rentals */}
@@ -953,49 +877,63 @@ export function CustomerAccountPage() {
               </p>
             </div>
 
-            <div className="space-y-3">
-              {rentalItems.map((rent) => (
-                <div
-                  key={rent.id}
-                  className="rounded-2xl border border-foreground/15 bg-card/90 p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+            {rentals.length === 0 ? (
+              <div className="rounded-2xl border border-foreground/15 bg-card/60 p-8 text-center space-y-3">
+                <p className="text-xs text-foreground/70">
+                  No active or past rentals. Discover archival statements available for rent for shoots and events.
+                </p>
+                <Link
+                  to="/rentals"
+                  className="inline-flex items-center justify-center px-5 py-2 rounded-full border border-primary/40 bg-card hover:bg-primary/5 text-primary font-semibold text-xs uppercase tracking-wider transition-all"
                 >
-                  <div className="flex items-center gap-3.5 min-w-0">
-                    <img
-                      src={rent.image}
-                      alt={rent.title}
-                      className="size-16 sm:size-18 rounded-xl object-cover shrink-0 border border-foreground/10"
-                    />
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-serif font-bold text-sm text-cocoa truncate">{rent.title}</h4>
-                        <span className="px-2 py-0.5 rounded-full text-[0.62rem] font-bold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20 shrink-0">
-                          {rent.status}
-                        </span>
+                  Explore Rental Catalog
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {rentals.map((rent) => (
+                  <div
+                    key={rent.id}
+                    className="rounded-2xl border border-foreground/15 bg-card/90 p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                  >
+                    <div className="flex items-center gap-3.5 min-w-0">
+                      <img
+                        src={rent.image}
+                        alt={rent.title}
+                        className="size-16 sm:size-18 rounded-xl object-cover shrink-0 border border-foreground/10"
+                      />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-serif font-bold text-sm text-cocoa truncate">{rent.title}</h4>
+                          <span className="px-2 py-0.5 rounded-full text-[0.62rem] font-bold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20 shrink-0">
+                            {rent.status}
+                          </span>
+                        </div>
+                        <p className="text-xs text-foreground/70 mt-0.5">
+                          Rental Period: {rent.rentalPeriod}
+                        </p>
+                        <p className="text-[0.72rem] text-terracotta font-semibold mt-0.5">
+                          {rent.depositStatus}
+                        </p>
                       </div>
-                      <p className="text-xs text-foreground/70 mt-0.5">
-                        Rental Period: {rent.rentalPeriod}
-                      </p>
-                      <p className="text-[0.72rem] text-terracotta font-semibold mt-0.5">
-                        {rent.depositStatus}
-                      </p>
+                    </div>
+
+                    <div className="flex sm:flex-col items-center sm:items-end justify-between gap-2 shrink-0">
+                      <span className="font-bold text-crimson text-sm tabular-nums">
+                        {formatPrice(rent.rentalFee)}
+                      </span>
+                      <Link
+                        to="/rentals"
+                        className="text-xs font-semibold text-primary hover:underline flex items-center gap-1"
+                      >
+                        <span>Rental Details</span>
+                        <ExternalLink className="size-3" />
+                      </Link>
                     </div>
                   </div>
-
-                  <div className="flex sm:flex-col items-center sm:items-end justify-between gap-2 shrink-0">
-                    <span className="font-bold text-crimson text-sm tabular-nums">
-                      {formatPrice(rent.rentalFee)}
-                    </span>
-                    <Link
-                      to="/rentals"
-                      className="text-xs font-semibold text-primary hover:underline flex items-center gap-1"
-                    >
-                      <span>Rental Details</span>
-                      <ExternalLink className="size-3" />
-                    </Link>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1185,7 +1123,28 @@ export function CustomerAccountPage() {
           )}
 
           {/* Saved Address Cards Grid */}
-          <div className="grid sm:grid-cols-2 gap-4">
+          {addresses.length === 0 && !showAddAddress ? (
+            <div className="rounded-3xl border border-foreground/15 bg-card/60 p-10 text-center space-y-4">
+              <div className="size-14 rounded-full bg-primary/10 border border-primary/20 text-primary flex items-center justify-center mx-auto">
+                <MapPin className="size-6" />
+              </div>
+              <div className="space-y-1.5 max-w-sm mx-auto">
+                <h3 className="font-serif text-lg font-bold text-cocoa">No Delivery Addresses</h3>
+                <p className="text-xs text-foreground/70 leading-relaxed">
+                  Save your home, studio, or work addresses for seamless, one-click checkout across all consignments.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddAddress(true)}
+                className="inline-flex items-center justify-center gap-1.5 px-6 py-2.5 rounded-full bg-primary text-primary-foreground font-semibold text-xs uppercase tracking-wider hover:bg-forest-deep transition-all shadow-xs"
+              >
+                <Plus className="size-3.5" />
+                <span>Add Delivery Address</span>
+              </button>
+            </div>
+          ) : (
+            <div className="grid sm:grid-cols-2 gap-4">
             {addresses.map((addr) => (
               <div
                 key={addr.id}
@@ -1249,6 +1208,7 @@ export function CustomerAccountPage() {
               </div>
             ))}
           </div>
+        )}
         </div>
       )}
 
@@ -1385,7 +1345,7 @@ export function CustomerAccountPage() {
                     </label>
                     <select
                       value={newCard.brand}
-                      onChange={(e) => setNewCard({ ...newCard, brand: e.target.value as any })}
+                      onChange={(e) => setNewCard({ ...newCard, brand: e.target.value as SavedCard['brand'] })}
                       className="w-full px-3 py-2 border border-foreground/25 bg-card rounded-lg focus:border-primary text-xs"
                     >
                       <option value="Visa">Visa</option>
@@ -1422,43 +1382,49 @@ export function CustomerAccountPage() {
             </h3>
 
             <div className="space-y-3">
-              {savedUpis.map((upi) => (
-                <div
-                  key={upi.id}
-                  className="flex items-center justify-between p-3.5 rounded-2xl border border-foreground/10 bg-background/70 text-xs"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="size-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
-                      UPI
+              {savedUpis.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic py-3 text-center">
+                  No saved UPI IDs. Add a Virtual Payment Address for swift instant checkout.
+                </p>
+              ) : (
+                savedUpis.map((upi) => (
+                  <div
+                    key={upi.id}
+                    className="flex items-center justify-between p-3.5 rounded-2xl border border-foreground/10 bg-background/70 text-xs"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="size-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
+                        UPI
+                      </div>
+                      <div>
+                        <p className="font-mono font-bold text-cocoa text-sm">{upi.upiId}</p>
+                        <p className="text-muted-foreground text-[0.68rem]">
+                          {upi.appName} • Verified Instant Checkout
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-mono font-bold text-cocoa text-sm">{upi.upiId}</p>
-                      <p className="text-muted-foreground text-[0.68rem]">
-                        {upi.appName} • Verified Instant Checkout
-                      </p>
-                    </div>
-                  </div>
 
-                  <div className="flex items-center gap-2">
-                    {upi.isDefault ? (
-                      <span className="text-[0.65rem] font-bold text-primary bg-primary/10 border border-primary/25 px-2.5 py-0.5 rounded-full">
-                        Primary UPI
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSavedUpis(savedUpis.map((u) => ({ ...u, isDefault: u.id === upi.id })));
-                          showNotification('Primary UPI updated.');
-                        }}
-                        className="text-xs text-primary font-semibold hover:underline"
-                      >
-                        Make Primary
-                      </button>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {upi.isDefault ? (
+                        <span className="text-[0.65rem] font-bold text-primary bg-primary/10 border border-primary/25 px-2.5 py-0.5 rounded-full">
+                          Primary UPI
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSavedUpis(savedUpis.map((u) => ({ ...u, isDefault: u.id === upi.id })));
+                            showNotification('Primary UPI updated.');
+                          }}
+                          className="text-xs text-primary font-semibold hover:underline"
+                        >
+                          Make Primary
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
 
@@ -1475,36 +1441,52 @@ export function CustomerAccountPage() {
               </span>
             </div>
 
-            <div className="grid sm:grid-cols-2 gap-4">
-              {savedCards.map((card) => (
-                <div
-                  key={card.id}
-                  className={`rounded-2xl border p-4 sm:p-5 space-y-3 bg-gradient-to-br from-card to-secondary/30 ${
-                    card.isDefault ? 'border-primary/40 shadow-xs' : 'border-foreground/15'
-                  }`}
+            {savedCards.length === 0 ? (
+              <div className="p-6 rounded-2xl border border-dashed border-foreground/20 text-center space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  No tokenized cards saved yet. Saved cards are secured under RBI tokenization guidelines.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowAddCard(true)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full border border-primary/40 bg-card hover:bg-primary/5 text-primary text-xs font-semibold"
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-cocoa">{card.bankName}</span>
-                    <span className="text-xs font-serif font-bold text-terracotta uppercase">{card.brand}</span>
-                  </div>
-
-                  <p className="font-mono text-base tracking-[0.25em] font-bold text-cocoa pt-2">
-                    •••• •••• •••• {card.last4}
-                  </p>
-
-                  <div className="flex items-center justify-between text-xs pt-2 border-t border-foreground/10 text-muted-foreground">
-                    <div>
-                      <span className="text-[0.62rem] uppercase font-bold block">Cardholder</span>
-                      <span className="font-semibold text-cocoa text-[0.72rem]">{card.holderName}</span>
+                  <Plus className="size-3" />
+                  <span>Add Credit or Debit Card</span>
+                </button>
+              </div>
+            ) : (
+              <div className="grid sm:grid-cols-2 gap-4">
+                {savedCards.map((card) => (
+                  <div
+                    key={card.id}
+                    className={`rounded-2xl border p-4 sm:p-5 space-y-3 bg-gradient-to-br from-card to-secondary/30 ${
+                      card.isDefault ? 'border-primary/40 shadow-xs' : 'border-foreground/15'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-cocoa">{card.bankName}</span>
+                      <span className="text-xs font-serif font-bold text-terracotta uppercase">{card.brand}</span>
                     </div>
-                    <div className="text-right">
-                      <span className="text-[0.62rem] uppercase font-bold block">Expires</span>
-                      <span className="font-mono font-semibold text-cocoa text-[0.72rem]">{card.expiry}</span>
+
+                    <p className="font-mono text-base tracking-[0.25em] font-bold text-cocoa pt-2">
+                      •••• •••• •••• {card.last4}
+                    </p>
+
+                    <div className="flex items-center justify-between text-xs pt-2 border-t border-foreground/10 text-muted-foreground">
+                      <div>
+                        <span className="text-[0.62rem] uppercase font-bold block">Cardholder</span>
+                        <span className="font-semibold text-cocoa text-[0.72rem]">{card.holderName}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[0.62rem] uppercase font-bold block">Expires</span>
+                        <span className="font-mono font-semibold text-cocoa text-[0.72rem]">{card.expiry}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Cash on Delivery & Trust Assurance */}
@@ -1585,6 +1567,72 @@ export function CustomerAccountPage() {
                 <span>Download Tax PDF</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Profile Modal */}
+      {showEditProfileModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 bg-[#14281a]/70 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn"
+          onClick={() => setShowEditProfileModal(false)}
+        >
+          <div
+            className="bg-card border-2 border-foreground/20 p-6 sm:p-8 max-w-sm w-full space-y-5 rounded-3xl shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="border-b border-foreground/15 pb-3">
+              <p className="text-[0.68rem] uppercase font-bold tracking-wider text-terracotta">Member Profile</p>
+              <h3 className="font-serif text-xl font-bold text-cocoa">Update Profile Details</h3>
+            </div>
+
+            <form onSubmit={handleUpdateProfile} className="space-y-4 text-xs">
+              <div className="space-y-1.5">
+                <label htmlFor="edit-name" className="font-semibold uppercase tracking-wider text-cocoa block">
+                  Full Name
+                </label>
+                <input
+                  id="edit-name"
+                  type="text"
+                  required
+                  value={editFullName}
+                  onChange={(e) => setEditFullName(e.target.value)}
+                  placeholder="Your Name"
+                  className="w-full border border-foreground/25 p-2.5 rounded-xl bg-transparent text-sm text-cocoa focus:border-primary focus:outline-none"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-semibold uppercase tracking-wider text-muted-foreground block">
+                  Email Address (Managed by Supabase Auth)
+                </label>
+                <input
+                  type="email"
+                  disabled
+                  value={currentUser.email}
+                  className="w-full border border-foreground/15 p-2.5 rounded-xl bg-secondary/50 text-sm text-muted-foreground cursor-not-allowed"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2 border-t border-foreground/15">
+                <button
+                  type="button"
+                  onClick={() => setShowEditProfileModal(false)}
+                  className="flex-1 py-2.5 rounded-full border border-foreground/20 text-cocoa font-semibold uppercase tracking-wider hover:bg-secondary text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdatingProfile}
+                  className="flex-1 py-2.5 rounded-full bg-primary text-white font-semibold uppercase tracking-wider hover:bg-forest-deep text-xs disabled:opacity-50"
+                >
+                  {isUpdatingProfile ? 'Saving...' : 'Save Profile'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

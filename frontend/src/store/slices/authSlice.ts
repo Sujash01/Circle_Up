@@ -6,6 +6,7 @@ export interface SessionUser {
   fullName: string;
   email: string;
   phone?: string;
+  avatarUrl?: string;
   authProvider?: 'email' | 'google' | 'phone';
   actorType: ActorType;
   role: Role;

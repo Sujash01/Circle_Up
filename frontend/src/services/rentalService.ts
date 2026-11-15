@@ -37,9 +37,19 @@ export interface RentalQuoteResult {
   conflictingDates: string[];
 }
 
+let rentalCache: RentalProduct[] = [...RENTAL_PRODUCTS];
+
 export const rentalService = {
   getAllRentalProducts(): RentalProduct[] {
-    return RENTAL_PRODUCTS;
+    return rentalCache;
+  },
+
+  setRentalProducts(products: RentalProduct[]): void {
+    rentalCache = [...products];
+  },
+
+  clearCatalog(): void {
+    rentalCache = [];
   },
 
   loadSubmittedRequests(): SimulatedRentalRequest[] {

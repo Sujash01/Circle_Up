@@ -15,8 +15,6 @@ import {
   easeOutBack,
   easeOutCubic,
   lerp,
-  SHIFT_DESKTOP,
-  SHIFT_MOBILE,
   SLOTS_DESKTOP,
   SLOTS_MOBILE,
   SPARK_COUNT,

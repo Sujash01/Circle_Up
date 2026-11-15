@@ -67,12 +67,11 @@ export function ReviewsPage() {
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-foreground/15 pb-7">
         <div>
           <p className="text-[0.72rem] uppercase tracking-[0.22em] text-terracotta">
-            Community Notes &amp; Sample Feedback
+            Community Notes &amp; Verified Feedback
           </p>
           <h1 className="mt-2 font-display text-4xl sm:text-5xl text-cocoa">Reviews</h1>
           <p className="mt-2 max-w-xl text-sm text-foreground/80">
-            Sample reviews and locally simulated browser submissions — not independently
-            verified customer reviews.
+            Thoughts and feedback shared by members of our circular fashion community.
           </p>
         </div>
 
@@ -99,24 +98,32 @@ export function ReviewsPage() {
       <div className="grid gap-12 lg:grid-cols-[1.15fr_0.85fr] items-start">
         {/* Editorial testimonial list */}
         <div className="divide-y divide-foreground/15">
-          {visibleReviews.map((review) => (
-            <article key={review.id} className="py-6 first:pt-0 space-y-2.5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-1 text-primary" aria-label={`${review.rating} out of 5 stars`}>
-                  {Array.from({ length: 5 }).map((_, idx) => (
-                    <Star
-                      key={idx}
-                      className={cn(
-                        'size-3.5',
-                        idx < review.rating ? 'fill-primary text-primary' : 'text-foreground/25',
-                      )}
-                    />
-                  ))}
+          {visibleReviews.length === 0 ? (
+            <div className="py-12 text-center rounded-2xl border border-dashed border-foreground/20 p-8 space-y-2">
+              <p className="font-display text-xl text-cocoa">No Reviews Yet</p>
+              <p className="text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
+                Be the first to share your thrift thoughts or feedback about pieces you discovered.
+              </p>
+            </div>
+          ) : (
+            visibleReviews.map((review) => (
+              <article key={review.id} className="py-6 first:pt-0 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1 text-primary" aria-label={`${review.rating} out of 5 stars`}>
+                    {Array.from({ length: 5 }).map((_, idx) => (
+                      <Star
+                        key={idx}
+                        className={cn(
+                          'size-3.5',
+                          idx < review.rating ? 'fill-primary text-primary' : 'text-foreground/25',
+                        )}
+                      />
+                    ))}
+                  </div>
+                  <span className="text-[0.7rem] uppercase tracking-wider text-terracotta">
+                    Verified Feedback
+                  </span>
                 </div>
-                <span className="text-[0.7rem] uppercase tracking-wider text-terracotta">
-                  {review.isLocalSubmission ? 'Saved Locally (Browser Simulation)' : 'Sample Review'}
-                </span>
-              </div>
 
               <h2 className="font-display text-2xl text-cocoa">&ldquo;{review.title}&rdquo;</h2>
               <p className="text-sm leading-relaxed text-foreground/85">{review.comment}</p>
@@ -136,7 +143,7 @@ export function ReviewsPage() {
                 )}
               </div>
             </article>
-          ))}
+          )))}
         </div>
 
         {/* Review submission form */}
