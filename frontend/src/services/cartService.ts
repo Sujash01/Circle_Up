@@ -206,5 +206,18 @@ export const cartService = {
     const url = `https://wa.me/${WHATSAPP_BUSINESS_NUMBER}?text=${encodeURIComponent(message)}`;
     return { message, url, totals };
   },
+
+  buildProductWhatsAppUrl(product: Product, variantLabel?: string): string {
+    const lines = [
+      'Hi CircleUp! I would like to enquire about this piece:',
+      `• ${product.name}${variantLabel ? ` (${variantLabel})` : ''}`,
+      `• Price: ${formatPrice(product.price)}`,
+      `• Ref: ${product.serialNumber || product.id.toUpperCase()}`,
+      `• Link: ${typeof window !== 'undefined' ? window.location.href : `https://circleup.in/product/${product.slug}`}`,
+      '',
+      'Is this piece currently available?',
+    ];
+    return `https://wa.me/${WHATSAPP_BUSINESS_NUMBER}?text=${encodeURIComponent(lines.join('\n'))}`;
+  },
 };
 

@@ -99,6 +99,7 @@ export const PaymentMethod = {
   WHATSAPP_UPI: 'WHATSAPP_UPI',
   WHATSAPP_BANK_TRANSFER: 'WHATSAPP_BANK_TRANSFER',
   CASH_ON_DELIVERY: 'CASH_ON_DELIVERY',
+  ONLINE_UPI: 'ONLINE_UPI',
   RAZORPAY_FUTURE: 'RAZORPAY_FUTURE',
 } as const;
 export type PaymentMethod = (typeof PaymentMethod)[keyof typeof PaymentMethod];

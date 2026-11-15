@@ -1,19 +1,25 @@
-import { CheckCircle2, Copy, ExternalLink, Minus, Package, Plus, Trash2, X } from 'lucide-react';
+import { CheckCircle2, Copy, Minus, Package, Plus, Trash2, X } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { EmptyState } from '@/components/storefront/EmptyState';
 import { Blob } from '@/components/ui/Blob';
 import { useStore } from '@/context/StoreContext';
+import { cn } from '@/lib/utils';
 import { apiClient } from '@/services/apiClient';
 import { cartService, formatPrice } from '@/services/cartService';
 
 import type { PaymentMethod } from '@circleup/shared';
 
-function isPaymentMethod(value: string): value is PaymentMethod {
+function WhatsAppIcon({ className = 'size-4' }: { className?: string }) {
   return (
-    value === 'WHATSAPP_UPI' ||
-    value === 'CASH_ON_DELIVERY' ||
-    value === 'ONLINE_UPI'
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+      className={className}
+    >
+      <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91C2.13 13.66 2.59 15.36 3.45 16.86L2.05 22L7.3 20.62C8.75 21.41 10.38 21.83 12.04 21.83C17.5 21.83 21.95 17.38 21.95 11.92C21.95 9.27 20.92 6.78 19.05 4.91C17.18 3.03 14.69 2 12.04 2ZM12.05 3.67C14.25 3.67 16.31 4.53 17.87 6.09C19.42 7.65 20.28 9.72 20.28 11.92C20.28 16.46 16.59 20.15 12.04 20.15C10.56 20.15 9.11 19.76 7.85 19.01L7.55 18.83L4.43 19.65L5.26 16.61L5.06 16.29C4.24 14.99 3.8 13.47 3.8 11.91C3.81 7.37 7.5 3.67 12.05 3.67ZM8.83 7.35C8.61 7.35 8.24 7.43 7.94 7.76C7.63 8.09 6.77 8.9 6.77 10.54C6.77 12.18 7.97 13.76 8.13 13.98C8.3 14.2 10.45 17.52 13.74 18.94C16.47 20.12 17.03 19.89 17.62 19.83C18.21 19.77 19.53 19.05 19.8 18.28C20.08 17.52 20.08 16.86 20 16.73C19.92 16.59 19.7 16.51 19.37 16.34C19.04 16.18 17.41 15.38 17.11 15.27C16.81 15.16 16.59 15.1 16.37 15.43C16.15 15.76 15.52 16.51 15.33 16.73C15.13 16.95 14.94 16.98 14.61 16.81C14.28 16.65 13.22 16.3 11.96 15.17C10.98 14.3 10.32 13.22 10.12 12.89C9.93 12.56 10.1 12.38 10.27 12.22C10.42 12.07 10.6 11.83 10.77 11.64C10.93 11.44 10.99 11.31 11.1 11.09C11.21 10.87 11.16 10.67 11.08 10.51C11 10.35 10.34 8.71 10.06 8.05C9.79 7.41 9.52 7.5 9.32 7.49C9.13 7.48 8.91 7.35 8.83 7.35Z" />
+    </svg>
   );
 }
 
@@ -75,7 +81,7 @@ export function CartPage() {
     city: '',
     state: '',
     postalCode: '',
-    paymentMethod: 'WHATSAPP_UPI' as PaymentMethod,
+    paymentMethod: 'CASH_ON_DELIVERY' as PaymentMethod,
   });
 
   if (placedOrder) {
@@ -431,10 +437,10 @@ export function CartPage() {
               href={whatsapp.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex w-full items-center justify-center gap-2 border border-primary px-6 py-3 text-xs font-semibold uppercase tracking-widest text-primary transition-colors hover:bg-primary/10"
+              className="flex w-full items-center justify-center gap-2 bg-[#25D366] hover:bg-[#20bd5a] text-white px-6 py-3.5 text-xs font-bold uppercase tracking-widest transition-colors shadow-xs"
             >
+              <WhatsAppIcon className="size-4" />
               <span>Enquire on WhatsApp</span>
-              <ExternalLink className="size-3.5" />
             </a>
           </div>
         </aside>
@@ -566,21 +572,71 @@ export function CartPage() {
                 />
               </div>
 
-              <div className="space-y-1">
-                <label className="font-semibold uppercase tracking-wider text-cocoa">Payment Option</label>
-                <select
-                  value={formData.paymentMethod}
-                  onChange={(event) => {
-                    if (isPaymentMethod(event.target.value)) {
-                      setFormData({ ...formData, paymentMethod: event.target.value });
-                    }
-                  }}
-                  className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
-                >
-                  <option value="WHATSAPP_UPI">WhatsApp UPI / Pay on Chat</option>
-                  <option value="CASH_ON_DELIVERY">Cash on Delivery (COD)</option>
-                  <option value="ONLINE_UPI">Direct UPI Transfer</option>
-                </select>
+              <div className="space-y-2">
+                <label className="font-semibold uppercase tracking-wider text-cocoa text-xs">
+                  Payment Method (Select Option)
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, paymentMethod: 'CASH_ON_DELIVERY' })}
+                    className={cn(
+                      'flex flex-col text-left p-3.5 border transition-all cursor-pointer relative',
+                      formData.paymentMethod === 'CASH_ON_DELIVERY'
+                        ? 'border-primary bg-primary/8 shadow-xs ring-1 ring-primary'
+                        : 'border-foreground/20 bg-background/50 hover:border-foreground/40',
+                    )}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-bold text-cocoa">Cash on Delivery (COD)</span>
+                      <span
+                        className={cn(
+                          'size-3.5 rounded-full border flex items-center justify-center transition-colors',
+                          formData.paymentMethod === 'CASH_ON_DELIVERY'
+                            ? 'border-primary bg-primary'
+                            : 'border-foreground/30 bg-transparent',
+                        )}
+                      >
+                        {formData.paymentMethod === 'CASH_ON_DELIVERY' && (
+                          <span className="size-1.5 rounded-full bg-white" />
+                        )}
+                      </span>
+                    </div>
+                    <p className="text-[0.72rem] text-muted-foreground leading-snug">
+                      Pay with cash or UPI on delivery at your doorstep.
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, paymentMethod: 'ONLINE_UPI' })}
+                    className={cn(
+                      'flex flex-col text-left p-3.5 border transition-all cursor-pointer relative',
+                      formData.paymentMethod === 'ONLINE_UPI'
+                        ? 'border-primary bg-primary/8 shadow-xs ring-1 ring-primary'
+                        : 'border-foreground/20 bg-background/50 hover:border-foreground/40',
+                    )}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-bold text-cocoa">Direct UPI Transfer</span>
+                      <span
+                        className={cn(
+                          'size-3.5 rounded-full border flex items-center justify-center transition-colors',
+                          formData.paymentMethod === 'ONLINE_UPI'
+                            ? 'border-primary bg-primary'
+                            : 'border-foreground/30 bg-transparent',
+                        )}
+                      >
+                        {formData.paymentMethod === 'ONLINE_UPI' && (
+                          <span className="size-1.5 rounded-full bg-white" />
+                        )}
+                      </span>
+                    </div>
+                    <p className="text-[0.72rem] text-muted-foreground leading-snug">
+                      Direct payment via Google Pay, PhonePe, or BHIM.
+                    </p>
+                  </button>
+                </div>
               </div>
 
               <div className="border-t border-foreground/15 pt-3 flex justify-between font-bold text-sm text-cocoa">
