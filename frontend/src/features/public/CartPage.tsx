@@ -1,4 +1,4 @@
-import { CheckCircle2, Copy, Minus, Package, Plus, Trash2, X } from 'lucide-react';
+import { ArrowRight, Check, CheckCircle2, Copy, Minus, Package, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { EmptyState } from '@/components/storefront/EmptyState';
@@ -6,6 +6,7 @@ import { Blob } from '@/components/ui/Blob';
 import { useStore } from '@/context/StoreContext';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/services/apiClient';
+import { authService } from '@/services/authService';
 import { cartService, formatPrice } from '@/services/cartService';
 
 import type { PaymentMethod } from '@circleup/shared';
@@ -68,6 +69,7 @@ export function CartPage() {
 
   // Direct Online Checkout state
   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
+  const [checkoutStep, setCheckoutStep] = useState<1 | 2>(1);
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
   const [orderError, setOrderError] = useState('');
   const [placedOrder, setPlacedOrder] = useState<PlacedOrderDetails | null>(null);
@@ -84,6 +86,36 @@ export function CartPage() {
     paymentMethod: 'CASH_ON_DELIVERY' as PaymentMethod,
   });
 
+  const handleOpenCheckout = () => {
+    setOrderError('');
+    setCheckoutStep(1);
+    const session = authService.getStoredSession();
+    if (session?.user) {
+      setFormData((prev) => ({
+        ...prev,
+        name: prev.name || session.user.fullName || '',
+        email: prev.email || session.user.email || '',
+        phone: prev.phone || session.user.phone || '',
+      }));
+    }
+    setIsCheckoutModalOpen(true);
+  };
+
+  const handleContinueToPayment = (e: FormEvent) => {
+    e.preventDefault();
+    setOrderError('');
+
+    if (!formData.name.trim() || !formData.email.trim() || !formData.phone.trim()) {
+      setOrderError('Please provide your full name, email, and mobile phone number.');
+      return;
+    }
+    if (!formData.addressLine.trim() || !formData.city.trim() || !formData.state.trim() || !formData.postalCode.trim()) {
+      setOrderError('Please complete your full delivery street address, city, state, and PIN code.');
+      return;
+    }
+    setCheckoutStep(2);
+  };
+
   if (placedOrder) {
     return (
       <div className="max-w-2xl mx-auto py-12 px-4 space-y-8">
@@ -99,6 +131,14 @@ export function CartPage() {
           <div className="border-y border-foreground/15 py-4 space-y-2 text-sm text-foreground/80">
             <p>
               Your order <strong className="font-mono text-cocoa">{placedOrder.orderNumber}</strong> has been saved directly to the database.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Payment Method:{' '}
+              <strong className="text-cocoa">
+                {placedOrder.paymentMethod === 'ONLINE_UPI'
+                  ? 'Paid Online (Razorpay Gateway)'
+                  : 'Cash on Delivery (COD)'}
+              </strong>
             </p>
             <p className="text-xs text-muted-foreground">
               A confirmation email will be sent to <strong>{placedOrder.customer.email}</strong>.
@@ -410,7 +450,7 @@ export function CartPage() {
           {/* Primary Action: Direct Order Placement into Database */}
           <button
             type="button"
-            onClick={() => setIsCheckoutModalOpen(true)}
+            onClick={handleOpenCheckout}
             className="flex w-full items-center justify-center gap-2 bg-primary px-6 py-3.5 text-xs font-semibold uppercase tracking-widest text-primary-foreground transition-colors hover:bg-forest-deep cursor-pointer"
           >
             <Package className="size-4" />
@@ -461,9 +501,62 @@ export function CartPage() {
             <div>
               <p className="text-[0.72rem] uppercase tracking-widest text-terracotta font-semibold">CircleUp Thrift Store</p>
               <h2 className="font-display text-2xl text-cocoa">Complete Your Order</h2>
-              <p className="text-xs text-muted-foreground mt-1">
-                Your order will be reserved and saved in our MongoDB store database.
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {checkoutStep === 1
+                  ? 'Step 1 of 2 · Enter your delivery details.'
+                  : 'Step 2 of 2 · Choose payment method & confirm order.'}
               </p>
+            </div>
+
+            {/* Step Indicator */}
+            <div className="flex items-center justify-between border-y border-foreground/15 py-3">
+              <button
+                type="button"
+                onClick={() => setCheckoutStep(1)}
+                className="flex items-center gap-2 group cursor-pointer text-left"
+              >
+                <span
+                  className={cn(
+                    'flex size-6 items-center justify-center rounded-full text-xs font-bold transition-colors',
+                    checkoutStep === 1
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-primary/20 text-primary',
+                  )}
+                >
+                  {checkoutStep > 1 ? <Check className="size-3.5" /> : '1'}
+                </span>
+                <span
+                  className={cn(
+                    'text-xs font-semibold uppercase tracking-wider transition-colors',
+                    checkoutStep === 1 ? 'text-cocoa' : 'text-muted-foreground group-hover:text-cocoa',
+                  )}
+                >
+                  Delivery Details
+                </span>
+              </button>
+
+              <div className="h-px flex-1 mx-3 bg-foreground/20" />
+
+              <div className="flex items-center gap-2 text-left">
+                <span
+                  className={cn(
+                    'flex size-6 items-center justify-center rounded-full text-xs font-bold transition-colors',
+                    checkoutStep === 2
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-foreground/10 text-muted-foreground',
+                  )}
+                >
+                  2
+                </span>
+                <span
+                  className={cn(
+                    'text-xs font-semibold uppercase tracking-wider',
+                    checkoutStep === 2 ? 'text-cocoa' : 'text-muted-foreground',
+                  )}
+                >
+                  Payment &amp; Review
+                </span>
+              </div>
             </div>
 
             {orderError && (
@@ -472,186 +565,276 @@ export function CartPage() {
               </div>
             )}
 
-            <form onSubmit={handleDirectOrderSubmit} className="space-y-4 text-xs">
-              <div className="space-y-1">
-                <label className="font-semibold uppercase tracking-wider text-cocoa">Full Name *</label>
-                <input
-                  type="text"
-                  required
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="e.g. Aanya Sharma"
-                  className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {checkoutStep === 1 && (
+              <form onSubmit={handleContinueToPayment} className="space-y-4 text-xs">
                 <div className="space-y-1">
-                  <label className="font-semibold uppercase tracking-wider text-cocoa">Email Address *</label>
-                  <input
-                    type="email"
-                    required
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    placeholder="aanya@example.com"
-                    className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="font-semibold uppercase tracking-wider text-cocoa">Mobile Number *</label>
-                  <input
-                    type="tel"
-                    required
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    placeholder="+91 98201 12233"
-                    className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="font-semibold uppercase tracking-wider text-cocoa">Delivery Street Address *</label>
-                <input
-                  type="text"
-                  required
-                  value={formData.addressLine}
-                  onChange={(e) => setFormData({ ...formData, addressLine: e.target.value })}
-                  placeholder="House/Flat No., Building, Street"
-                  className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <div className="space-y-1">
-                  <label className="font-semibold uppercase tracking-wider text-cocoa">City *</label>
+                  <label className="font-semibold uppercase tracking-wider text-cocoa">Full Name *</label>
                   <input
                     type="text"
                     required
-                    value={formData.city}
-                    onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                    placeholder="Mumbai"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    placeholder="e.g. Aanya Sharma"
                     className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
                   />
                 </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="font-semibold uppercase tracking-wider text-cocoa">Email Address *</label>
+                    <input
+                      type="email"
+                      required
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      placeholder="aanya@example.com"
+                      className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="font-semibold uppercase tracking-wider text-cocoa">Mobile Number *</label>
+                    <input
+                      type="tel"
+                      required
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      placeholder="+91 98201 12233"
+                      className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
+                    />
+                  </div>
+                </div>
+
                 <div className="space-y-1">
-                  <label className="font-semibold uppercase tracking-wider text-cocoa">State *</label>
+                  <label className="font-semibold uppercase tracking-wider text-cocoa">Delivery Street Address *</label>
                   <input
                     type="text"
                     required
-                    value={formData.state}
-                    onChange={(e) => setFormData({ ...formData, state: e.target.value })}
-                    placeholder="Maharashtra"
+                    value={formData.addressLine}
+                    onChange={(e) => setFormData({ ...formData, addressLine: e.target.value })}
+                    placeholder="House/Flat No., Building, Street"
                     className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
                   />
                 </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <label className="font-semibold uppercase tracking-wider text-cocoa">City *</label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.city}
+                      onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                      placeholder="Mumbai"
+                      className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="font-semibold uppercase tracking-wider text-cocoa">State *</label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.state}
+                      onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+                      placeholder="Maharashtra"
+                      className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="font-semibold uppercase tracking-wider text-cocoa">PIN Code *</label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.postalCode}
+                      onChange={(e) => setFormData({ ...formData, postalCode: e.target.value })}
+                      placeholder="400050"
+                      className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
+                    />
+                  </div>
+                </div>
+
                 <div className="space-y-1">
-                  <label className="font-semibold uppercase tracking-wider text-cocoa">PIN Code *</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.postalCode}
-                    onChange={(e) => setFormData({ ...formData, postalCode: e.target.value })}
-                    placeholder="400050"
+                  <label htmlFor="checkout-note" className="font-semibold uppercase tracking-wider text-cocoa">
+                    Order note (optional)
+                  </label>
+                  <textarea
+                    id="checkout-note"
+                    rows={2}
+                    value={customerNote}
+                    onChange={(event) => setCustomerNote(event.target.value)}
+                    placeholder="Anything we should know about your order?"
                     className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
                   />
                 </div>
-              </div>
 
-              <div className="space-y-1">
-                <label htmlFor="checkout-note" className="font-semibold uppercase tracking-wider text-cocoa">
-                  Order note (optional)
-                </label>
-                <textarea
-                  id="checkout-note"
-                  rows={3}
-                  value={customerNote}
-                  onChange={(event) => setCustomerNote(event.target.value)}
-                  placeholder="Anything we should know about your order?"
-                  className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="font-semibold uppercase tracking-wider text-cocoa text-xs">
-                  Payment Method (Select Option)
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="flex justify-between items-center pt-2">
                   <button
                     type="button"
-                    onClick={() => setFormData({ ...formData, paymentMethod: 'CASH_ON_DELIVERY' })}
-                    className={cn(
-                      'flex flex-col text-left p-3.5 border transition-all cursor-pointer relative',
-                      formData.paymentMethod === 'CASH_ON_DELIVERY'
-                        ? 'border-primary bg-primary/8 shadow-xs ring-1 ring-primary'
-                        : 'border-foreground/20 bg-background/50 hover:border-foreground/40',
-                    )}
+                    onClick={() => setIsCheckoutModalOpen(false)}
+                    className="text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground cursor-pointer"
                   >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-bold text-cocoa">Cash on Delivery (COD)</span>
-                      <span
-                        className={cn(
-                          'size-3.5 rounded-full border flex items-center justify-center transition-colors',
-                          formData.paymentMethod === 'CASH_ON_DELIVERY'
-                            ? 'border-primary bg-primary'
-                            : 'border-foreground/30 bg-transparent',
-                        )}
-                      >
-                        {formData.paymentMethod === 'CASH_ON_DELIVERY' && (
-                          <span className="size-1.5 rounded-full bg-white" />
-                        )}
-                      </span>
-                    </div>
-                    <p className="text-[0.72rem] text-muted-foreground leading-snug">
-                      Pay with cash or UPI on delivery at your doorstep.
-                    </p>
+                    Cancel
                   </button>
-
                   <button
-                    type="button"
-                    onClick={() => setFormData({ ...formData, paymentMethod: 'ONLINE_UPI' })}
-                    className={cn(
-                      'flex flex-col text-left p-3.5 border transition-all cursor-pointer relative',
-                      formData.paymentMethod === 'ONLINE_UPI'
-                        ? 'border-primary bg-primary/8 shadow-xs ring-1 ring-primary'
-                        : 'border-foreground/20 bg-background/50 hover:border-foreground/40',
-                    )}
+                    type="submit"
+                    className="inline-flex items-center gap-2 bg-primary px-6 py-3 text-xs font-semibold uppercase tracking-widest text-primary-foreground hover:bg-forest-deep cursor-pointer"
                   >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-bold text-cocoa">Direct UPI Transfer</span>
-                      <span
-                        className={cn(
-                          'size-3.5 rounded-full border flex items-center justify-center transition-colors',
-                          formData.paymentMethod === 'ONLINE_UPI'
-                            ? 'border-primary bg-primary'
-                            : 'border-foreground/30 bg-transparent',
-                        )}
-                      >
-                        {formData.paymentMethod === 'ONLINE_UPI' && (
-                          <span className="size-1.5 rounded-full bg-white" />
-                        )}
-                      </span>
-                    </div>
-                    <p className="text-[0.72rem] text-muted-foreground leading-snug">
-                      Direct payment via Google Pay, PhonePe, or BHIM.
-                    </p>
+                    <span>Continue to Payment</span>
+                    <ArrowRight className="size-3.5" />
                   </button>
                 </div>
-              </div>
+              </form>
+            )}
 
-              <div className="border-t border-foreground/15 pt-3 flex justify-between font-bold text-sm text-cocoa">
-                <span>Total Amount Due</span>
-                <span className="text-primary">{formatPrice(totals.estimatedTotal)}</span>
-              </div>
+            {checkoutStep === 2 && (
+              <form onSubmit={handleDirectOrderSubmit} className="space-y-5 text-xs">
+                {/* Shipping address review snippet */}
+                <div className="bg-secondary/40 border border-foreground/10 p-3.5 flex justify-between items-start rounded-xs">
+                  <div className="space-y-0.5">
+                    <p className="font-semibold text-cocoa">
+                      {formData.name} · <span className="font-normal text-muted-foreground">{formData.phone}</span>
+                    </p>
+                    <p className="text-foreground/80">
+                      {formData.addressLine}, {formData.city}, {formData.state} - {formData.postalCode}
+                    </p>
+                    <p className="text-muted-foreground text-[0.72rem]">{formData.email}</p>
+                    {customerNote && (
+                      <p className="text-[0.72rem] italic text-muted-foreground mt-1">Note: &ldquo;{customerNote}&rdquo;</p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCheckoutStep(1)}
+                    className="text-primary hover:underline text-[0.72rem] font-semibold uppercase tracking-wider shrink-0 ml-3 cursor-pointer"
+                  >
+                    Edit
+                  </button>
+                </div>
 
-              <button
-                type="submit"
-                disabled={isSubmittingOrder}
-                className="w-full bg-primary py-3 text-center text-xs font-semibold uppercase tracking-widest text-primary-foreground hover:bg-forest-deep disabled:opacity-50 cursor-pointer"
-              >
-                {isSubmittingOrder ? 'Processing Order...' : 'Confirm & Place Thrift Order'}
-              </button>
-            </form>
+                {/* Payment Option Selection */}
+                <div className="space-y-2.5">
+                  <label className="font-semibold uppercase tracking-wider text-cocoa text-xs">
+                    Payment Method
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, paymentMethod: 'CASH_ON_DELIVERY' })}
+                      className={cn(
+                        'flex flex-col text-left p-3.5 border transition-all cursor-pointer relative',
+                        formData.paymentMethod === 'CASH_ON_DELIVERY'
+                          ? 'border-primary bg-primary/8 shadow-xs ring-1 ring-primary'
+                          : 'border-foreground/20 bg-background/50 hover:border-foreground/40',
+                      )}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-bold text-cocoa">Cash on Delivery (COD)</span>
+                        <span
+                          className={cn(
+                            'size-3.5 rounded-full border flex items-center justify-center transition-colors',
+                            formData.paymentMethod === 'CASH_ON_DELIVERY'
+                              ? 'border-primary bg-primary'
+                              : 'border-foreground/30 bg-transparent',
+                          )}
+                        >
+                          {formData.paymentMethod === 'CASH_ON_DELIVERY' && (
+                            <span className="size-1.5 rounded-full bg-white" />
+                          )}
+                        </span>
+                      </div>
+                      <p className="text-[0.72rem] text-muted-foreground leading-snug">
+                        Pay with cash or UPI on delivery at your doorstep.
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, paymentMethod: 'ONLINE_UPI' })}
+                      className={cn(
+                        'flex flex-col text-left p-3.5 border transition-all cursor-pointer relative',
+                        formData.paymentMethod === 'ONLINE_UPI'
+                          ? 'border-primary bg-primary/8 shadow-xs ring-1 ring-primary'
+                          : 'border-foreground/20 bg-background/50 hover:border-foreground/40',
+                      )}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-bold text-cocoa">Pay Online</span>
+                        <span
+                          className={cn(
+                            'size-3.5 rounded-full border flex items-center justify-center transition-colors',
+                            formData.paymentMethod === 'ONLINE_UPI'
+                              ? 'border-primary bg-primary'
+                              : 'border-foreground/30 bg-transparent',
+                          )}
+                        >
+                          {formData.paymentMethod === 'ONLINE_UPI' && (
+                            <span className="size-1.5 rounded-full bg-white" />
+                          )}
+                        </span>
+                      </div>
+                      <p className="text-[0.72rem] text-muted-foreground leading-snug">
+                        Razorpay payment gateway (UPI, Cards &amp; NetBanking).
+                      </p>
+                    </button>
+                  </div>
+
+                  {formData.paymentMethod === 'ONLINE_UPI' && (
+                    <div className="rounded border border-primary/25 bg-primary/5 p-3 text-xs text-cocoa space-y-1">
+                      <div className="flex items-center gap-1.5 font-semibold text-primary">
+                        <ShieldCheck className="size-4" />
+                        <span>Razorpay Payment Gateway</span>
+                      </div>
+                      <p className="text-[0.72rem] text-muted-foreground leading-snug">
+                        Instant zero-fee transfer via Google Pay, PhonePe, Paytm, all UPI apps, Debit/Credit Cards, and NetBanking secured by Razorpay.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Price Breakdown */}
+                <div className="border-t border-foreground/15 pt-3 space-y-1.5 text-xs text-cocoa">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Items Subtotal ({totals.itemCount} {totals.itemCount === 1 ? 'item' : 'items'})</span>
+                    <span className="tabular-nums">{formatPrice(totals.subtotal)}</span>
+                  </div>
+                  {totals.discount > 0 && (
+                    <div className="flex justify-between text-terracotta">
+                      <span>Promo Discount ({cart.promoCode})</span>
+                      <span className="tabular-nums">-{formatPrice(totals.discount)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Delivery</span>
+                    <span className="text-forest font-medium">Complimentary</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-sm pt-2 border-t border-foreground/10">
+                    <span>Total Amount Due</span>
+                    <span className="text-primary tabular-nums">{formatPrice(totals.estimatedTotal)}</span>
+                  </div>
+                </div>
+
+                {/* Action buttons */}
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setCheckoutStep(1)}
+                    className="border border-foreground/25 px-5 py-3 text-xs font-semibold uppercase tracking-wider text-cocoa hover:border-foreground/50 cursor-pointer"
+                  >
+                    ← Back
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingOrder}
+                    className="flex-1 bg-primary py-3 text-center text-xs font-semibold uppercase tracking-widest text-primary-foreground hover:bg-forest-deep disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSubmittingOrder
+                      ? 'Processing Order...'
+                      : formData.paymentMethod === 'ONLINE_UPI'
+                        ? `Pay Online with Razorpay · ${formatPrice(totals.estimatedTotal)}`
+                        : 'Confirm & Place Thrift Order'}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
