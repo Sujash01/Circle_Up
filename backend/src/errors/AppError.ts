@@ -79,3 +79,12 @@ export class TooManyRequestsError extends AppError {
   }
 }
 
+export class ServiceUnavailableError extends AppError {
+  constructor(
+    message = 'Authentication service is temporarily unavailable. Database connection is offline.',
+    code = 'DATABASE_UNAVAILABLE',
+  ) {
+    super(message, 503, code);
+  }
+}
+

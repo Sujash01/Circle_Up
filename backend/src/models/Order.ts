@@ -13,6 +13,10 @@ export interface IOrderItemDocument {
 
 export interface IOrderDocument extends Document {
   orderNumber: string;
+  customerId?: string;
+  guestAccessToken?: string;
+  guestAccessTokenHash?: string;
+  guestAccessExpiresAt?: Date;
   customer: {
     name: string;
     email: string;
@@ -61,6 +65,25 @@ const OrderSchema = new Schema<IOrderDocument>(
       required: true,
       unique: true,
       index: true,
+    },
+    customerId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+    guestAccessToken: {
+      type: String,
+      default: null,
+      index: true,
+    },
+    guestAccessTokenHash: {
+      type: String,
+      default: null,
+      index: true,
+    },
+    guestAccessExpiresAt: {
+      type: Date,
+      default: null,
     },
     customer: {
       name: { type: String, required: true, trim: true },

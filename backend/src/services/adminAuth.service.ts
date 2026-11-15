@@ -7,6 +7,7 @@ import {
   BadRequestError,
   ForbiddenError,
   NotFoundError,
+  ServiceUnavailableError,
   TooManyRequestsError,
   UnauthorizedError,
 } from '../errors/AppError.js';
@@ -30,13 +31,36 @@ function isDbConnected(): boolean {
   return mongoose.connection.readyState === 1;
 }
 
-const SESSION_SECRET = env.SESSION_SECRET || 'circleup-super-secret-admin-session-signing-key-32chars';
+export function isProductionEnvironment(): boolean {
+  return process.env.NODE_ENV === 'production' || env.NODE_ENV === 'production';
+}
+
+export const DEFAULT_INSECURE_SESSION_SECRET = 'circleup-super-secret-admin-session-signing-key-32chars';
+
+export function resolveSessionSecret(): string {
+  if (isProductionEnvironment()) {
+    const secret = process.env.SESSION_SECRET || env.SESSION_SECRET;
+    if (
+      !secret ||
+      secret === DEFAULT_INSECURE_SESSION_SECRET ||
+      secret.length < 32
+    ) {
+      throw new Error(
+        'Fatal Security Configuration: SESSION_SECRET is missing, default, or under 32 characters in production.',
+      );
+    }
+    return secret;
+  }
+  return env.SESSION_SECRET || DEFAULT_INSECURE_SESSION_SECRET;
+}
+
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 export function signSessionToken(data: AdminSessionData): string {
+  const secret = resolveSessionSecret();
   const payload = Buffer.from(JSON.stringify(data)).toString('base64url');
   const signature = crypto
-    .createHmac('sha256', SESSION_SECRET)
+    .createHmac('sha256', secret)
     .update(payload)
     .digest('base64url');
   return `${payload}.${signature}`;
@@ -47,8 +71,9 @@ export function verifySessionToken(token: string): AdminSessionData | null {
     const [payload, signature] = token.split('.');
     if (!payload || !signature) return null;
 
+    const secret = resolveSessionSecret();
     const expectedSignature = crypto
-      .createHmac('sha256', SESSION_SECRET)
+      .createHmac('sha256', secret)
       .update(payload)
       .digest('base64url');
 
@@ -92,6 +117,13 @@ export const adminAuthService = {
     const cleanEmail = email.trim().toLowerCase();
 
     if (!isDbConnected()) {
+      if (isProductionEnvironment()) {
+        throw new ServiceUnavailableError(
+          'Authentication service is temporarily unavailable. Database connection is offline.',
+          'DATABASE_UNAVAILABLE',
+        );
+      }
+
       // Degraded / testing mode: resolve from MOCK_ADMIN_USERS
       let mock = MOCK_ADMIN_USERS.find((u) => u.email === cleanEmail);
       if (!mock && cleanEmail === 'owner@circleuponline.com') {
@@ -207,6 +239,12 @@ export const adminAuthService = {
     const passwordHash = await this.hashPassword(data.password);
 
     if (!isDbConnected()) {
+      if (isProductionEnvironment()) {
+        throw new ServiceUnavailableError(
+          'Database connection is offline. Cannot create admin user.',
+          'DATABASE_UNAVAILABLE',
+        );
+      }
       const existing = MOCK_ADMIN_USERS.find((u) => u.email === cleanEmail);
       if (existing) {
         throw new BadRequestError(`Admin with email ${cleanEmail} already exists.`, 'DUPLICATE_EMAIL');
@@ -255,6 +293,12 @@ export const adminAuthService = {
     }
 
     if (!isDbConnected()) {
+      if (isProductionEnvironment()) {
+        throw new ServiceUnavailableError(
+          'Database connection is offline. Cannot change password.',
+          'DATABASE_UNAVAILABLE',
+        );
+      }
       const mock = MOCK_ADMIN_USERS.find((u) => u.id === userId);
       if (!mock) throw new NotFoundError('Admin user not found', 'USER_NOT_FOUND');
       const valid = await this.verifyPassword(String(mock.passwordHash), currentPlain);

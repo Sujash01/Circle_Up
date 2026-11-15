@@ -84,21 +84,6 @@ export const adminApi = {
       }
       return res.data.data;
     } catch (err) {
-      const cleanEmail = credentials.email.trim().toLowerCase();
-      if (cleanEmail === 'owner@circleuponline.com' || cleanEmail === 'staff@circleuponline.com') {
-        const isOwner = cleanEmail === 'owner@circleuponline.com';
-        const demoUser: AdminUser = {
-          id: isOwner ? 'owner-default-01' : 'staff-default-01',
-          email: cleanEmail,
-          name: isOwner ? 'CircleUp Owner' : 'CircleUp Staff',
-          role: isOwner ? 'owner' : 'staff',
-          isActive: true,
-        };
-        const demoToken = 'cu_admin_demo_csrf';
-        setAdminCsrfToken(demoToken);
-        localStorage.setItem('circleup_admin_demo_user', JSON.stringify(demoUser));
-        return { user: demoUser, csrfToken: demoToken };
-      }
       throw normalizeApiError(err);
     }
   },
@@ -107,9 +92,11 @@ export const adminApi = {
     try {
       await adminClient.post('/auth/logout');
     } catch {
-      // Ignored in demo mode
+      // Ignored if session already ended
     } finally {
-      localStorage.removeItem('circleup_admin_demo_user');
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('circleup_admin_demo_user');
+      }
       setAdminCsrfToken('');
     }
     return { success: true };
@@ -123,14 +110,8 @@ export const adminApi = {
       }
       return res.data.data;
     } catch (err) {
-      const local = localStorage.getItem('circleup_admin_demo_user');
-      if (local) {
-        try {
-          const user = JSON.parse(local) as AdminUser;
-          return { user, csrfToken: 'cu_admin_demo_csrf' };
-        } catch {
-          // fall through
-        }
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('circleup_admin_demo_user');
       }
       throw normalizeApiError(err);
     }

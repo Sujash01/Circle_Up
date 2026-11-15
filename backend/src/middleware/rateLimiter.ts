@@ -40,6 +40,18 @@ export const checkoutRateLimiter = createRateLimiter(
   'Too many checkout attempts, please wait before trying again',
 );
 
+export const orderLookupRateLimiter = createRateLimiter(
+  TEN_MINUTES_MS,
+  30,
+  'Too many order lookup attempts, please wait 10 minutes',
+);
+
+export const customerOrdersRateLimiter = createRateLimiter(
+  FIFTEEN_MINUTES_MS,
+  60,
+  'Too many order list requests, please try again shortly',
+);
+
 export const searchRateLimiter = createRateLimiter(
   60 * 1000,
   60,

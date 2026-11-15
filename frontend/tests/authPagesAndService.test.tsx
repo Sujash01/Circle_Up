@@ -159,6 +159,36 @@ describe('Auth Service Supabase Integration', () => {
     expect(store.getState().auth.accessToken).toBe('mock-auto-login-jwt-token');
   });
 
+  it('correctly reports requiresEmailConfirmation: true when signup returns no session and email is unconfirmed', async () => {
+    mockSignUp.mockResolvedValueOnce({
+      data: {
+        user: {
+          id: 'mock-uuid-unconfirmed',
+          email: 'unconfirmed@example.com',
+          user_metadata: { full_name: 'Unconfirmed User' },
+          email_confirmed_at: null,
+        },
+        session: null,
+      },
+      error: null,
+    });
+    mockSignInWithPassword.mockResolvedValueOnce({
+      data: { user: null, session: null },
+      error: { message: 'Email not confirmed' },
+    });
+
+    const res = await authService.signUp({
+      fullName: 'Unconfirmed User',
+      email: 'unconfirmed@example.com',
+      password: 'SecurePassword123!',
+    });
+
+    expect(res.success).toBe(true);
+    expect(res.requiresEmailConfirmation).toBe(true);
+    expect(res.token).toBeUndefined();
+    expect(res.message).toContain('Please check your email to verify your account');
+  });
+
   it('signs out and clears Redux state and sessions', async () => {
     mockSignInWithPassword.mockResolvedValueOnce({
       data: {

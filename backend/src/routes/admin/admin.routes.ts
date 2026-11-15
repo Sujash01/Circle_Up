@@ -112,11 +112,11 @@ adminRouter.delete(
 adminRouter.get('/rentals', requireAdminAuth(), adminRentalController.list);
 adminRouter.post('/rentals', requireAdminAuth(), verifyAdminCsrf, adminRentalController.create);
 adminRouter.put('/rentals/:id', requireAdminAuth(), verifyAdminCsrf, adminRentalController.update);
-adminRouter.delete('/rentals/:id', requireAdminAuth(), verifyAdminCsrf, adminRentalController.delete);
+adminRouter.delete('/rentals/:id', requireAdminAuth('owner'), verifyAdminCsrf, adminRentalController.delete);
 
 // === EVENTS ===
 adminRouter.get('/events', requireAdminAuth(), adminEventController.list);
 adminRouter.post('/events', requireAdminAuth(), verifyAdminCsrf, adminEventController.create);
 adminRouter.put('/events/:id', requireAdminAuth(), verifyAdminCsrf, adminEventController.update);
-adminRouter.delete('/events/:id', requireAdminAuth(), verifyAdminCsrf, adminEventController.delete);
+adminRouter.delete('/events/:id', requireAdminAuth('owner'), verifyAdminCsrf, adminEventController.delete);
 

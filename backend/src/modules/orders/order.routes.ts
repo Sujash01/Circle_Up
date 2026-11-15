@@ -1,16 +1,37 @@
 import { Router } from 'express';
 import { orderController } from './order.controller.js';
-import { checkoutRateLimiter } from '../../middleware/rateLimiter.js';
+import {
+  checkoutRateLimiter,
+  orderLookupRateLimiter,
+  customerOrdersRateLimiter,
+} from '../../middleware/rateLimiter.js';
 import { noStoreCache } from '../../middleware/cacheControl.js';
+import { requireAdminAuth, optionalAdminAuth } from '../../middleware/adminAuth.js';
+import { optionalCustomerAuth, requireCustomerAuth } from '../../middleware/customerAuth.js';
 
 export const orderRouter = Router();
 
-// Place new order
-orderRouter.post('/', checkoutRateLimiter, noStoreCache, orderController.create);
+// Place new order (supports guest checkout or authenticated customer)
+orderRouter.post('/', checkoutRateLimiter, noStoreCache, optionalCustomerAuth, orderController.create);
 
-// List orders
-orderRouter.get('/', noStoreCache, orderController.list);
+// List all store orders (strictly requires valid admin authentication)
+orderRouter.get('/', requireAdminAuth(), noStoreCache, orderController.list);
 
-// Get order details by orderNumber
-orderRouter.get('/:orderNumber', noStoreCache, orderController.getOne);
+// List authenticated customer's own orders
+orderRouter.get(
+  '/my-orders',
+  customerOrdersRateLimiter,
+  requireCustomerAuth,
+  noStoreCache,
+  orderController.myOrders,
+);
 
+// Get order details by orderNumber (protected: requires admin auth, matching customer auth, or verified guest access token via header)
+orderRouter.get(
+  '/:orderNumber',
+  orderLookupRateLimiter,
+  noStoreCache,
+  optionalAdminAuth,
+  optionalCustomerAuth,
+  orderController.getOne,
+);

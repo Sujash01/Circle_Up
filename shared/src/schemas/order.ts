@@ -68,6 +68,10 @@ export const orderSchema = z.object({
   id: z.string().optional(),
   _id: z.string().optional(),
   orderNumber: z.string(),
+  customerId: z.string().optional(),
+  guestAccessToken: z.string().optional(),
+  guestAccessTokenHash: z.string().optional(),
+  guestAccessExpiresAt: z.string().optional(),
   customer: customerInfoSchema,
   shippingAddress: shippingAddressSchema,
   items: z.array(orderItemSchema).min(1),
@@ -87,6 +91,7 @@ export type Order = z.infer<typeof orderSchema>;
 export type IOrder = Order;
 
 export const createOrderPayloadSchema = z.object({
+  customerId: z.string().optional(),
   customer: customerInfoSchema,
   shippingAddress: shippingAddressSchema,
   items: z.array(

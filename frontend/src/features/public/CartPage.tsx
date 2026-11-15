@@ -7,7 +7,6 @@ import { EmptyState } from '@/components/storefront/EmptyState';
 import { Blob } from '@/components/ui/Blob';
 import { useStore } from '@/context/StoreContext';
 import { cn } from '@/lib/utils';
-import { apiClient } from '@/services/apiClient';
 import { cartService, formatPrice } from '@/services/cartService';
 import { orderService } from '@/services/orderService';
 

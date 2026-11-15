@@ -26,6 +26,10 @@ export interface IShippingAddress {
 export interface IOrder {
   id?: string;
   orderNumber: string;
+  customerId?: string;
+  guestAccessToken?: string;
+  guestAccessTokenHash?: string;
+  guestAccessExpiresAt?: string;
   customer: ICustomerInfo;
   shippingAddress: IShippingAddress;
   items: IOrderItem[];
@@ -42,6 +46,7 @@ export interface IOrder {
 }
 
 export interface CreateOrderPayload {
+  customerId?: string;
   customer: ICustomerInfo;
   shippingAddress: IShippingAddress;
   items: Array<{

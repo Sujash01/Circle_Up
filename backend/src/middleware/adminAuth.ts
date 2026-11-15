@@ -38,6 +38,22 @@ export function requireAdminAuth(allowedRole?: 'owner' | 'staff') {
   };
 }
 
+export function optionalAdminAuth(req: Request, _res: Response, next: NextFunction): void {
+  const token =
+    req.cookies?.admin_session ||
+    (req.headers.authorization?.startsWith('Bearer ')
+      ? req.headers.authorization.slice(7)
+      : null);
+
+  if (token) {
+    const session = verifySessionToken(token);
+    if (session) {
+      req.adminUser = session;
+    }
+  }
+  next();
+}
+
 export function verifyAdminCsrf(req: Request, _res: Response, next: NextFunction): void {
   // Safe HTTP read methods skip CSRF checks
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {

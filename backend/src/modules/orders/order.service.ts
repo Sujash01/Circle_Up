@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import mongoose from 'mongoose';
 import { Order } from '../../models/Order.js';
 import { Product } from '../../models/Product.js';
@@ -12,15 +13,126 @@ function isDatabaseConnected(): boolean {
   return mongoose.connection.readyState === 1;
 }
 
+// In-memory order storage for test and offline simulation mode
+const IN_MEMORY_ORDERS = new Map<string, Record<string, unknown>>();
+
 function generateOrderNumber(): string {
   const dateStr = new Date().toISOString().slice(2, 10).replace(/-/g, '');
   const randomSuffix = Math.floor(1000 + Math.random() * 9000);
   return `ORD-${dateStr}-${randomSuffix}`;
 }
 
+function generateGuestAccessToken(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+export function hashGuestToken(token: string): string {
+  return crypto.createHash('sha256').update(token.trim()).digest('hex');
+}
+
 export const orderService = {
+  verifyGuestAccessToken(
+    providedToken: string,
+    storedTokenOrHash?: string | null,
+    expiresAt?: Date | null,
+  ): boolean {
+    if (!providedToken || !storedTokenOrHash) return false;
+    if (expiresAt && new Date() > new Date(expiresAt)) return false;
+    try {
+      const cleanProvided = providedToken.trim();
+      const providedHash = hashGuestToken(cleanProvided);
+      const bufStored = Buffer.from(storedTokenOrHash.trim());
+
+      // 1. Primary path: stored value is SHA-256 hash of provided token
+      const bufProvidedHash = Buffer.from(providedHash);
+      if (
+        bufProvidedHash.length === bufStored.length &&
+        crypto.timingSafeEqual(bufProvidedHash, bufStored)
+      ) {
+        return true;
+      }
+
+      // 2. Backward compatibility path: legacy orders that stored raw token directly
+      const bufProvidedRaw = Buffer.from(cleanProvided);
+      if (
+        bufProvidedRaw.length === bufStored.length &&
+        crypto.timingSafeEqual(bufProvidedRaw, bufStored)
+      ) {
+        return true;
+      }
+
+      return false;
+    } catch {
+      return false;
+    }
+  },
+
+  async revokeGuestAccessToken(orderNumber: string): Promise<boolean> {
+    const cleanNum = orderNumber.trim().toUpperCase();
+    const expiredDate = new Date(0);
+
+    if (!isDatabaseConnected()) {
+      const mock = IN_MEMORY_ORDERS.get(cleanNum);
+      if (mock) {
+        mock.guestAccessToken = null;
+        mock.guestAccessTokenHash = null;
+        mock.guestAccessExpiresAt = expiredDate;
+        return true;
+      }
+      return false;
+    }
+
+    const result = await Order.updateOne(
+      { orderNumber: cleanNum },
+      {
+        $set: {
+          guestAccessToken: null,
+          guestAccessTokenHash: null,
+          guestAccessExpiresAt: expiredDate,
+        },
+      },
+    );
+    return result.modifiedCount > 0;
+  },
+
+  async rotateGuestAccessToken(orderNumber: string): Promise<string> {
+    const cleanNum = orderNumber.trim().toUpperCase();
+    const newRawToken = generateGuestAccessToken();
+    const newHash = hashGuestToken(newRawToken);
+    const newExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+    if (!isDatabaseConnected()) {
+      const mock = IN_MEMORY_ORDERS.get(cleanNum);
+      if (mock) {
+        mock.guestAccessToken = newHash;
+        mock.guestAccessTokenHash = newHash;
+        mock.guestAccessExpiresAt = newExpiresAt;
+        return newRawToken;
+      }
+      throw new NotFoundError(`Order ${orderNumber} not found`, 'ORDER_NOT_FOUND');
+    }
+
+    const order = await Order.findOneAndUpdate(
+      { orderNumber: cleanNum },
+      {
+        $set: {
+          guestAccessToken: newHash,
+          guestAccessTokenHash: newHash,
+          guestAccessExpiresAt: newExpiresAt,
+        },
+      },
+      { new: true },
+    );
+
+    if (!order) {
+      throw new NotFoundError(`Order ${orderNumber} not found`, 'ORDER_NOT_FOUND');
+    }
+
+    return newRawToken;
+  },
+
   async createOrder(payload: CreateOrderPayload) {
-    const { customer, shippingAddress, items, promoCode, paymentMethod, notes } = payload;
+    const { customer, shippingAddress, items, promoCode, paymentMethod, notes, customerId } = payload;
 
     if (!customer?.name || !customer?.email || !customer?.phone) {
       throw new BadRequestError('Customer name, email, and phone are required.', 'MISSING_CUSTOMER_INFO');
@@ -63,8 +175,20 @@ export const orderService = {
       const deliveryFee = subtotal - discount >= 150000 ? 0 : 9000;
       const totalAmount = Math.max(0, subtotal - discount + deliveryFee);
 
-      return {
-        orderNumber: generateOrderNumber(),
+      const rawGuestToken = customerId ? undefined : generateGuestAccessToken();
+      const guestAccessTokenHash = rawGuestToken ? hashGuestToken(rawGuestToken) : undefined;
+      const guestAccessExpiresAt = customerId
+        ? undefined
+        : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+      const orderNumber = generateOrderNumber();
+      const simulatedOrder = {
+        id: orderNumber,
+        orderNumber,
+        customerId: customerId || undefined,
+        guestAccessToken: guestAccessTokenHash,
+        guestAccessTokenHash,
+        guestAccessExpiresAt,
         customer,
         shippingAddress,
         items: resolvedItems,
@@ -78,6 +202,13 @@ export const orderService = {
         promoCode: promoCode || '',
         notes: notes || '',
         createdAt: new Date().toISOString(),
+      };
+
+      IN_MEMORY_ORDERS.set(orderNumber, simulatedOrder);
+      // Return raw token only in the immediate checkout response to the customer
+      return {
+        ...simulatedOrder,
+        guestAccessToken: rawGuestToken,
       };
     }
 
@@ -153,8 +284,18 @@ export const orderService = {
     }
 
     const orderNumber = generateOrderNumber();
+    const rawGuestToken = customerId ? null : generateGuestAccessToken();
+    const guestAccessTokenHash = rawGuestToken ? hashGuestToken(rawGuestToken) : null;
+    const guestAccessExpiresAt = customerId
+      ? null
+      : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
     const order = await Order.create({
       orderNumber,
+      customerId: customerId || null,
+      guestAccessToken: guestAccessTokenHash,
+      guestAccessTokenHash,
+      guestAccessExpiresAt,
       customer,
       shippingAddress,
       items: resolvedItems,
@@ -169,16 +310,52 @@ export const orderService = {
       notes: notes || '',
     });
 
-    return order.toJSON();
+    const orderJson = order.toJSON();
+    return {
+      ...orderJson,
+      guestAccessToken: rawGuestToken || undefined,
+    };
+  },
+
+  async listCustomerOrders(customerId: string, query: { page?: unknown; limit?: unknown }) {
+    const { page, limit, skip } = parsePagination(query);
+
+    if (!isDatabaseConnected()) {
+      const all = Array.from(IN_MEMORY_ORDERS.values()).filter((o) => o.customerId === customerId);
+      return {
+        orders: all.slice(skip, skip + limit),
+        meta: buildPaginationMeta(page, limit, all.length),
+      };
+    }
+
+    const filter = { customerId };
+    const [orders, total] = await Promise.all([
+      Order.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      Order.countDocuments(filter),
+    ]);
+
+    return {
+      orders: (orders as unknown as Array<Record<string, unknown>>).map((o) => ({
+        ...o,
+        id: o._id ? String(o._id) : undefined,
+      })),
+      meta: buildPaginationMeta(page, limit, total),
+    };
   },
 
   async listOrders(query: { page?: unknown; limit?: unknown; status?: string; phone?: string }) {
     const { page, limit, skip } = parsePagination(query);
 
     if (!isDatabaseConnected()) {
+      const all = Array.from(IN_MEMORY_ORDERS.values());
+      const filtered = all.filter((o) => {
+        if (query.status && o.status !== query.status) return false;
+        if (query.phone && (o.customer as { phone?: string } | undefined)?.phone !== query.phone) return false;
+        return true;
+      });
       return {
-        orders: [],
-        meta: buildPaginationMeta(page, limit, 0),
+        orders: filtered.slice(skip, skip + limit),
+        meta: buildPaginationMeta(page, limit, filtered.length),
       };
     }
 
@@ -205,11 +382,16 @@ export const orderService = {
   },
 
   async getOrderByNumber(orderNumber: string) {
+    const cleanNum = orderNumber.trim().toUpperCase();
     if (!isDatabaseConnected()) {
-      throw new NotFoundError(`Order ${orderNumber} not found`, 'ORDER_NOT_FOUND');
+      const mock = IN_MEMORY_ORDERS.get(cleanNum);
+      if (!mock) {
+        throw new NotFoundError(`Order ${orderNumber} not found`, 'ORDER_NOT_FOUND');
+      }
+      return mock;
     }
 
-    const order = await Order.findOne({ orderNumber: orderNumber.trim().toUpperCase() }).lean();
+    const order = await Order.findOne({ orderNumber: cleanNum }).lean();
     if (!order) {
       throw new NotFoundError(`Order ${orderNumber} not found`, 'ORDER_NOT_FOUND');
     }

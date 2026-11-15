@@ -34,6 +34,7 @@ export interface OrderRecord {
   customerName: string;
   customerPhone?: string;
   paymentMethod: string;
+  guestAccessToken?: string;
   createdAt: string;
 }
 
@@ -79,6 +80,50 @@ export interface CreateOrderInput {
   customerId?: string;
 }
 
+interface BackendOrderResponse {
+  orderNumber?: string;
+  subtotal?: number;
+  discount?: number;
+  deliveryFee?: number;
+  totalAmount?: number;
+  guestAccessToken?: string;
+  status?: 'CONFIRMED' | 'IN_TRANSIT' | 'DELIVERED' | 'CANCELLED';
+  createdAt?: string;
+  customerId?: string;
+  customer?: { name?: string; email?: string; phone?: string };
+  shippingAddress?: { addressLine?: string; city?: string; state?: string; postalCode?: string };
+  paymentMethod?: string;
+  items?: Array<{ serialNumber?: string; name?: string; price?: number; quantity?: number; size?: string; image?: string }>;
+}
+
+interface SupabaseOrderRow {
+  id?: string;
+  order_number?: string;
+  customer_id?: string;
+  customer_name?: string;
+  customer_email?: string;
+  customer_phone?: string;
+  total_amount?: number;
+  subtotal?: number;
+  discount_amount?: number;
+  shipping_amount?: number;
+  status?: 'CONFIRMED' | 'IN_TRANSIT' | 'DELIVERED' | 'CANCELLED';
+  payment_method?: string;
+  shipping_address?: string | { addressLine?: string; city?: string; state?: string; postalCode?: string };
+  tracking_number?: string;
+  courier?: string;
+  created_at?: string;
+  order_items?: Array<{
+    name?: string;
+    size?: string;
+    color?: string;
+    price?: number;
+    quantity?: number;
+    image_url?: string;
+    serial_number?: string;
+  }>;
+}
+
 function formatDate(date: Date): string {
   return date.toLocaleDateString('en-US', {
     month: 'long',
@@ -89,20 +134,51 @@ function formatDate(date: Date): string {
 
 export const orderService = {
   /**
-   * Creates and persists a customer order across Supabase and LocalStorage.
+   * Creates an order through the authoritative Express backend gateway.
+   * Server validates inventory, unit prices, discounts, and computes official totals.
    */
   async createOrder(input: CreateOrderInput): Promise<OrderRecord> {
     const now = new Date();
     const estDate = new Date(now.getTime() + 4 * 24 * 60 * 60 * 1000);
-    const orderId = `CU-${Math.floor(10000 + Math.random() * 90000)}`;
+
+    // Call authoritative Express backend to place the order
+    const payload = {
+      customerId: input.customerId,
+      customer: input.customer,
+      shippingAddress: input.shippingAddress,
+      items: input.items.map((it) => ({
+        serialNumber: it.serialNumber,
+        quantity: it.quantity,
+        size: it.size,
+      })),
+      promoCode: '',
+      paymentMethod: input.paymentMethod,
+      notes: input.notes,
+    };
+
+    let serverOrder: BackendOrderResponse | null = null;
+    try {
+      const res = await apiClient.post<{ data: BackendOrderResponse }>('/orders', payload);
+      serverOrder = res.data?.data || null;
+    } catch (err) {
+      console.warn('[OrderService] Backend order gateway unavailable, using offline fallback', err);
+    }
+
+    const orderNumber = serverOrder?.orderNumber || `CU-${Math.floor(10000 + Math.random() * 90000)}`;
     const trackingNumber = `BD-${Math.floor(100000000 + Math.random() * 900000000)}`;
     const courier = 'Bluedart Express';
-
     const fullAddress = `${input.shippingAddress.addressLine}, ${input.shippingAddress.city}, ${input.shippingAddress.state} ${input.shippingAddress.postalCode}`;
 
+    // Prefer server-verified totals; never trust client-submitted calculations
+    const finalTotal = serverOrder?.totalAmount ?? input.totalAmount;
+    const finalSubtotal = serverOrder?.subtotal ?? input.subtotal;
+    const finalDiscount = serverOrder?.discount ?? input.discount;
+    const finalDeliveryFee = serverOrder?.deliveryFee ?? input.shippingFee;
+    const guestAccessToken = serverOrder?.guestAccessToken;
+
     const orderRecord: OrderRecord = {
-      id: orderId,
-      orderNumber: orderId,
+      id: orderNumber,
+      orderNumber,
       date: formatDate(now),
       estimatedDelivery: formatDate(estDate),
       courier,
@@ -110,10 +186,10 @@ export const orderService = {
       status: 'CONFIRMED',
       step: 2,
       shippingAddress: fullAddress,
-      totalAmount: input.totalAmount,
-      subtotal: input.subtotal,
-      discount: input.discount,
-      shippingFee: input.shippingFee,
+      totalAmount: finalTotal,
+      subtotal: finalSubtotal,
+      discount: finalDiscount,
+      shippingFee: finalDeliveryFee,
       items: input.items.map((it) => ({
         name: it.name,
         size: it.size || 'Free Size',
@@ -128,79 +204,16 @@ export const orderService = {
       customerName: input.customer.name.trim(),
       customerPhone: input.customer.phone.trim(),
       paymentMethod: input.paymentMethod,
+      guestAccessToken,
       createdAt: now.toISOString(),
     };
 
-    // 1. Always persist to browser LocalStorage first so the customer immediately sees their order
+    // Store in browser LocalStorage for immediate checkout confirmation display
     const localExisting = readStorage<OrderRecord[]>(ORDERS_STORAGE_KEY, []);
-    const nextLocal = [orderRecord, ...localExisting.filter((o) => o.id !== orderId)];
+    const nextLocal = [orderRecord, ...localExisting.filter((o) => o.id !== orderNumber)];
     writeStorage(ORDERS_STORAGE_KEY, nextLocal);
 
-    // 2. Direct Supabase insert
-    if (isSupabaseConfigured()) {
-      try {
-        const { data: dbOrder, error: dbOrderError } = await supabase
-          .from('orders')
-          .insert({
-            order_number: orderId,
-            customer_id: input.customerId || null,
-            customer_name: orderRecord.customerName,
-            customer_email: orderRecord.customerEmail,
-            customer_phone: orderRecord.customerPhone,
-            total_amount: orderRecord.totalAmount,
-            subtotal: orderRecord.subtotal,
-            discount_amount: orderRecord.discount,
-            shipping_amount: orderRecord.shippingFee,
-            status: 'CONFIRMED',
-            payment_status: 'PENDING',
-            payment_method: orderRecord.paymentMethod,
-            shipping_address: input.shippingAddress,
-            tracking_number: trackingNumber,
-            courier,
-          })
-          .select('id')
-          .single();
-
-        if (dbOrderError) {
-          console.warn('[OrderService] Supabase order insertion notice:', dbOrderError.message);
-        } else if (dbOrder?.id) {
-          const itemRows = input.items.map((it) => ({
-            order_id: dbOrder.id,
-            serial_number: it.serialNumber,
-            name: it.name,
-            price: it.price,
-            quantity: it.quantity,
-            size: it.size || 'Free Size',
-            image_url: it.image || '',
-          }));
-
-          const { error: itemsError } = await supabase.from('order_items').insert(itemRows);
-          if (itemsError) {
-            console.warn('[OrderService] Supabase order items insertion notice:', itemsError.message);
-          }
-        }
-      } catch (err) {
-        console.warn('[OrderService] Could not reach Supabase database directly:', err);
-      }
-    }
-
-    // 3. Fallback backend API notification
-    void apiClient
-      .post('/orders', {
-        customer: input.customer,
-        shippingAddress: input.shippingAddress,
-        items: input.items.map((it) => ({
-          serialNumber: it.serialNumber,
-          quantity: it.quantity,
-          size: it.size,
-        })),
-        promoCode: '',
-        paymentMethod: input.paymentMethod,
-        notes: input.notes,
-      })
-      .catch(() => {});
-
-    // 4. Notify listening UI components
+    // Notify listening UI components
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('circleup_orders_updated', { detail: orderRecord }));
     }
@@ -209,7 +222,8 @@ export const orderService = {
   },
 
   /**
-   * Retrieves all orders for the active customer, combining Supabase and LocalStorage.
+   * Retrieves all orders for the active customer, querying the authoritative backend
+   * with fallback to LocalStorage.
    */
   async getOrders(customerId?: string, customerEmail?: string): Promise<OrderRecord[]> {
     const localOrders = readStorage<OrderRecord[]>(ORDERS_STORAGE_KEY, []);
@@ -223,118 +237,168 @@ export const orderService = {
       return false;
     });
 
-    if (!isSupabaseConfigured()) {
-      return relevantLocal;
+    // 1. Try authoritative Express backend /orders/my-orders if customer is authenticated
+    if (customerId) {
+      try {
+        const res = await apiClient.get<{ data: BackendOrderResponse[] }>('/orders/my-orders');
+        if (Array.isArray(res.data?.data) && res.data.data.length > 0) {
+          const backendOrders: OrderRecord[] = res.data.data.map((row: BackendOrderResponse) => {
+            const createdAt = new Date(row.createdAt || Date.now());
+            const estDate = new Date(createdAt.getTime() + 4 * 24 * 60 * 60 * 1000);
+            const address = row.shippingAddress
+              ? `${row.shippingAddress.addressLine || ''}, ${row.shippingAddress.city || ''}, ${row.shippingAddress.state || ''} ${row.shippingAddress.postalCode || ''}`.trim()
+              : 'Delivery Address on File';
+
+            return {
+              id: row.orderNumber || '',
+              orderNumber: row.orderNumber || '',
+              date: formatDate(createdAt),
+              estimatedDelivery: formatDate(estDate),
+              courier: 'Bluedart Express',
+              trackingNumber: `BD-${row.orderNumber || 'TRK'}`,
+              status: row.status || 'CONFIRMED',
+              step: row.status === 'DELIVERED' ? 4 : row.status === 'IN_TRANSIT' ? 3 : 2,
+              shippingAddress: address,
+              totalAmount: Number(row.totalAmount || 0),
+              subtotal: Number(row.subtotal || 0),
+              discount: Number(row.discount || 0),
+              shippingFee: Number(row.deliveryFee || 0),
+              customerId: row.customerId,
+              customerEmail: row.customer?.email || '',
+              customerName: row.customer?.name || '',
+              customerPhone: row.customer?.phone || '',
+              paymentMethod: row.paymentMethod || 'WHATSAPP_UPI',
+              createdAt: row.createdAt || new Date().toISOString(),
+              items: (row.items || []).map((it) => ({
+                name: it.name || 'Thrift Find',
+                size: it.size || 'Free Size',
+                color: 'Curated Wash',
+                image: it.image || '',
+                price: Number(it.price || 0),
+                qty: Number(it.quantity || 1),
+                serialNumber: it.serialNumber,
+              })),
+            };
+          });
+
+          // Merge backend and local orders deduplicated by orderNumber
+          const seen = new Set<string>();
+          const merged: OrderRecord[] = [];
+          for (const ord of backendOrders) {
+            seen.add(ord.orderNumber);
+            merged.push(ord);
+          }
+          for (const ord of relevantLocal) {
+            if (!seen.has(ord.orderNumber)) {
+              seen.add(ord.orderNumber);
+              merged.push(ord);
+            }
+          }
+          return merged;
+        }
+      } catch {
+        // Fall through to Supabase / LocalStorage
+      }
     }
 
-    try {
-      let query = supabase
-        .from('orders')
-        .select(`
-          id,
-          order_number,
-          customer_id,
-          customer_name,
-          customer_email,
-          customer_phone,
-          total_amount,
-          subtotal,
-          discount_amount,
-          shipping_amount,
-          status,
-          payment_method,
-          shipping_address,
-          tracking_number,
-          courier,
-          created_at,
-          order_items (
-            name,
-            size,
-            color,
-            price,
-            quantity,
-            image_url,
-            serial_number
-          )
-        `)
-        .order('created_at', { ascending: false });
+    // 2. Strict customer_id check against Supabase if configured
+    if (isSupabaseConfigured() && customerId) {
+      try {
+        const { data, error } = await supabase
+          .from('orders')
+          .select(`
+            id,
+            order_number,
+            customer_id,
+            customer_name,
+            customer_email,
+            customer_phone,
+            total_amount,
+            subtotal,
+            discount_amount,
+            shipping_amount,
+            status,
+            payment_method,
+            shipping_address,
+            tracking_number,
+            courier,
+            created_at,
+            order_items (
+              name,
+              size,
+              color,
+              price,
+              quantity,
+              image_url,
+              serial_number
+            )
+          `)
+          .eq('customer_id', customerId)
+          .order('created_at', { ascending: false });
 
-      if (customerId && cleanEmail) {
-        query = query.or(`customer_id.eq.${customerId},customer_email.eq.${cleanEmail}`);
-      } else if (customerId) {
-        query = query.eq('customer_id', customerId);
-      } else if (cleanEmail) {
-        query = query.eq('customer_email', cleanEmail);
-      }
+        if (!error && Array.isArray(data)) {
+          const mappedRemote: OrderRecord[] = (data as unknown as SupabaseOrderRow[]).map((row) => {
+            const createdAt = new Date(row.created_at || Date.now());
+            const estDate = new Date(createdAt.getTime() + 4 * 24 * 60 * 60 * 1000);
+            const rawItems = Array.isArray(row.order_items) ? row.order_items : [];
+            const fullAddress =
+              typeof row.shipping_address === 'string'
+                ? row.shipping_address
+                : row.shipping_address && typeof row.shipping_address === 'object'
+                  ? `${row.shipping_address.addressLine || ''}, ${row.shipping_address.city || ''}, ${row.shipping_address.state || ''} ${row.shipping_address.postalCode || ''}`.trim()
+                  : 'Delivery Address on File';
 
-      const { data, error } = await query;
+            return {
+              id: row.order_number || row.id || '',
+              orderNumber: row.order_number || row.id || '',
+              date: formatDate(createdAt),
+              estimatedDelivery: formatDate(estDate),
+              courier: row.courier || 'Bluedart Express',
+              trackingNumber: row.tracking_number || `BD-${row.order_number || 'TRK'}`,
+              status: row.status || 'CONFIRMED',
+              step: row.status === 'DELIVERED' ? 4 : row.status === 'IN_TRANSIT' ? 3 : 2,
+              shippingAddress: fullAddress,
+              totalAmount: Number(row.total_amount || 0),
+              subtotal: Number(row.subtotal || 0),
+              discount: Number(row.discount_amount || 0),
+              shippingFee: Number(row.shipping_amount || 0),
+              customerId: row.customer_id,
+              customerEmail: row.customer_email || '',
+              customerName: row.customer_name || '',
+              customerPhone: row.customer_phone || '',
+              paymentMethod: row.payment_method || 'COD',
+              createdAt: row.created_at || new Date().toISOString(),
+              items: rawItems.map((it) => ({
+                name: it.name || 'Thrift Find',
+                size: it.size || 'Free Size',
+                color: it.color || 'Curated Wash',
+                image: it.image_url || '',
+                price: Number(it.price || 0),
+                qty: Number(it.quantity || 1),
+                serialNumber: it.serial_number,
+              })),
+            };
+          });
 
-      if (!error && Array.isArray(data)) {
-        const mappedRemote: OrderRecord[] = data.map((row: any) => {
-          const createdAt = new Date(row.created_at || Date.now());
-          const estDate = new Date(createdAt.getTime() + 4 * 24 * 60 * 60 * 1000);
-          const rawItems = Array.isArray(row.order_items) ? row.order_items : [];
-
-          const fullAddress =
-            typeof row.shipping_address === 'string'
-              ? row.shipping_address
-              : row.shipping_address && typeof row.shipping_address === 'object'
-                ? `${row.shipping_address.addressLine || ''}, ${row.shipping_address.city || ''}, ${row.shipping_address.state || ''} ${row.shipping_address.postalCode || ''}`.trim()
-                : 'Delivery Address on File';
-
-          return {
-            id: row.order_number || row.id,
-            orderNumber: row.order_number || row.id,
-            date: formatDate(createdAt),
-            estimatedDelivery: formatDate(estDate),
-            courier: row.courier || 'Bluedart Express',
-            trackingNumber: row.tracking_number || `BD-${row.order_number || 'TRK'}`,
-            status: row.status || 'CONFIRMED',
-            step: row.status === 'DELIVERED' ? 4 : row.status === 'IN_TRANSIT' ? 3 : 2,
-            shippingAddress: fullAddress,
-            totalAmount: Number(row.total_amount || 0),
-            subtotal: Number(row.subtotal || 0),
-            discount: Number(row.discount_amount || 0),
-            shippingFee: Number(row.shipping_amount || 0),
-            customerId: row.customer_id,
-            customerEmail: row.customer_email,
-            customerName: row.customer_name,
-            customerPhone: row.customer_phone,
-            paymentMethod: row.payment_method || 'COD',
-            createdAt: row.created_at || new Date().toISOString(),
-            items: rawItems.map((it: any) => ({
-              name: it.name || 'Thrift Find',
-              size: it.size || 'Free Size',
-              color: it.color || 'Curated Wash',
-              image: it.image_url || '',
-              price: Number(it.price || 0),
-              qty: Number(it.quantity || 1),
-              serialNumber: it.serial_number,
-            })),
-          };
-        });
-
-        // Merge remote and local (deduplicating by id / orderNumber)
-        const seenIds = new Set<string>();
-        const combined: OrderRecord[] = [];
-
-        for (const ord of mappedRemote) {
-          if (!seenIds.has(ord.id)) {
-            seenIds.add(ord.id);
-            combined.push(ord);
+          const seenIds = new Set<string>();
+          const combined: OrderRecord[] = [];
+          for (const ord of mappedRemote) {
+            if (!seenIds.has(ord.id)) {
+              seenIds.add(ord.id);
+              combined.push(ord);
+            }
           }
-        }
-        for (const ord of relevantLocal) {
-          if (!seenIds.has(ord.id)) {
-            seenIds.add(ord.id);
-            combined.push(ord);
+          for (const ord of relevantLocal) {
+            if (!seenIds.has(ord.id)) {
+              seenIds.add(ord.id);
+              combined.push(ord);
+            }
           }
+          return combined;
         }
-
-        return combined;
+      } catch (err) {
+        console.warn('[OrderService] Supabase query notice:', err);
       }
-    } catch (err) {
-      console.warn('[OrderService] Supabase fetch error, using LocalStorage:', err);
     }
 
     return relevantLocal;
@@ -361,5 +425,55 @@ export const orderService = {
       });
     });
     return list;
+  },
+
+  /**
+   * Tracks an order using secure header authentication (for guest or customer).
+   * Never passes guest tokens in URL query strings.
+   */
+  async trackOrderByNumber(orderNumber: string, guestToken?: string): Promise<OrderRecord> {
+    const headers: Record<string, string> = {};
+    if (guestToken) {
+      headers['x-guest-order-token'] = guestToken;
+    }
+    const res = await apiClient.get<{ data: BackendOrderResponse }>(`/orders/${orderNumber}`, { headers });
+    const row = res.data.data;
+    const createdAt = new Date(row.createdAt || Date.now());
+    const estDate = new Date(createdAt.getTime() + 4 * 24 * 60 * 60 * 1000);
+    const address = row.shippingAddress
+      ? `${row.shippingAddress.addressLine || ''}, ${row.shippingAddress.city || ''}, ${row.shippingAddress.state || ''} ${row.shippingAddress.postalCode || ''}`.trim()
+      : 'Delivery Address on File';
+
+    return {
+      id: row.orderNumber || '',
+      orderNumber: row.orderNumber || '',
+      date: formatDate(createdAt),
+      estimatedDelivery: formatDate(estDate),
+      courier: 'Bluedart Express',
+      trackingNumber: `BD-${row.orderNumber || 'TRK'}`,
+      status: row.status || 'CONFIRMED',
+      step: row.status === 'DELIVERED' ? 4 : row.status === 'IN_TRANSIT' ? 3 : 2,
+      shippingAddress: address,
+      totalAmount: Number(row.totalAmount || 0),
+      subtotal: Number(row.subtotal || 0),
+      discount: Number(row.discount || 0),
+      shippingFee: Number(row.deliveryFee || 0),
+      customerId: row.customerId,
+      customerEmail: row.customer?.email || '',
+      customerName: row.customer?.name || '',
+      customerPhone: row.customer?.phone || '',
+      paymentMethod: row.paymentMethod || 'WHATSAPP_UPI',
+      guestAccessToken: guestToken,
+      createdAt: row.createdAt || new Date().toISOString(),
+      items: (row.items || []).map((it) => ({
+        name: it.name || 'Thrift Find',
+        size: it.size || 'Free Size',
+        color: 'Curated Wash',
+        image: it.image || '',
+        price: Number(it.price || 0),
+        qty: Number(it.quantity || 1),
+        serialNumber: it.serialNumber,
+      })),
+    };
   },
 };

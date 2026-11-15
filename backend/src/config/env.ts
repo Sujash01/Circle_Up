@@ -20,6 +20,9 @@ const envSchema = z.object({
   JWT_ACCESS_TTL: z.string().default('15m'),
   JWT_ADMIN_ACCESS_TTL: z.string().default('10m'),
   SESSION_SECRET: z.string().default('circleup-super-secret-admin-session-signing-key-32chars'),
+  SUPABASE_JWT_SECRET: z.string().optional(),
+  SUPABASE_URL: z.string().optional(),
+  SUPABASE_ANON_KEY: z.string().optional(),
   STORAGE_CDN_URL: z.string().optional(),
   COOKIE_DOMAIN: z.string().optional(),
   CORS_ALLOWED_ORIGINS: z
@@ -40,7 +43,26 @@ const envSchema = z.object({
   CRON_SECRET: z.string().optional(),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   SENTRY_DSN: z.string().optional(),
+}).superRefine((data, ctx) => {
+  if (data.NODE_ENV === 'production') {
+    const defaultInsecure = 'circleup-super-secret-admin-session-signing-key-32chars';
+    if (!data.SESSION_SECRET || data.SESSION_SECRET === defaultInsecure) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['SESSION_SECRET'],
+        message: 'SESSION_SECRET must be explicitly set to a unique, non-default secret in production.',
+      });
+    } else if (data.SESSION_SECRET.length < 32) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['SESSION_SECRET'],
+        message: 'SESSION_SECRET must be at least 32 characters in production.',
+      });
+    }
+  }
 });
+
+export { envSchema };
 
 const parsed = envSchema.safeParse(process.env);
 

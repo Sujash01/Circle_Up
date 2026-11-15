@@ -56,25 +56,52 @@ create policy "Public can view active products"
   for select
   using (status in ('ACTIVE', 'PUBLISHED'));
 
--- Authenticated staff/admins can manage products
+-- Administrators / staff can view all products (including DRAFT, ARCHIVED)
+drop policy if exists "Admins can view all products" on public.products;
+create policy "Admins can view all products"
+  on public.products
+  for select
+  using (
+    (auth.jwt() -> 'app_metadata' ->> 'role') in ('admin', 'staff', 'owner')
+    or auth.role() = 'service_role'
+  );
+
+-- Only verified admins / staff or service_role can insert products (never ordinary customers)
 drop policy if exists "Authenticated users can insert products" on public.products;
-create policy "Authenticated users can insert products"
+drop policy if exists "Admins can insert products" on public.products;
+create policy "Admins can insert products"
   on public.products
   for insert
-  with check (auth.role() = 'authenticated');
+  with check (
+    (auth.jwt() -> 'app_metadata' ->> 'role') in ('admin', 'staff', 'owner')
+    or auth.role() = 'service_role'
+  );
 
+-- Only verified admins / staff or service_role can update products
 drop policy if exists "Authenticated users can update products" on public.products;
-create policy "Authenticated users can update products"
+drop policy if exists "Admins can update products" on public.products;
+create policy "Admins can update products"
   on public.products
   for update
-  using (auth.role() = 'authenticated')
-  with check (auth.role() = 'authenticated');
+  using (
+    (auth.jwt() -> 'app_metadata' ->> 'role') in ('admin', 'staff', 'owner')
+    or auth.role() = 'service_role'
+  )
+  with check (
+    (auth.jwt() -> 'app_metadata' ->> 'role') in ('admin', 'staff', 'owner')
+    or auth.role() = 'service_role'
+  );
 
+-- Only verified admins / staff or service_role can delete products
 drop policy if exists "Authenticated users can delete products" on public.products;
-create policy "Authenticated users can delete products"
+drop policy if exists "Admins can delete products" on public.products;
+create policy "Admins can delete products"
   on public.products
   for delete
-  using (auth.role() = 'authenticated');
+  using (
+    (auth.jwt() -> 'app_metadata' ->> 'role') in ('admin', 'staff', 'owner')
+    or auth.role() = 'service_role'
+  );
 
 -- 4. Auto-update timestamp trigger
 create or replace function public.update_products_timestamp()
@@ -120,30 +147,41 @@ create index if not exists idx_orders_created_at on public.orders(created_at des
 
 alter table public.orders enable row level security;
 
--- Customers can read their own orders by customer_id, email, or authenticated session
+-- Customers can read their own orders by customer_id or verified customer_email only
 drop policy if exists "Users can view own orders" on public.orders;
 create policy "Users can view own orders"
   on public.orders
   for select
   using (
-    auth.uid() = customer_id
-    or (auth.jwt() ->> 'email') = customer_email
-    or auth.role() = 'authenticated'
+    (auth.uid() is not null and auth.uid() = customer_id)
+    or (
+      (auth.jwt() ->> 'email') is not null
+      and (auth.jwt() ->> 'email') = customer_email
+    )
   );
 
--- Allow order creation for both authenticated users and guest checkout
-drop policy if exists "Enable insert for customers" on public.orders;
-create policy "Enable insert for customers"
-  on public.orders
-  for insert
-  with check (true);
-
--- Authenticated staff can view and manage all orders
+-- Only verified administrators or backend service_role can view and manage all orders
 drop policy if exists "Staff can view all orders" on public.orders;
-create policy "Staff can view all orders"
+drop policy if exists "Admins can view and manage all orders" on public.orders;
+create policy "Admins can view and manage all orders"
   on public.orders
   for all
-  using (auth.role() = 'authenticated');
+  using (
+    (auth.jwt() -> 'app_metadata' ->> 'role') in ('admin', 'staff', 'owner')
+    or auth.role() = 'service_role'
+  );
+
+-- Direct client order inserts: authenticated customers can only insert orders owned by themselves
+drop policy if exists "Enable insert for customers" on public.orders;
+drop policy if exists "Customers can insert own orders" on public.orders;
+create policy "Customers can insert own orders"
+  on public.orders
+  for insert
+  with check (
+    (auth.uid() is not null and auth.uid() = customer_id)
+    or (auth.jwt() -> 'app_metadata' ->> 'role') in ('admin', 'staff', 'owner')
+    or auth.role() = 'service_role'
+  );
 
 create table if not exists public.order_items (
   id uuid primary key default gen_random_uuid(),
@@ -161,13 +199,7 @@ create table if not exists public.order_items (
 create index if not exists idx_order_items_order_id on public.order_items(order_id);
 alter table public.order_items enable row level security;
 
--- Allow order items insertion during checkout
-drop policy if exists "Enable insert for order items" on public.order_items;
-create policy "Enable insert for order items"
-  on public.order_items
-  for insert
-  with check (true);
-
+-- Customers can view order items belonging strictly to their own orders
 drop policy if exists "Users can view own order items" on public.order_items;
 create policy "Users can view own order items"
   on public.order_items
@@ -177,15 +209,42 @@ create policy "Users can view own order items"
       select 1 from public.orders
       where public.orders.id = public.order_items.order_id
       and (
-        public.orders.customer_id = auth.uid()
-        or (auth.jwt() ->> 'email') = public.orders.customer_email
-        or auth.role() = 'authenticated'
+        (auth.uid() is not null and public.orders.customer_id = auth.uid())
+        or (
+          (auth.jwt() ->> 'email') is not null
+          and (auth.jwt() ->> 'email') = public.orders.customer_email
+        )
       )
     )
   );
 
+-- Only verified administrators or backend service_role can view and manage all order items
 drop policy if exists "Staff can manage all order items" on public.order_items;
-create policy "Staff can manage all order items"
+drop policy if exists "Admins can manage all order items" on public.order_items;
+create policy "Admins can manage all order items"
   on public.order_items
   for all
-  using (auth.role() = 'authenticated');
+  using (
+    (auth.jwt() -> 'app_metadata' ->> 'role') in ('admin', 'staff', 'owner')
+    or auth.role() = 'service_role'
+  );
+
+-- Order items can only be inserted for orders owned by the customer or by admin/service_role
+drop policy if exists "Enable insert for order items" on public.order_items;
+drop policy if exists "Customers can insert own order items" on public.order_items;
+create policy "Customers can insert own order items"
+  on public.order_items
+  for insert
+  with check (
+    exists (
+      select 1 from public.orders
+      where public.orders.id = public.order_items.order_id
+      and (
+        (auth.uid() is not null and public.orders.customer_id = auth.uid())
+        or (auth.jwt() -> 'app_metadata' ->> 'role') in ('admin', 'staff', 'owner')
+        or auth.role() = 'service_role'
+      )
+    )
+    or (auth.jwt() -> 'app_metadata' ->> 'role') in ('admin', 'staff', 'owner')
+    or auth.role() = 'service_role'
+  );

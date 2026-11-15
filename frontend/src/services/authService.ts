@@ -285,12 +285,16 @@ class AuthService {
         );
       }
 
+      const requiresEmailConfirmation = !activeSession && !authData.user.email_confirmed_at;
+
       return {
         success: true,
         user: sessionUser,
         token: activeSession?.access_token,
-        requiresEmailConfirmation: false,
-        message: 'Account created successfully! Welcome to CircleUp.',
+        requiresEmailConfirmation,
+        message: requiresEmailConfirmation
+          ? 'Account created! Please check your email to verify your account before signing in.'
+          : 'Account created successfully! Welcome to CircleUp.',
       };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'An unexpected error occurred during registration.';
