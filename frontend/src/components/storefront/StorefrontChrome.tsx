@@ -431,11 +431,11 @@ export function StorefrontHeader({ preserveHomeHeader = false }: { preserveHomeH
             {currentUser ? (
               <Link
                 to={currentUser.actorType === 'ADMIN' || currentUser.role === 'OWNER' || currentUser.role === 'STAFF' ? '/admin' : '/account'}
-                aria-label={`Account (${currentUser.fullName})`}
-                className="storefront-account-link flex min-h-[44px] items-center gap-1.5 rounded-full border-2 border-foreground/20 bg-card/90 px-3.5 py-1.5 text-xs font-semibold text-cocoa shadow-xs transition-all hover:border-primary hover:text-primary hover:shadow-sm"
+                aria-label={`Profile (${currentUser.fullName})`}
+                className="storefront-account-link flex min-h-[38px] items-center gap-1.5 rounded-full border-2 border-primary/30 bg-primary/10 px-3.5 py-1.5 text-xs font-bold text-primary shadow-xs transition-all hover:bg-primary hover:text-primary-foreground hover:shadow-sm shrink-0"
               >
-                <User className="size-4 text-primary" />
-                <span className="hidden md:inline max-w-[90px] truncate">{currentUser.fullName.split(' ')[0]}</span>
+                <User className="size-4" />
+                <span>Profile</span>
               </Link>
             ) : (
               <Link
@@ -543,9 +543,15 @@ export function StorefrontHeader({ preserveHomeHeader = false }: { preserveHomeH
               </div>
 
               <div className="flex items-center gap-3.5 font-semibold uppercase tracking-wider text-xs">
-                <Link to="/signup" className="text-primary hover:text-primary underline underline-offset-4">
-                  Sign Up
-                </Link>
+                {currentUser ? (
+                  <Link to="/account" className="text-primary hover:text-primary underline underline-offset-4">
+                    Profile ({currentUser.fullName.split(' ')[0]})
+                  </Link>
+                ) : (
+                  <Link to="/signup" className="text-primary hover:text-primary underline underline-offset-4">
+                    Sign Up
+                  </Link>
+                )}
                 <span className="text-foreground/20" aria-hidden="true">|</span>
                 <Link to="/cart" className="text-primary underline underline-offset-4">
                   Bag ({totals.itemCount})
@@ -598,12 +604,21 @@ export function StorefrontHeader({ preserveHomeHeader = false }: { preserveHomeH
             Account & Access
           </p>
           <div>
-            <Link
-              to="/signup"
-              className="flex min-h-[44px] items-center text-sm font-semibold text-primary hover:text-primary/80"
-            >
-              Create Account (Sign Up) →
-            </Link>
+            {currentUser ? (
+              <Link
+                to="/account"
+                className="flex min-h-[44px] items-center text-sm font-semibold text-primary hover:text-primary/80"
+              >
+                My Profile & Orders ({currentUser.fullName.split(' ')[0]}) →
+              </Link>
+            ) : (
+              <Link
+                to="/signup"
+                className="flex min-h-[44px] items-center text-sm font-semibold text-primary hover:text-primary/80"
+              >
+                Create Account (Sign Up) →
+              </Link>
+            )}
           </div>
         </div>
       </nav>

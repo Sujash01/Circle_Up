@@ -123,8 +123,8 @@
 /* scene anchor — bulkier chest proportions */
 .tc-scene {
   position: absolute;
-  left: 72%;
-  top: 60%;
+  left: clamp(56%, 63vw, 68%);
+  top: 58%;
   width: 0;
   height: 0;
   z-index: 3;
@@ -132,6 +132,19 @@
   --d: calc(var(--u) * 300px);
   --h: calc(var(--u) * 208px);
   --lh: calc(var(--u) * 124px);
+}
+
+@media (min-width: 761px) and (max-width: 1024px) {
+  .tc-scene {
+    left: 58%;
+    top: 60%;
+  }
+}
+
+@media (min-width: 1400px) {
+  .tc-scene {
+    left: 70%;
+  }
 }
 
 .tc-sun {

@@ -164,16 +164,30 @@ export function TreasureChestHero({ picks }: { picks?: ChestProduct[] } = {}) {
     const headerEl = document.querySelector('header');
     const bannerEl = headerEl?.previousElementSibling;
     const sizeUp = () => {
-      const mobile = window.innerWidth < 760;
+      const w = window.innerWidth;
+      const mobile = w < 760;
       navHeight = headerEl ? headerEl.offsetHeight : 76;
       hero.style.setProperty('--tc-nav-h', `${navHeight}px`);
       hero.style.setProperty('--tc-banner-h', `${bannerEl?.getBoundingClientRect().height ?? 40}px`);
 
       const sh = stage.getBoundingClientRect().height || window.innerHeight - navHeight;
-      u = mobile
-        ? clamp((window.innerWidth * 0.62) / 440, 0.46, 0.58)
-        : clamp(Math.min((window.innerWidth * 0.29) / 440, sh / 590), 0.64, 1.08);
-      cardU = mobile ? Math.max(u, 0.68) : u;
+      if (mobile) {
+        // Mobile screens: scaled down so small screens (320px-440px) stay comfortably inside frame
+        u = clamp((w * 0.52) / 440, 0.35, 0.50);
+        cardU = clamp(u * 1.12, 0.42, 0.56);
+      } else if (w < 1024) {
+        // Tablets & compact screens (760px - 1023px): scale down proportionally to prevent right edge overflow
+        u = clamp(Math.min((w * 0.23) / 440, sh / 640), 0.42, 0.60);
+        cardU = u;
+      } else if (w < 1366) {
+        // Standard laptops & desktop (1024px - 1365px)
+        u = clamp(Math.min((w * 0.25) / 440, sh / 600), 0.58, 0.82);
+        cardU = u;
+      } else {
+        // Large desktop (>= 1366px)
+        u = clamp(Math.min((w * 0.27) / 440, sh / 560), 0.78, 1.02);
+        cardU = u;
+      }
       hero.style.setProperty('--u', u.toFixed(3));
       hero.style.setProperty('--card-u', cardU.toFixed(3));
     };
@@ -197,8 +211,9 @@ export function TreasureChestHero({ picks }: { picks?: ChestProduct[] } = {}) {
     window.addEventListener('pointermove', onPointerMove, { passive: true });
 
     const render = (p: number, now: number) => {
-      const slots = window.innerWidth < 760 ? SLOTS_MOBILE : SLOTS_DESKTOP;
-      const shift = window.innerWidth < 760 ? SHIFT_MOBILE : SHIFT_DESKTOP;
+      const w = window.innerWidth;
+      const slots = w < 760 ? SLOTS_MOBILE : SLOTS_DESKTOP;
+      const shift = w < 760 ? 0 : Math.min(50, Math.max(0, (w - 760) * 0.08));
       const N = Math.min(slots.length, visibleProducts.length);
 
       // Fully closed at scroll 0 and first paint: lid down (0deg), lock visible, no cards

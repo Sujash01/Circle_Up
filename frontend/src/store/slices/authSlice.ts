@@ -5,6 +5,8 @@ export interface SessionUser {
   id: string;
   fullName: string;
   email: string;
+  phone?: string;
+  authProvider?: 'email' | 'google' | 'phone';
   actorType: ActorType;
   role: Role;
   permissions: AdminPermission[];
