@@ -360,7 +360,7 @@ export function TreasureChestHero({ picks }: { picks?: ChestProduct[] } = {}) {
             <span>Lasts!</span>
           </h1>
           <p>
-            Vintage, rentals and handmade finds, ready for a beautiful second life.
+            A little thrifted, a little brand new, a little unexpected. From clothes to jewellery to accessories to upcycled goodies, there&apos;s always something worth taking home.
           </p>
           <Link ref={exploreBtnRef} className="tc-btn" to="/new-arrivals">
             Explore the edit

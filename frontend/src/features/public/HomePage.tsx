@@ -209,6 +209,33 @@ function ProductCard({
   );
 }
 
+function ManifestoSection() {
+  return (
+    <section
+      aria-label="Welcome to CircleUp"
+      className={cn('home-vine-section scroll-mt-28 py-10 lg:py-14', pad)}
+    >
+      <div className="mx-auto max-w-4xl">
+        <div className="relative rounded-[2rem] border border-foreground/15 bg-card/85 p-7 sm:p-12 shadow-soft backdrop-blur-xs text-center">
+          <span className="eyebrow mb-3 block text-terracotta tracking-[0.2em]">
+            The CircleUp Edit
+          </span>
+          <p className="font-display text-xl sm:text-2xl lg:text-[2.1rem] text-steel font-normal leading-snug sm:leading-relaxed">
+            A little thrifted, a little brand new, a little unexpected. From clothes to jewellery to accessories to upcycled goodies, there&apos;s always something worth taking home.
+          </p>
+          <div className="mt-6 sm:mt-8 flex items-center justify-center gap-3 sm:gap-4">
+            <span className="h-px w-8 sm:w-16 bg-terracotta/35" aria-hidden="true" />
+            <p className="font-script text-lg sm:text-2xl text-terracotta leading-normal">
+              We collect things we&apos;d love to find ourselves. Now they&apos;re here for you.
+            </p>
+            <span className="h-px w-8 sm:w-16 bg-terracotta/35" aria-hidden="true" />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function ProductSection({
   id,
   title,
@@ -789,6 +816,7 @@ export function HomePage() {
                   <div ref={vineTrailRef} className="relative">
                     <ScrollIvyBranch containerRef={vineTrailRef} />
                     <div className="relative z-20">
+                      <ManifestoSection />
                       <ProductSection
                         id="ready-to-wear"
                         title="Ready-To-Wear"
