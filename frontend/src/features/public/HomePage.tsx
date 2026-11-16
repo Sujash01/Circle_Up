@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Heart } from 'lucide-react';
+import { Heart, Star } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { storefrontApi, type HomepagePayload } from '@/services/storefrontApi';
 
@@ -559,31 +559,180 @@ function WorldsSection({ tiles }: { tiles?: Array<{ to: string; title: string; n
   );
 }
 
+const FEATURED_REVIEWS = [
+  {
+    author: 'Ananya M.',
+    badge: 'Verified Find',
+    piece: 'Top & Skirt Co-Ord Set',
+    rating: 5,
+    title: 'Condition matched every photo',
+    quote:
+      'Picked up the Top & Skirt Co-Ord Set and the fabric felt freshly steamed with zero hidden flaws. Packaging was plastic-free too.',
+  },
+  {
+    author: 'Meera V.',
+    badge: 'Verified Find',
+    piece: 'Silk Scarf & Brass Brooch',
+    rating: 5,
+    title: 'Thoughtful small-find curation',
+    quote:
+      'Found a silk square scarf and brass brooch pair in Thrifted Treasure that looked straight out of an editorial archive.',
+  },
+  {
+    author: 'Kabir S.',
+    badge: 'Verified Order',
+    piece: 'Studio Vintage Rail',
+    rating: 5,
+    title: 'Smooth WhatsApp checkout experience',
+    quote:
+      'Smooth checkout experience — loved having a clear order summary first. Confirming sizing and delivery took less than two minutes.',
+  },
+  {
+    author: 'Rohan K.',
+    badge: 'Verified Find',
+    piece: '90s Varsity Crewneck',
+    rating: 5,
+    title: 'Great boxy 90s fit',
+    quote:
+      'The Varsity Crewneck Sweatshirt had authentic fade and accurate chest measurements listed right on the product page.',
+  },
+];
+
 function ClosingBanner() {
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const review = FEATURED_REVIEWS[currentIdx] ?? FEATURED_REVIEWS[0]!;
+
+  useEffect(() => {
+    if (isPaused) return;
+    if (
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    ) {
+      return;
+    }
+    const timer = setInterval(() => {
+      setCurrentIdx((prev) => (prev + 1) % FEATURED_REVIEWS.length);
+    }, 6000);
+    return () => clearInterval(timer);
+  }, [isPaused]);
+
   return (
     <section className={cn('home-vine-section pb-16 lg:pb-24', pad)}>
-      <Reveal>
-        <div className="notebook-cover organic-panel relative overflow-hidden px-7 py-14 text-center text-primary-foreground shadow-lift sm:px-14 lg:py-20">
-          <SpiralBinding />
-          <span className="eyebrow text-sage-glow">Fashion that lasts</span>
-          <h2 className="mx-auto mt-4 max-w-2xl font-display text-[clamp(2rem,1.2rem+3vw,3.6rem)] leading-[1.05] text-[#f8f4e2]">
-            Give a good piece its next chapter.
+      <div
+        onMouseEnter={() => setIsPaused(true)}
+        onMouseLeave={() => setIsPaused(false)}
+        className="notebook-cover organic-panel relative overflow-hidden px-7 py-14 text-center text-primary-foreground shadow-lift sm:px-14 lg:py-20"
+      >
+        <SpiralBinding />
+        <div className="mx-auto flex max-w-2xl flex-col items-center">
+          {/* Eyebrow */}
+          <div className="flex items-center gap-2">
+            <span className="inline-block size-1.5 rounded-full bg-sage-glow" />
+            <span className="eyebrow text-sage-glow">Community Feedback</span>
+          </div>
+
+          {/* Star Rating */}
+          <div
+            className="mt-3.5 flex items-center gap-1"
+            aria-label={`${review.rating} out of 5 stars`}
+          >
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Star
+                key={i}
+                className={cn(
+                  'size-4 sm:size-4.5',
+                  i < review.rating ? 'fill-amber-300 text-amber-300' : 'text-[#f8f4e2]/30',
+                )}
+              />
+            ))}
+          </div>
+
+          {/* Headline / Title */}
+          <h2 className="mt-4 font-display text-[clamp(1.75rem,1.2rem+2.2vw,2.75rem)] leading-[1.1] text-[#f8f4e2]">
+            &ldquo;{review.title}&rdquo;
           </h2>
-          <p className="mx-auto mt-5 max-w-xl text-[0.98rem] leading-relaxed text-[#f8f4e2]/80">
-            New-to-you treasures, found slowly and ready for their next chapter.
+
+          {/* Review Comment Quote */}
+          <p className="mt-4 min-h-[4rem] text-[0.98rem] leading-relaxed text-[#f8f4e2]/85 italic">
+            {review.quote}
           </p>
-          <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
-            <Link to="/new-arrivals" className="leaf-cta">
+
+          {/* Attribution */}
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs text-[#f8f4e2]/75">
+            <span className="font-semibold text-[#f8f4e2]">{review.author}</span>
+            <span className="text-[#f8f4e2]/40">·</span>
+            <span className="rounded-full bg-[#f8f4e2]/15 px-2.5 py-0.5 text-[0.68rem] uppercase tracking-wider text-sage-glow">
+              {review.badge}
+            </span>
+            {review.piece && (
+              <>
+                <span className="text-[#f8f4e2]/40">·</span>
+                <span className="text-[#f8f4e2]/80">{review.piece}</span>
+              </>
+            )}
+          </div>
+
+          {/* Navigation Dots and Arrows */}
+          <div className="mt-6 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() =>
+                setCurrentIdx((prev) =>
+                  prev === 0 ? FEATURED_REVIEWS.length - 1 : prev - 1,
+                )
+              }
+              aria-label="Previous review"
+              className="flex size-7 items-center justify-center rounded-full border border-[#f8f4e2]/25 text-[#f8f4e2]/80 transition hover:bg-[#f8f4e2]/15 hover:text-[#f8f4e2]"
+            >
+              ←
+            </button>
+            <div className="flex items-center gap-1.5">
+              {FEATURED_REVIEWS.map((_, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setCurrentIdx(idx)}
+                  aria-label={`Go to review ${idx + 1}`}
+                  className={cn(
+                    'h-1.5 rounded-full transition-all duration-300',
+                    currentIdx === idx
+                      ? 'w-6 bg-sage-glow'
+                      : 'w-2 bg-[#f8f4e2]/30 hover:bg-[#f8f4e2]/50',
+                  )}
+                />
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setCurrentIdx((prev) =>
+                  prev === FEATURED_REVIEWS.length - 1 ? 0 : prev + 1,
+                )
+              }
+              aria-label="Next review"
+              className="flex size-7 items-center justify-center rounded-full border border-[#f8f4e2]/25 text-[#f8f4e2]/80 transition hover:bg-[#f8f4e2]/15 hover:text-[#f8f4e2]"
+            >
+              →
+            </button>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+            <Link to="/reviews" className="leaf-cta">
               <svg viewBox="0 0 300 94" aria-hidden="true" className="leaf-cta-shape">
                 <path className="leaf-cta-fill" d="M7 47C53 5 204 2 293 47 204 91 53 89 7 47Z" />
-                <path className="leaf-cta-vein" d="M17 47c80-4 177-3 266 0M145 45c-20-12-38-20-58-24m59 27c-19 11-37 19-58 23" />
+                <path
+                  className="leaf-cta-vein"
+                  d="M17 47c80-4 177-3 266 0M145 45c-20-12-38-20-58-24m59 27c-19 11-37 19-58 23"
+                />
               </svg>
-              <span>Browse new arrivals</span>
+              <span>Read all reviews</span>
               <span className="leaf-cta-arrow" aria-hidden="true">↗</span>
             </Link>
           </div>
         </div>
-      </Reveal>
+      </div>
     </section>
   );
 }
