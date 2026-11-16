@@ -7,6 +7,9 @@ import lookbook from '@/assets/lookbook.jpg';
 import rtw2 from '@/assets/rtw-2.jpg';
 import rtw3 from '@/assets/rtw-3.jpg';
 import rtw4 from '@/assets/rtw-4.jpg';
+import heroStoreRack from '@/assets/hero-store-rack.jpg';
+import heroStoreCounter from '@/assets/hero-store-counter.jpg';
+import heroStoreLamp from '@/assets/hero-store-lamp.jpg';
 import { ChestModel } from './chest/ChestModel';
 import { formatPrice } from '@/services/cartService';
 import {
@@ -377,11 +380,11 @@ export function TreasureChestHero({ picks }: { picks?: ChestProduct[] } = {}) {
           </figure>
         </div>
 
-        <div className="tc-collage" role="group" aria-label="A collage of curated thrifted finds">
+        <div className="tc-collage" role="group" aria-label="A collage of curated thrifted finds in our studio">
           <span aria-hidden className="tc-collage-blob" />
-          <img className="tc-collage-photo tc-collage-one" src={rtw2} alt="Denim fit and flare co-ord set" width={912} height={1200} loading="eager" decoding="async" />
-          <img className="tc-collage-photo tc-collage-two" src={bag1} alt="Textured handheld bag" width={1008} height={1008} loading="eager" decoding="async" />
-          <img className="tc-collage-photo tc-collage-three" src={heroDetail1} alt="Top and skirt co-ord set" width={912} height={1200} loading="eager" decoding="async" />
+          <img className="tc-collage-photo tc-collage-one" src={heroStoreRack} alt="Curated clothing rails and jackets at CircleUp studio" width={382} height={456} loading="eager" decoding="async" />
+          <img className="tc-collage-photo tc-collage-two" src={heroStoreCounter} alt="CircleUp checkout studio counter and vinyl collection" width={377} height={348} loading="eager" decoding="async" />
+          <img className="tc-collage-photo tc-collage-three" src={heroStoreLamp} alt="Vintage straw hat pendant lamp in the shop window" width={379} height={315} loading="eager" decoding="async" />
         </div>
 
         <div
