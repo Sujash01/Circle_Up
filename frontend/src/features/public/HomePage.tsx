@@ -4,18 +4,14 @@ import { Link } from 'react-router-dom';
 import { storefrontApi, type HomepagePayload } from '@/services/storefrontApi';
 
 import bag1 from '@/assets/bag-1.jpg';
-import bag2 from '@/assets/bag-2.jpg';
 import bag3 from '@/assets/bag-3.jpg';
-import bag4 from '@/assets/bag-4.jpg';
 import communityVignette from '@/assets/community-vignette.svg';
 import crumpledPaper from '@/assets/crumpled-paper.jpg';
 import heroDetail1 from '@/assets/hero-detail-1.jpg';
 import heroDetail2 from '@/assets/hero-detail-2.jpg';
 import lookbook from '@/assets/lookbook.jpg';
 import rtw1 from '@/assets/rtw-1.jpg';
-import rtw2 from '@/assets/rtw-2.jpg';
 import rtw3 from '@/assets/rtw-3.jpg';
-import rtw4 from '@/assets/rtw-4.jpg';
 import storyInset from '@/assets/story-inset.webp';
 import storyInsetSmall from '@/assets/story-inset-480.webp';
 import story2 from '@/assets/story-2.jpg';

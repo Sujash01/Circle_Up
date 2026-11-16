@@ -31,7 +31,34 @@ export function RentalsPage() {
     return () => ac.abort();
   }, []);
 
-  if (rentals.length === 0) {
+  const [selectedId, setSelectedId] = useState<string>(rentals[0]?.id ?? '');
+  const selectedProduct: RentalProduct | undefined =
+    rentals.find((r) => r.id === selectedId) ?? rentals[0];
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const [size, setSize] = useState<string>(selectedProduct?.sizes[0] ?? 'One Size');
+  const [startDate, setStartDate] = useState<string>(addDaysIso(todayIso, 2));
+  const [endDate, setEndDate] = useState<string>(addDaysIso(todayIso, 4));
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [notes, setNotes] = useState('');
+  const [formError, setFormError] = useState('');
+  const [savedRequests, setSavedRequests] = useState<SimulatedRentalRequest[]>(() =>
+    rentalService.loadSubmittedRequests(),
+  );
+  const [latestRequest, setLatestRequest] = useState<SimulatedRentalRequest | null>(null);
+
+  const blockedSet = useMemo(
+    () => (selectedProduct ? rentalService.getBlockedDatesForProduct(selectedProduct, savedRequests) : new Set<string>()),
+    [selectedProduct, savedRequests],
+  );
+
+  const quote = useMemo(
+    () => (selectedProduct ? rentalService.evaluateQuote(selectedProduct, startDate, endDate, blockedSet) : null),
+    [selectedProduct, startDate, endDate, blockedSet],
+  );
+
+  if (rentals.length === 0 || !selectedProduct || !quote) {
     return (
       <div className="space-y-8 max-w-7xl mx-auto py-6">
         <header className="border-b border-foreground/15 pb-6">
@@ -52,33 +79,6 @@ export function RentalsPage() {
       </div>
     );
   }
-
-  const [selectedId, setSelectedId] = useState<string>(rentals[0]?.id ?? '');
-  const selectedProduct: RentalProduct =
-    rentals.find((r) => r.id === selectedId) ?? rentals[0]!;
-
-  const todayIso = new Date().toISOString().slice(0, 10);
-  const [size, setSize] = useState<string>(selectedProduct.sizes[0] ?? 'One Size');
-  const [startDate, setStartDate] = useState<string>(addDaysIso(todayIso, 2));
-  const [endDate, setEndDate] = useState<string>(addDaysIso(todayIso, 4));
-  const [customerName, setCustomerName] = useState('');
-  const [customerPhone, setCustomerPhone] = useState('');
-  const [notes, setNotes] = useState('');
-  const [formError, setFormError] = useState('');
-  const [savedRequests, setSavedRequests] = useState<SimulatedRentalRequest[]>(() =>
-    rentalService.loadSubmittedRequests(),
-  );
-  const [latestRequest, setLatestRequest] = useState<SimulatedRentalRequest | null>(null);
-
-  const blockedSet = useMemo(
-    () => rentalService.getBlockedDatesForProduct(selectedProduct, savedRequests),
-    [selectedProduct, savedRequests],
-  );
-
-  const quote = useMemo(
-    () => rentalService.evaluateQuote(selectedProduct, startDate, endDate, blockedSet),
-    [selectedProduct, startDate, endDate, blockedSet],
-  );
 
   const handleSelectProduct = (product: RentalProduct) => {
     setSelectedId(product.id);

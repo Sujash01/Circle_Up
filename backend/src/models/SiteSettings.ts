@@ -8,10 +8,19 @@ export interface ICategoryTile {
   alt: string;
 }
 
+export interface ICustomDropOption {
+  label: string;
+  to: string;
+  badge?: string;
+  description?: string;
+  enabled: boolean;
+}
+
 export interface ISiteSettingsDocument extends Document {
   announcementText: string;
   marqueePhrases: string[];
   categoryTiles?: ICategoryTile[];
+  customDrop?: ICustomDropOption;
   storeAddress: string;
   contactEmail: string;
   contactPhone: string;
@@ -49,6 +58,22 @@ const SiteSettingsSchema = new Schema<ISiteSettingsDocument>(
         },
       ],
       default: undefined,
+    },
+    customDrop: {
+      type: {
+        label: { type: String, default: 'Curated Drop' },
+        to: { type: String, default: '/thrifted-treasure' },
+        badge: { type: String, default: 'Featured Drop' },
+        description: { type: String, default: 'Special seasonal curation from our archive' },
+        enabled: { type: Boolean, default: true },
+      },
+      default: () => ({
+        label: 'Curated Drop',
+        to: '/thrifted-treasure',
+        badge: 'Featured Drop',
+        description: 'Special seasonal curation from our archive',
+        enabled: true,
+      }),
     },
     storeAddress: {
       type: String,

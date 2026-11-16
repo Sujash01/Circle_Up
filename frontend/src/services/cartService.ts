@@ -1,4 +1,5 @@
 import type { CartItem, CartState, Product, ProductVariant } from '@/types/storefront';
+export type { CartItem, CartState };
 import { readStorage, writeStorage } from './storage';
 
 const CART_STORAGE_KEY = 'circleup_cart_v1';

@@ -50,6 +50,13 @@ export interface HomepagePayload {
   }>;
   announcementText: string;
   marqueePhrases: string[];
+  customDrop?: {
+    label: string;
+    to: string;
+    badge?: string;
+    description?: string;
+    enabled: boolean;
+  };
   siteSettings: {
     storeAddress: string;
     contactEmail: string;

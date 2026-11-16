@@ -9,6 +9,15 @@ export const categoryTileSchema = z.object({
 });
 export type CategoryTile = z.infer<typeof categoryTileSchema>;
 
+export const customDropOptionSchema = z.object({
+  label: z.string().default('Curated Drop'),
+  to: z.string().default('/thrifted-treasure'),
+  badge: z.string().default('Featured Drop'),
+  description: z.string().default('Special seasonal curation from our archive'),
+  enabled: z.boolean().default(true),
+});
+export type CustomDropOption = z.infer<typeof customDropOptionSchema>;
+
 export const siteSettingsSchema = z.object({
   announcementText: z.string().default(
     'Use code THRIFT10 or CIRCLE20 in bag • Plastic-free sustainable packaging on every parcel',
@@ -22,6 +31,7 @@ export const siteSettingsSchema = z.object({
     'Fashion that lasts',
   ]),
   categoryTiles: z.array(categoryTileSchema).optional(),
+  customDrop: customDropOptionSchema.optional(),
   storeAddress: z.string().default('CircleUp Studio Courtyard, Sector 7, Chandigarh'),
   contactEmail: z.string().email().default('care@circleuponline.com'),
   contactPhone: z.string().default('+91 98765 43210'),

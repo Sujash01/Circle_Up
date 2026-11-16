@@ -20,6 +20,8 @@ export interface ProductQueryParams {
   maxPrice?: number;
   inStockOnly?: boolean;
   newArrivalsOnly?: boolean;
+  brandNewOnly?: boolean;
+  thriftedOnly?: boolean;
   search?: string;
   sort?: ProductSortOption;
 }
@@ -197,6 +199,8 @@ export const productService = {
       maxPrice,
       inStockOnly = false,
       newArrivalsOnly = false,
+      brandNewOnly = false,
+      thriftedOnly = false,
       search = '',
       sort = 'newest',
     } = params;
@@ -210,6 +214,31 @@ export const productService = {
       }
       if (newArrivalsOnly && !product.isNewArrival) {
         return false;
+      }
+      if (brandNewOnly) {
+        const isBrandNew =
+          product.productType === 'Fresh Find' ||
+          product.productType === 'Handcrafted' ||
+          product.condition === 'New With Tags' ||
+          product.condition === 'Mint' ||
+          product.condition === 'Artisan Made' ||
+          product.isNewArrival;
+        if (!isBrandNew) {
+          return false;
+        }
+      }
+      if (thriftedOnly) {
+        const isThrifted =
+          product.productType === 'Pre-Loved' ||
+          product.condition === 'Gently Used' ||
+          product.condition === 'Vintage Wear' ||
+          product.category === 'thrifted-treasure' ||
+          product.tags.some((t) =>
+            ['vintage', 'pre-loved', 'thrift', 'thrifted', 'treasure', 'one-of-a-kind'].includes(t.toLowerCase()),
+          );
+        if (!isThrifted) {
+          return false;
+        }
       }
       if (subToken) {
         const matchesSub = normalizeToken(product.subcategory) === subToken;
@@ -258,6 +287,14 @@ export const productService = {
       if (sort === 'price-desc') return b.price - a.price;
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
+  },
+
+  getBrandNewProducts(params: Omit<ProductQueryParams, 'brandNewOnly' | 'thriftedOnly'> = {}): Product[] {
+    return this.queryProducts({ ...params, brandNewOnly: true });
+  },
+
+  getThriftedProducts(params: Omit<ProductQueryParams, 'brandNewOnly' | 'thriftedOnly'> = {}): Product[] {
+    return this.queryProducts({ ...params, thriftedOnly: true });
   },
 
   async addProduct(newProduct: Partial<Product>): Promise<Product> {

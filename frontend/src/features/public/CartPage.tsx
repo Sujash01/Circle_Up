@@ -1,5 +1,5 @@
 import { ArrowRight, Check, CheckCircle2, Copy, Minus, Package, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import type { RootState } from '@/app/store';
@@ -84,10 +84,17 @@ export function CartPage() {
     city: '',
     state: '',
     postalCode: '',
-    paymentMethod: 'CASH_ON_DELIVERY' as PaymentMethod,
+    paymentMethod: 'ONLINE_UPI' as PaymentMethod,
   });
 
   const authUser = useSelector((state: RootState) => state.auth.user);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.hash === '#checkout-step2') {
+      setIsCheckoutModalOpen(true);
+      setCheckoutStep(2);
+    }
+  }, []);
 
   const handleOpenCheckout = () => {
     setOrderError('');
@@ -137,9 +144,7 @@ export function CartPage() {
             <p className="text-xs text-muted-foreground">
               Payment Method:{' '}
               <strong className="text-cocoa">
-                {placedOrder.paymentMethod === 'ONLINE_UPI'
-                  ? 'Paid Online (Razorpay Gateway)'
-                  : 'Cash on Delivery (COD)'}
+                Paid Online (Razorpay Gateway)
               </strong>
             </p>
             <p className="text-xs text-muted-foreground">
@@ -192,7 +197,7 @@ export function CartPage() {
     );
   }
 
-  if (cart.items.length === 0) {
+  if (cart.items.length === 0 && (typeof window === 'undefined' || window.location.hash !== '#checkout-step2')) {
     return (
       <EmptyState
         title="Your shopping bag is empty"
@@ -608,7 +613,7 @@ export function CartPage() {
                     type="text"
                     required
                     value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
                     placeholder="e.g. Aanya Sharma"
                     className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
                   />
@@ -621,7 +626,7 @@ export function CartPage() {
                       type="email"
                       required
                       value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, email: e.target.value }))}
                       placeholder="aanya@example.com"
                       className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
                     />
@@ -632,7 +637,7 @@ export function CartPage() {
                       type="tel"
                       required
                       value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, phone: e.target.value }))}
                       placeholder="+91 98201 12233"
                       className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
                     />
@@ -645,7 +650,7 @@ export function CartPage() {
                     type="text"
                     required
                     value={formData.addressLine}
-                    onChange={(e) => setFormData({ ...formData, addressLine: e.target.value })}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, addressLine: e.target.value }))}
                     placeholder="House/Flat No., Building, Street"
                     className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
                   />
@@ -658,7 +663,7 @@ export function CartPage() {
                       type="text"
                       required
                       value={formData.city}
-                      onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, city: e.target.value }))}
                       placeholder="Mumbai"
                       className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
                     />
@@ -669,7 +674,7 @@ export function CartPage() {
                       type="text"
                       required
                       value={formData.state}
-                      onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, state: e.target.value }))}
                       placeholder="Maharashtra"
                       className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
                     />
@@ -680,7 +685,7 @@ export function CartPage() {
                       type="text"
                       required
                       value={formData.postalCode}
-                      onChange={(e) => setFormData({ ...formData, postalCode: e.target.value })}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, postalCode: e.target.value }))}
                       placeholder="400050"
                       className="w-full border border-foreground/25 p-2 bg-transparent text-cocoa focus:border-primary focus:outline-none"
                     />
@@ -750,79 +755,26 @@ export function CartPage() {
                   <label className="font-semibold uppercase tracking-wider text-cocoa text-xs">
                     Payment Method
                   </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ ...formData, paymentMethod: 'CASH_ON_DELIVERY' })}
-                      className={cn(
-                        'flex flex-col text-left p-3.5 border transition-all cursor-pointer relative',
-                        formData.paymentMethod === 'CASH_ON_DELIVERY'
-                          ? 'border-primary bg-primary/8 shadow-xs ring-1 ring-primary'
-                          : 'border-foreground/20 bg-background/50 hover:border-foreground/40',
-                      )}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-bold text-cocoa">Cash on Delivery (COD)</span>
-                        <span
-                          className={cn(
-                            'size-3.5 rounded-full border flex items-center justify-center transition-colors',
-                            formData.paymentMethod === 'CASH_ON_DELIVERY'
-                              ? 'border-primary bg-primary'
-                              : 'border-foreground/30 bg-transparent',
-                          )}
-                        >
-                          {formData.paymentMethod === 'CASH_ON_DELIVERY' && (
-                            <span className="size-1.5 rounded-full bg-white" />
-                          )}
+                  <div className="rounded border border-primary/40 bg-primary/8 p-3.5 shadow-xs ring-1 ring-primary/40 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="size-3.5 rounded-full border border-primary bg-primary flex items-center justify-center">
+                          <span className="size-1.5 rounded-full bg-white" />
                         </span>
-                      </div>
-                      <p className="text-[0.72rem] text-muted-foreground leading-snug">
-                        Pay with cash or UPI on delivery at your doorstep.
-                      </p>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ ...formData, paymentMethod: 'ONLINE_UPI' })}
-                      className={cn(
-                        'flex flex-col text-left p-3.5 border transition-all cursor-pointer relative',
-                        formData.paymentMethod === 'ONLINE_UPI'
-                          ? 'border-primary bg-primary/8 shadow-xs ring-1 ring-primary'
-                          : 'border-foreground/20 bg-background/50 hover:border-foreground/40',
-                      )}
-                    >
-                      <div className="flex items-center justify-between mb-1">
                         <span className="text-xs font-bold text-cocoa">Pay Online</span>
-                        <span
-                          className={cn(
-                            'size-3.5 rounded-full border flex items-center justify-center transition-colors',
-                            formData.paymentMethod === 'ONLINE_UPI'
-                              ? 'border-primary bg-primary'
-                              : 'border-foreground/30 bg-transparent',
-                          )}
-                        >
-                          {formData.paymentMethod === 'ONLINE_UPI' && (
-                            <span className="size-1.5 rounded-full bg-white" />
-                          )}
-                        </span>
                       </div>
-                      <p className="text-[0.72rem] text-muted-foreground leading-snug">
-                        Razorpay payment gateway (UPI, Cards &amp; NetBanking).
-                      </p>
-                    </button>
-                  </div>
-
-                  {formData.paymentMethod === 'ONLINE_UPI' && (
-                    <div className="rounded border border-primary/25 bg-primary/5 p-3 text-xs text-cocoa space-y-1">
-                      <div className="flex items-center gap-1.5 font-semibold text-primary">
-                        <ShieldCheck className="size-4" />
-                        <span>Razorpay Payment Gateway</span>
-                      </div>
-                      <p className="text-[0.72rem] text-muted-foreground leading-snug">
-                        Instant zero-fee transfer via Google Pay, PhonePe, Paytm, all UPI apps, Debit/Credit Cards, and NetBanking secured by Razorpay.
-                      </p>
+                      <span className="text-[0.68rem] font-semibold text-primary uppercase tracking-wider bg-primary/10 px-2 py-0.5 rounded">
+                        Fast &amp; Secure
+                      </span>
                     </div>
-                  )}
+                    <div className="flex items-center gap-1.5 text-xs text-primary font-medium">
+                      <ShieldCheck className="size-4 shrink-0" />
+                      <span>Razorpay Payment Gateway · Zero Fee</span>
+                    </div>
+                    <p className="text-[0.72rem] text-muted-foreground leading-snug">
+                      Instant and encrypted checkout via UPI (Google Pay, PhonePe, Paytm, BHIM), Debit/Credit Cards (Visa, Mastercard, RuPay), and NetBanking.
+                    </p>
+                  </div>
                 </div>
 
                 {/* Price Breakdown */}
@@ -863,9 +815,7 @@ export function CartPage() {
                   >
                     {isSubmittingOrder
                       ? 'Processing Order...'
-                      : formData.paymentMethod === 'ONLINE_UPI'
-                        ? `Pay Online with Razorpay · ${formatPrice(totals.estimatedTotal)}`
-                        : 'Confirm & Place Thrift Order'}
+                      : `Pay Online with Razorpay · ${formatPrice(totals.estimatedTotal)}`}
                   </button>
                 </div>
               </form>

@@ -108,6 +108,13 @@ export const homepageService = {
       marqueePhrases: settings.marqueePhrases,
       announcement: settings.announcementText,
       announcementText: settings.announcementText,
+      customDrop: settings.customDrop || {
+        label: 'Curated Drop',
+        to: '/thrifted-treasure',
+        badge: 'Featured Drop',
+        description: 'Special seasonal curation from our archive',
+        enabled: true,
+      },
       siteSettings: {
         storeAddress: settings.storeAddress,
         contactEmail: settings.contactEmail,

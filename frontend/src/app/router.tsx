@@ -11,6 +11,7 @@ import {
 import { ExitIntentModal } from '@/components/storefront/ExitIntentModal';
 import { StorefrontCleanLayout, StorefrontLayout } from '@/components/storefront/StorefrontChrome';
 import { AboutPage } from '@/features/public/AboutPage';
+import { BrandNewPage } from '@/features/public/BrandNewPage';
 import { CartPage } from '@/features/public/CartPage';
 import { CategoryListingPage } from '@/features/public/CategoryListingPage';
 import { ContactPage } from '@/features/public/ContactPage';
@@ -34,6 +35,7 @@ import { AuthCallbackPage } from '@/features/auth/AuthCallbackPage';
 import { GuestRoute } from '@/components/auth/GuestRoute';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { ThriftCrewPage } from '@/features/public/ThriftCrewPage';
+import { ThriftedPage } from '@/features/public/ThriftedPage';
 import { ThriftedTreasurePage } from '@/features/public/ThriftedTreasurePage';
 import { WishlistPage } from '@/features/public/WishlistPage';
 
@@ -111,6 +113,8 @@ export const router = createBrowserRouter([
       {
         element: <StorefrontLayout />,
         children: [
+          { path: 'brand-new', element: <BrandNewPage /> },
+          { path: 'thrifted', element: <ThriftedPage /> },
           { path: 'new-arrivals', element: <NewArrivalsPage /> },
           {
             path: 'womens-upperwear',

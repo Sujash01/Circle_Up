@@ -160,7 +160,6 @@ export function CustomerAccountPage() {
     brand: 'Visa' as 'Visa' | 'Mastercard' | 'RuPay',
   });
 
-  const [codEnabled, setCodEnabled] = useState(true);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showNotification = (msg: string) => {
@@ -1487,27 +1486,6 @@ export function CustomerAccountPage() {
                 ))}
               </div>
             )}
-          </div>
-
-          {/* Cash on Delivery & Trust Assurance */}
-          <div className="rounded-3xl border border-foreground/15 bg-card/90 p-5 sm:p-6 shadow-xs space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="font-serif text-sm font-bold text-cocoa">Pay on Delivery (COD)</h4>
-                <p className="text-xs text-foreground/70">
-                  Allow cash or UPI on delivery for domestic orders.
-                </p>
-              </div>
-              <input
-                type="checkbox"
-                checked={codEnabled}
-                onChange={(e) => {
-                  setCodEnabled(e.target.checked);
-                  showNotification(e.target.checked ? 'Pay on delivery enabled' : 'Pay on delivery disabled');
-                }}
-                className="size-5 accent-primary cursor-pointer"
-              />
-            </div>
           </div>
 
           {/* Security Guarantee Banner */}

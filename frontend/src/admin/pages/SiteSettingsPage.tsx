@@ -9,6 +9,7 @@ import {
   Bell,
   MessageSquare,
   MapPin,
+  Sparkles,
 } from 'lucide-react';
 import { adminApi } from '../services/adminApi';
 import { useAdminToast } from '../context/AdminToastContext';
@@ -232,6 +233,130 @@ export default function SiteSettingsPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+
+          {/* Featured Drop Link (Header Dropdown Option - CRM Editable) */}
+          <div className="rounded-xl border border-border bg-card p-5 shadow-xs space-y-4">
+            <div className="flex items-center justify-between border-b border-border/60 pb-2">
+              <div className="flex items-center gap-2">
+                <Sparkles className="size-4 text-primary" />
+                <h2 className="text-sm font-bold text-cocoa">Featured Dropdown Option (CRM Editable Drop)</h2>
+              </div>
+              <label className="flex items-center gap-2 text-xs font-semibold text-cocoa cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.customDrop?.enabled ?? true}
+                  onChange={(e) =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      customDrop: {
+                        label: prev.customDrop?.label || 'Winter Archival Drop',
+                        to: prev.customDrop?.to || '/thrifted-treasure',
+                        badge: prev.customDrop?.badge || 'Featured Drop',
+                        description: prev.customDrop?.description || 'Curated one-of-one vintage pieces',
+                        enabled: e.target.checked,
+                      },
+                    }))
+                  }
+                  className="size-4 accent-primary"
+                />
+                <span>Active in Storefront Dropdown</span>
+              </label>
+            </div>
+
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Configure a custom featured drop option displayed prominently in the storefront navigation dropdown. Update the label, badge, destination route, and description at any time without code deployments.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+              <div>
+                <label className="block font-semibold text-cocoa mb-1">Drop Label</label>
+                <input
+                  type="text"
+                  value={settings.customDrop?.label ?? 'Winter Archival Drop'}
+                  onChange={(e) =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      customDrop: {
+                        label: e.target.value,
+                        to: prev.customDrop?.to || '/thrifted-treasure',
+                        badge: prev.customDrop?.badge || 'Featured Drop',
+                        description: prev.customDrop?.description || 'Curated one-of-one vintage pieces',
+                        enabled: prev.customDrop?.enabled ?? true,
+                      },
+                    }))
+                  }
+                  placeholder="e.g. Winter Archival Drop"
+                  className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-cocoa focus:border-primary focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-cocoa mb-1">Destination Route / URL</label>
+                <input
+                  type="text"
+                  value={settings.customDrop?.to ?? '/thrifted-treasure'}
+                  onChange={(e) =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      customDrop: {
+                        label: prev.customDrop?.label || 'Winter Archival Drop',
+                        to: e.target.value,
+                        badge: prev.customDrop?.badge || 'Featured Drop',
+                        description: prev.customDrop?.description || 'Curated one-of-one vintage pieces',
+                        enabled: prev.customDrop?.enabled ?? true,
+                      },
+                    }))
+                  }
+                  placeholder="e.g. /thrifted-treasure, /brand-new, /rentals"
+                  className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-cocoa focus:border-primary focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-cocoa mb-1">Badge Tag</label>
+                <input
+                  type="text"
+                  value={settings.customDrop?.badge ?? 'Featured Drop'}
+                  onChange={(e) =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      customDrop: {
+                        label: prev.customDrop?.label || 'Winter Archival Drop',
+                        to: prev.customDrop?.to || '/thrifted-treasure',
+                        badge: e.target.value,
+                        description: prev.customDrop?.description || 'Curated one-of-one vintage pieces',
+                        enabled: prev.customDrop?.enabled ?? true,
+                      },
+                    }))
+                  }
+                  placeholder="e.g. Featured Drop, Exclusive, Limited Rail"
+                  className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-cocoa focus:border-primary focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-cocoa mb-1">Short Description</label>
+                <input
+                  type="text"
+                  value={settings.customDrop?.description ?? 'Curated one-of-one vintage pieces'}
+                  onChange={(e) =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      customDrop: {
+                        label: prev.customDrop?.label || 'Winter Archival Drop',
+                        to: prev.customDrop?.to || '/thrifted-treasure',
+                        badge: prev.customDrop?.badge || 'Featured Drop',
+                        description: e.target.value,
+                        enabled: prev.customDrop?.enabled ?? true,
+                      },
+                    }))
+                  }
+                  placeholder="e.g. Curated one-of-one vintage pieces"
+                  className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-cocoa focus:border-primary focus:outline-none"
+                />
+              </div>
             </div>
           </div>
 

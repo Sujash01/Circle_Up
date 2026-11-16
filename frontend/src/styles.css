@@ -1035,8 +1035,8 @@ button.organic-control:focus-visible {
   box-shadow: none;
 }
 
-.storefront-header a[href="/wishlist"],
-.storefront-header a[href="/cart"] {
+.storefront-header-tools a[href="/wishlist"],
+.storefront-header-tools a[href="/cart"] {
   border-width: 1px;
   border-color: color-mix(in srgb, var(--forest-deep) 20%, transparent);
   background: transparent;

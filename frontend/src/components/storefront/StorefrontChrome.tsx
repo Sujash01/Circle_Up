@@ -1,9 +1,10 @@
-import { ChevronDown, Heart, Menu, Search, ShoppingBag, User, X } from 'lucide-react';
+import { ChevronDown, Heart, Menu, Search, ShoppingBag, Sparkles, User, X } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { store } from '@/app/store';
 import { authService } from '@/services/authService';
+import { storefrontApi } from '@/services/storefrontApi';
 import bag1 from '@/assets/bag-1.jpg';
 import circleUpLogo from '@/assets/circle-up-logo.png';
 import crumpledPaper from '@/assets/crumpled-paper.jpg';
@@ -32,7 +33,7 @@ const NAV_GROUPS = [
     ],
   },
   {
-    heading: 'Objects & Craft',
+    heading: 'Other Items',
     items: [
       { label: 'Footwear', to: '/footwear' },
       { label: 'Rentals', to: '/rentals' },
@@ -268,6 +269,33 @@ export function StorefrontHeader({ preserveHomeHeader = false }: { preserveHomeH
 
   const [shopMenuOpen, setShopMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [customDrop, setCustomDrop] = useState<{
+    label: string;
+    to: string;
+    badge?: string;
+    description?: string;
+    enabled: boolean;
+  }>({
+    label: 'Winter Archival Drop',
+    to: '/thrifted-treasure',
+    badge: 'Featured Drop',
+    description: 'Curated one-of-one vintage pieces',
+    enabled: true,
+  });
+
+  useEffect(() => {
+    const ac = new AbortController();
+    storefrontApi
+      .getHomepage(ac.signal)
+      .then((data) => {
+        if (data?.customDrop) {
+          setCustomDrop(data.customDrop);
+        }
+      })
+      .catch(() => { });
+    return () => ac.abort();
+  }, []);
+
   const headerRef = useRef<HTMLElement>(null);
   const mobileMenuRef = useRef<HTMLElement>(null);
   const mobileMenuTriggerRef = useRef<HTMLButtonElement>(null);
@@ -282,9 +310,13 @@ export function StorefrontHeader({ preserveHomeHeader = false }: { preserveHomeH
   }, []);
 
   useEffect(() => {
-    setShopMenuOpen(false);
+    if (location.hash === '#collections') {
+      setShopMenuOpen(true);
+    } else {
+      setShopMenuOpen(false);
+    }
     setMobileMenuOpen(false);
-  }, [location.pathname, location.search]);
+  }, [location.pathname, location.search, location.hash]);
 
   useEffect(() => {
     if (!shopMenuOpen) return;
@@ -487,35 +519,96 @@ export function StorefrontHeader({ preserveHomeHeader = false }: { preserveHomeH
           aria-label="CircleUp Collections Directory"
           className="organic-panel hidden md:block absolute left-1/2 top-full -translate-x-1/2 w-[54vw] min-w-[560px] max-w-[820px] border-x-2 border-b-2 border-foreground/20 bg-background z-40 shadow-2xl"
         >
-          <div className="px-7 py-6 space-y-5">
-            <div className="grid grid-cols-3 gap-7 items-start">
-              {NAV_GROUPS.map((group) => (
-                <div key={group.heading} className="space-y-3">
-                  <h2 className="text-[0.7rem] font-bold uppercase tracking-[0.18em] text-terracotta border-b border-foreground/15 pb-1.5">
-                    {group.heading}
-                  </h2>
-                  <ul className="space-y-1.5">
-                    {group.items.map((item) => (
-                      <li key={item.to}>
-                        <Link
-                          to={item.to}
-                          className="flex min-h-[44px] items-center text-[0.84rem] font-medium text-cocoa/90 hover:text-primary hover:translate-x-0.5 transition-all"
-                        >
-                          {item.label}
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
+          <div className="px-7 py-6 space-y-4">
+            {/* Small Dedicated Section for Brand New Items */}
+            <div className="rounded-xl border border-primary/25 bg-primary/6 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-2xs">
+              <div className="flex items-center gap-2.5">
+                <span className="size-2 rounded-full bg-primary animate-pulse" />
+                <span className="text-xs font-bold uppercase tracking-wider text-cocoa">
+                  Brand New Items
+                </span>
+                <span className="text-xs text-muted-foreground hidden sm:inline">
+                  · Unworn with tags, mint studio crafts &amp; pristine fresh arrivals
+                </span>
+              </div>
+              <div className="flex items-center gap-3 text-xs">
+                <Link
+                  to="/brand-new"
+                  onClick={() => setShopMenuOpen(false)}
+                  className="font-bold text-primary hover:underline flex items-center gap-1 shrink-0"
+                >
+                  <span>All Brand New</span>
+                  <span aria-hidden="true">→</span>
+                </Link>
+                <span className="text-foreground/20" aria-hidden="true">|</span>
+                <Link
+                  to="/new-arrivals"
+                  onClick={() => setShopMenuOpen(false)}
+                  className="font-medium text-cocoa hover:text-primary"
+                >
+                  Fresh Finds
+                </Link>
+              </div>
+            </div>
+
+            {/* Curated Drop Banner - Standalone, directly below Brand New Items */}
+            {customDrop?.enabled && (
+              <Link
+                to={customDrop.to}
+                onClick={() => setShopMenuOpen(false)}
+                className="rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 flex items-center justify-between text-xs font-bold text-primary hover:bg-primary/15 transition-all shadow-2xs group"
+              >
+                <div className="flex items-center gap-2">
+                  <Sparkles className="size-3.5 text-primary shrink-0" />
+                  <span className="font-bold text-cocoa">{customDrop.label}</span>
+                  {customDrop.description && (
+                    <span className="text-[0.72rem] font-normal text-muted-foreground hidden sm:inline">
+                      · {customDrop.description}
+                    </span>
+                  )}
                 </div>
-              ))}
+                <span className="text-[0.62rem] font-bold uppercase tracking-wider bg-primary/20 text-primary px-2.5 py-0.5 rounded-full shrink-0 group-hover:translate-x-0.5 transition-transform">
+                  {customDrop.badge || 'Curated Drop'} →
+                </span>
+              </Link>
+            )}
+
+            {/* 3-Column Directory (Clothing, Other Items, CircleUp World) */}
+            <div className="grid grid-cols-3 gap-7 items-start">
+              {NAV_GROUPS.map((group) => {
+                return (
+                  <div key={group.heading} className="space-y-3">
+                    <h2 className="text-[0.7rem] font-bold uppercase tracking-[0.18em] text-terracotta border-b border-foreground/15 pb-1.5">
+                      {group.heading}
+                    </h2>
+                    <ul className="space-y-1.5">
+                      {group.items.map((item) => (
+                        <li key={item.to}>
+                          <Link
+                            to={item.to}
+                            onClick={() => setShopMenuOpen(false)}
+                            className="flex min-h-[44px] items-center text-[0.84rem] font-medium text-cocoa/90 hover:text-primary hover:translate-x-0.5 transition-all"
+                          >
+                            {item.label}
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })}
             </div>
 
             <div className="flex items-center justify-between gap-4 border-t border-foreground/15 pt-4 text-xs">
               <div className="flex items-center gap-5">
-                <Link to="/new-arrivals" className="inline-flex items-center gap-2.5 group">
+                <Link
+                  to="/brand-new"
+                  onClick={() => setShopMenuOpen(false)}
+                  className="inline-flex items-center gap-2.5 group"
+                >
                   <img
                     src={rtw1}
-                    alt="New Arrivals Co-Ord"
+                    alt="Brand New"
                     width={36}
                     height={36}
                     loading="lazy"
@@ -523,13 +616,17 @@ export function StorefrontHeader({ preserveHomeHeader = false }: { preserveHomeH
                     className="size-9 object-cover object-top border border-foreground/15"
                   />
                   <span className="font-semibold text-cocoa group-hover:text-primary">
-                    Fresh Finds →
+                    Brand New →
                   </span>
                 </Link>
-                <Link to="/rentals" className="inline-flex items-center gap-2.5 group">
+                <Link
+                  to="/thrifted"
+                  onClick={() => setShopMenuOpen(false)}
+                  className="inline-flex items-center gap-2.5 group"
+                >
                   <img
                     src={bag1}
-                    alt="Rental & Vintage Bags"
+                    alt="Curated Thrifted Rail"
                     width={36}
                     height={36}
                     loading="lazy"
@@ -537,26 +634,42 @@ export function StorefrontHeader({ preserveHomeHeader = false }: { preserveHomeH
                     className="size-9 object-cover border border-foreground/15"
                   />
                   <span className="font-semibold text-cocoa group-hover:text-primary">
-                    Rental Rail →
+                    Thrifted Rail →
                   </span>
                 </Link>
               </div>
 
               <div className="flex items-center gap-3.5 font-semibold uppercase tracking-wider text-xs">
                 {currentUser ? (
-                  <Link to="/account" className="text-primary hover:text-primary underline underline-offset-4">
+                  <Link
+                    to="/account"
+                    onClick={() => setShopMenuOpen(false)}
+                    className="text-cocoa hover:text-primary transition-colors no-underline"
+                  >
                     Profile ({(currentUser.fullName || 'User').split(' ')[0]})
                   </Link>
                 ) : (
-                  <Link to="/signup" className="text-primary hover:text-primary underline underline-offset-4">
+                  <Link
+                    to="/signup"
+                    onClick={() => setShopMenuOpen(false)}
+                    className="text-cocoa hover:text-primary transition-colors no-underline"
+                  >
                     Sign Up
                   </Link>
                 )}
                 <span className="text-foreground/20" aria-hidden="true">|</span>
-                <Link to="/cart" className="text-primary underline underline-offset-4">
+                <Link
+                  to="/cart"
+                  onClick={() => setShopMenuOpen(false)}
+                  className="text-cocoa hover:text-primary transition-colors no-underline border-0 border-transparent !border-0 outline-none"
+                >
                   Bag ({totals.itemCount})
                 </Link>
-                <Link to="/wishlist" className="text-cocoa hover:text-primary underline underline-offset-4">
+                <Link
+                  to="/wishlist"
+                  onClick={() => setShopMenuOpen(false)}
+                  className="text-cocoa hover:text-primary transition-colors no-underline border-0 border-transparent !border-0 outline-none"
+                >
                   Wishlist ({wishlistIds.length})
                 </Link>
                 <button
@@ -580,24 +693,61 @@ export function StorefrontHeader({ preserveHomeHeader = false }: { preserveHomeH
         aria-hidden={!mobileMenuOpen}
         className={cn('mobile-directory xl:hidden', mobileMenuOpen && 'is-open')}
       >
-        {NAV_GROUPS.map((group) => (
-          <div key={group.heading}>
-            <p className="text-[0.68rem] font-bold uppercase tracking-[0.18em] text-terracotta mb-2">
-              {group.heading}
-            </p>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-              {group.items.map((item) => (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  className="flex min-h-[48px] items-center text-sm font-medium text-cocoa hover:text-primary"
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </div>
+        {/* Mobile Small Section for Brand New */}
+        <div className="rounded-xl border border-primary/25 bg-primary/8 p-3 flex items-center justify-between gap-2 shadow-2xs mb-2">
+          <div className="flex items-center gap-2">
+            <span className="size-2 rounded-full bg-primary animate-pulse" />
+            <span className="text-xs font-bold uppercase tracking-wider text-cocoa">
+              Brand New Items
+            </span>
           </div>
-        ))}
+          <Link
+            to="/brand-new"
+            onClick={() => setMobileMenuOpen(false)}
+            className="text-xs font-bold text-primary hover:underline"
+          >
+            All Brand New →
+          </Link>
+        </div>
+
+        {/* Mobile Curated Drop - Standalone, directly below Brand New Items */}
+        {customDrop?.enabled && (
+          <Link
+            to={customDrop.to}
+            onClick={() => setMobileMenuOpen(false)}
+            className="flex min-h-[44px] items-center justify-between text-sm font-bold text-cocoa bg-primary/10 px-3 py-2 rounded-xl border border-primary/25 mb-3 group"
+          >
+            <span className="flex items-center gap-2 truncate">
+              <Sparkles className="size-3.5 text-primary shrink-0" />
+              <span className="truncate text-cocoa">{customDrop.label}</span>
+            </span>
+            <span className="text-[0.62rem] font-bold uppercase tracking-wider bg-primary/20 text-primary px-2 py-0.5 rounded-full shrink-0">
+              {customDrop.badge || 'Drop'} →
+            </span>
+          </Link>
+        )}
+
+        {NAV_GROUPS.map((group) => {
+          return (
+            <div key={group.heading}>
+              <p className="text-[0.68rem] font-bold uppercase tracking-[0.18em] text-terracotta mb-2">
+                {group.heading}
+              </p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                {group.items.map((item) => (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex min-h-[48px] items-center text-sm font-medium text-cocoa hover:text-primary"
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          );
+        })}
 
         <div className="border-t border-foreground/15 pt-4 mt-2">
           <p className="text-[0.68rem] font-bold uppercase tracking-[0.18em] text-terracotta mb-2">
