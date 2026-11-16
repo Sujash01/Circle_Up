@@ -1479,7 +1479,7 @@
 .tc-btn { position:relative; inset:auto; z-index:8; width:max-content; margin-top:1.25rem; }
 .tc-collage { grid-area: collage; position: relative; display: block; align-self: center; justify-self: center; width: min(100%, 480px); height: min(58vh, 520px); overflow: visible; }
 .tc-collage-blob { position:absolute; inset: 12% 6% 6%; border-radius: 48% 52% 44% 56% / 44% 45% 55% 56%; background: radial-gradient(ellipse at 50% 50%, rgba(200, 214, 184, 0.45) 0%, rgba(200, 214, 184, 0.18) 65%, transparent 100%); opacity: 0.45; mix-blend-mode: multiply; filter: blur(12px); pointer-events: none; }
-.tc-collage-photo { position:absolute; z-index:1; display:block; object-fit:cover; padding:7px; background:var(--card); border:1px solid color-mix(in srgb,var(--bark) 24%,transparent); box-shadow:var(--shadow-lift); }
+.tc-collage-photo { position:absolute; z-index:1; display:block; object-fit:cover; padding:0; border:0; background:transparent; box-shadow:0 18px 36px -20px rgb(30 42 28 / 0.5); }
 .tc-collage-one { left:9%; top:8%; width:43%; height:76%; border-radius:50% 50% 12% 12% / 30% 30% 8% 8%; transform:rotate(-5deg); }
 .tc-collage-two { right:8%; top:21%; width:42%; height:54%; border-radius:48% 52% 45% 55%; transform:rotate(5deg); }
 .tc-collage-three { left:30%; bottom:2%; width:38%; height:42%; border-radius:50% 50% 15% 15% / 35% 35% 10% 10%; transform:rotate(2deg); }
@@ -1696,10 +1696,10 @@
 
 .tc-collage-photo {
   display: block;
-  padding: 7px;
-  border: 1px solid color-mix(in srgb, var(--bark) 24%, transparent);
-  background: var(--card);
-  box-shadow: var(--shadow-lift);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: 0 18px 36px -20px rgb(30 42 28 / 0.5);
 }
 
 .tc-collage-one {
