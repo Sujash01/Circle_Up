@@ -261,19 +261,19 @@ function StorySection() {
       <Reveal className="grid items-stretch gap-12 lg:grid-cols-[0.94fr_1.06fr] lg:gap-14">
         <div className="relative">
           <NotebookPage className="story-photo-page mx-auto w-full max-w-[34rem] rounded-[1.6rem] p-3 sm:p-4">
-          <div className="photo-mat rounded-[1.6rem] p-2 shadow-lift">
-            <Blob
-              src={rtw1}
-              sizes="(min-width: 1024px) 38vw, 100vw"
-              alt="A vintage co-ord set carefully chosen for its next chapter"
-              width={912}
-              height={1200}
-              shape="wavy-oval"
-              outline
-              className="aspect-[4/4.6] w-full"
-              imageClassName="object-top"
-            />
-          </div>
+            <div className="photo-mat rounded-[1.6rem] p-2 shadow-lift">
+              <Blob
+                src={rtw1}
+                sizes="(min-width: 1024px) 38vw, 100vw"
+                alt="A vintage co-ord set carefully chosen for its next chapter"
+                width={912}
+                height={1200}
+                shape="wavy-oval"
+                outline
+                className="aspect-[4/4.6] w-full"
+                imageClassName="object-top"
+              />
+            </div>
           </NotebookPage>
         </div>
 
@@ -341,16 +341,16 @@ function WinterSection() {
             <div className="relative">
               <Pin className="-top-3 -left-2" />
               <NotebookPage className="rounded-xl p-3">
-              <div className="rounded-xl border border-foreground/20 bg-card p-1.5 shadow-[0_14px_30px_-22px_rgb(30_45_20/0.45)]">
-                <Blob
-                  src={lookbook}
-                  alt="Winter lookbook flat-lay"
-                  width={912}
-                  height={1104}
-                  shape="petal"
-                  className="aspect-[4/5] w-full"
-                />
-              </div>
+                <div className="rounded-xl border border-foreground/20 bg-card p-1.5 shadow-[0_14px_30px_-22px_rgb(30_45_20/0.45)]">
+                  <Blob
+                    src={lookbook}
+                    alt="Winter lookbook flat-lay"
+                    width={912}
+                    height={1104}
+                    shape="petal"
+                    className="aspect-[4/5] w-full"
+                  />
+                </div>
               </NotebookPage>
             </div>
             <SeeMore to="/thrifted-treasure" className="mt-4" />
@@ -386,16 +386,16 @@ function CommunitySection() {
     <section id="community" className={cn('home-vine-section scroll-mt-28 pt-14 pb-14 lg:pt-16 lg:pb-20', pad)}>
       <Reveal className="grid gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:gap-8">
         <NotebookPage className="community-photo-page mx-auto w-full max-w-[31rem] justify-self-center rounded-[2rem] p-3 sm:p-4">
-        <Blob
-          src={communityVignette}
-          alt="Illustration of a curated clothing rail, vintage handbag, and leafy plant"
-          width={900}
-          height={900}
-          shape="arch"
-          outline
-          style={{ transform: 'translateY(calc(var(--p-comm, 0) * -16px))' }}
-          className="aspect-square w-full will-change-transform"
-        />
+          <Blob
+            src={communityVignette}
+            alt="Illustration of a curated clothing rail, vintage handbag, and leafy plant"
+            width={900}
+            height={900}
+            shape="arch"
+            outline
+            style={{ transform: 'translateY(calc(var(--p-comm, 0) * -16px))' }}
+            className="aspect-square w-full will-change-transform"
+          />
         </NotebookPage>
         <div
           style={{ transform: 'translateY(calc(var(--p-comm, 0) * 16px))' }}
@@ -414,10 +414,10 @@ function CommunitySection() {
             <SeeMore to="/events" label="Learn more" className="mt-7 self-start lg:self-end" />
           </div>
           <Blob
-              src={worldSocial}
-              srcSet={`${worldSocialSmall} 480w, ${worldSocial} 768w`}
+            src={worldSocial}
+            srcSet={`${worldSocialSmall} 480w, ${worldSocial} 768w`}
             sizes="(min-width: 1024px) 46vw, 100vw"
-              alt="Warm lights and leafy branches at a CircleUp community event"
+            alt="Warm lights and leafy branches at a CircleUp community event"
             width={768}
             height={1024}
             shape="arch"
@@ -479,35 +479,35 @@ const worlds: Array<{
   srcSet?: string;
   sizes?: string;
 }> = [
-  { to: '/rentals', title: 'Rentals', note: 'Wear for an occasion, then return it', img: rtw3, alt: 'Blazer with skirt co-ord set' },
-  { to: '/thrifted-treasure', title: 'Thrifted Treasure', note: 'One-of-one vintage finds', img: heroDetail1, alt: 'Top and skirt co-ord set on a mannequin' },
-  { to: '/accessories', title: 'Accessories', note: 'Bags, scarves and small things', img: bag3, alt: 'Structured handheld bag' },
-  {
-    to: '/events',
-    title: 'Social Circle',
-    note: 'Store sales and community days',
-    img: worldSocial,
-    srcSet: `${worldSocialSmall} 480w, ${worldSocial} 768w`,
-    sizes: '(min-width: 1024px) 24vw, 50vw',
-    alt: 'Warm lights and leafy branches decorate the CircleUp shop',
-  },
-];
+    { to: '/rentals', title: 'Rentals', note: 'Wear for an occasion, then return it', img: rtw3, alt: 'Blazer with skirt co-ord set' },
+    { to: '/thrifted-treasure', title: 'Thrifted Treasure', note: 'One-of-one vintage finds', img: heroDetail1, alt: 'Top and skirt co-ord set on a mannequin' },
+    { to: '/accessories', title: 'Accessories', note: 'Bags, scarves and small things', img: bag3, alt: 'Structured handheld bag' },
+    {
+      to: '/events',
+      title: 'Social Circle',
+      note: 'Store sales and community days',
+      img: worldSocial,
+      srcSet: `${worldSocialSmall} 480w, ${worldSocial} 768w`,
+      sizes: '(min-width: 1024px) 24vw, 50vw',
+      alt: 'Warm lights and leafy branches decorate the CircleUp shop',
+    },
+  ];
 
 function WorldsSection({ tiles }: { tiles?: Array<{ to: string; title: string; note: string; img: string; alt: string }> }) {
   const activeTiles = tiles && tiles.length > 0
     ? tiles.map((t) => {
-        // Find matching local asset fallback if available
-        const local = worlds.find((w) => w.to === t.to);
-        return {
-          to: t.to,
-          title: t.title,
-          note: t.note,
-          img: t.img || local?.img || rtw3,
-          alt: t.alt || local?.alt || t.title,
-          srcSet: local?.srcSet,
-          sizes: local?.sizes,
-        };
-      })
+      // Find matching local asset fallback if available
+      const local = worlds.find((w) => w.to === t.to);
+      return {
+        to: t.to,
+        title: t.title,
+        note: t.note,
+        img: t.img || local?.img || rtw3,
+        alt: t.alt || local?.alt || t.title,
+        srcSet: local?.srcSet,
+        sizes: local?.sizes,
+      };
+    })
     : worlds;
 
   return (
@@ -719,28 +719,28 @@ export function HomePage() {
 
   const apiReadyToWear: ProductPreview[] = homepageData?.collections?.readyToWear
     ? homepageData.collections.readyToWear.map((p) => ({
-        id: p.id,
-        img: p.img || rtw1,
-        name: p.name,
-        price: p.price,
-        width: 912,
-        height: 1200,
-        aspect: 'aspect-[4/5]',
-        to: p.to,
-      }))
+      id: p.id,
+      img: p.img || rtw1,
+      name: p.name,
+      price: p.price,
+      width: 912,
+      height: 1200,
+      aspect: 'aspect-[4/5]',
+      to: p.to,
+    }))
     : [];
 
   const apiHandbags: ProductPreview[] = homepageData?.collections?.handbags
     ? homepageData.collections.handbags.map((p) => ({
-        id: p.id,
-        img: p.img || bag1,
-        name: p.name,
-        price: p.price,
-        width: 1008,
-        height: 1008,
-        aspect: 'aspect-square',
-        to: p.to,
-      }))
+      id: p.id,
+      img: p.img || bag1,
+      name: p.name,
+      price: p.price,
+      width: 1008,
+      height: 1008,
+      aspect: 'aspect-square',
+      to: p.to,
+    }))
     : [];
 
   const activeReadyToWear =
