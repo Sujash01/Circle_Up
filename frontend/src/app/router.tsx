@@ -10,6 +10,7 @@ import {
 } from 'react-router-dom';
 import { ExitIntentModal } from '@/components/storefront/ExitIntentModal';
 import { StorefrontCleanLayout, StorefrontLayout } from '@/components/storefront/StorefrontChrome';
+import { VinylMusicPlayer } from '@/components/audio/VinylMusicPlayer';
 import { HomePage } from '@/features/public/HomePage';
 import { GuestRoute } from '@/components/auth/GuestRoute';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
@@ -54,6 +55,7 @@ function RootScrollWrapper() {
         <Outlet />
       </Suspense>
       <ExitIntentModal />
+      <VinylMusicPlayer />
     </>
   );
 }
