@@ -42,10 +42,11 @@ export function useChestScroll(
       unsubscribe = subscribeToScrollFrames((scrollY, now) => {
         const scrollOffset = Math.max(0, scrollY - heroDocTop);
         const target = clamp(scrollOffset / heroTrack);
+        const diff = Math.abs(target - current);
         current += (target - current) * 0.14;
-        if (Math.abs(target - current) < 0.0005) current = target;
+        if (diff < 0.0005) current = target;
         rendererRef.current?.(current, now);
-        return true;
+        return diff >= 0.0005;
       });
     };
     const stop = () => {

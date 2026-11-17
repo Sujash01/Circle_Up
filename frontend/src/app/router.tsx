@@ -10,36 +10,37 @@ import {
 } from 'react-router-dom';
 import { ExitIntentModal } from '@/components/storefront/ExitIntentModal';
 import { StorefrontCleanLayout, StorefrontLayout } from '@/components/storefront/StorefrontChrome';
-import { AboutPage } from '@/features/public/AboutPage';
-import { BrandNewPage } from '@/features/public/BrandNewPage';
-import { CartPage } from '@/features/public/CartPage';
-import { CategoryListingPage } from '@/features/public/CategoryListingPage';
-import { ContactPage } from '@/features/public/ContactPage';
-import { EventDetailPage } from '@/features/public/EventDetailPage';
-import { EventsPage } from '@/features/public/EventsPage';
-import { HandcraftedPage } from '@/features/public/HandcraftedPage';
 import { HomePage } from '@/features/public/HomePage';
-import { JewelleryPage } from '@/features/public/JewelleryPage';
-import { NewArrivalsPage } from '@/features/public/NewArrivalsPage';
-import { NotFoundPage } from '@/features/public/NotFoundPage';
-import { ProductDetailPage } from '@/features/public/ProductDetailPage';
-import { RentalsPage } from '@/features/public/RentalsPage';
-import { ReviewsPage } from '@/features/public/ReviewsPage';
-import { SearchPage } from '@/features/public/SearchPage';
-import { SignInPage } from '@/features/public/SignInPage';
-import { SignUpPage } from '@/features/public/SignUpPage';
-import { SitemapPage } from '@/features/public/SitemapPage';
-import { CustomerAccountPage } from '@/features/customer/CustomerAccountPage';
-import { ForgotPasswordPage } from '@/features/auth/ForgotPasswordPage';
-import { ResetPasswordPage } from '@/features/auth/ResetPasswordPage';
-import { AuthCallbackPage } from '@/features/auth/AuthCallbackPage';
 import { GuestRoute } from '@/components/auth/GuestRoute';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
-import { ThriftCrewPage } from '@/features/public/ThriftCrewPage';
-import { ThriftedPage } from '@/features/public/ThriftedPage';
-import { ThriftedTreasurePage } from '@/features/public/ThriftedTreasurePage';
-import { WishlistPage } from '@/features/public/WishlistPage';
 
+// Route-based code splitting: Lazy-load non-landing storefront routes on demand
+const AboutPage = lazy(() => import('@/features/public/AboutPage').then((m) => ({ default: m.AboutPage })));
+const BrandNewPage = lazy(() => import('@/features/public/BrandNewPage').then((m) => ({ default: m.BrandNewPage })));
+const CartPage = lazy(() => import('@/features/public/CartPage').then((m) => ({ default: m.CartPage })));
+const CategoryListingPage = lazy(() => import('@/features/public/CategoryListingPage').then((m) => ({ default: m.CategoryListingPage })));
+const ContactPage = lazy(() => import('@/features/public/ContactPage').then((m) => ({ default: m.ContactPage })));
+const EventDetailPage = lazy(() => import('@/features/public/EventDetailPage').then((m) => ({ default: m.EventDetailPage })));
+const EventsPage = lazy(() => import('@/features/public/EventsPage').then((m) => ({ default: m.EventsPage })));
+const HandcraftedPage = lazy(() => import('@/features/public/HandcraftedPage').then((m) => ({ default: m.HandcraftedPage })));
+const JewelleryPage = lazy(() => import('@/features/public/JewelleryPage').then((m) => ({ default: m.JewelleryPage })));
+const NewArrivalsPage = lazy(() => import('@/features/public/NewArrivalsPage').then((m) => ({ default: m.NewArrivalsPage })));
+const NotFoundPage = lazy(() => import('@/features/public/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
+const ProductDetailPage = lazy(() => import('@/features/public/ProductDetailPage').then((m) => ({ default: m.ProductDetailPage })));
+const RentalsPage = lazy(() => import('@/features/public/RentalsPage').then((m) => ({ default: m.RentalsPage })));
+const ReviewsPage = lazy(() => import('@/features/public/ReviewsPage').then((m) => ({ default: m.ReviewsPage })));
+const SearchPage = lazy(() => import('@/features/public/SearchPage').then((m) => ({ default: m.SearchPage })));
+const SignInPage = lazy(() => import('@/features/public/SignInPage').then((m) => ({ default: m.SignInPage })));
+const SignUpPage = lazy(() => import('@/features/public/SignUpPage').then((m) => ({ default: m.SignUpPage })));
+const SitemapPage = lazy(() => import('@/features/public/SitemapPage').then((m) => ({ default: m.SitemapPage })));
+const CustomerAccountPage = lazy(() => import('@/features/customer/CustomerAccountPage').then((m) => ({ default: m.CustomerAccountPage })));
+const ForgotPasswordPage = lazy(() => import('@/features/auth/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })));
+const ResetPasswordPage = lazy(() => import('@/features/auth/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage })));
+const AuthCallbackPage = lazy(() => import('@/features/auth/AuthCallbackPage').then((m) => ({ default: m.AuthCallbackPage })));
+const ThriftCrewPage = lazy(() => import('@/features/public/ThriftCrewPage').then((m) => ({ default: m.ThriftCrewPage })));
+const ThriftedPage = lazy(() => import('@/features/public/ThriftedPage').then((m) => ({ default: m.ThriftedPage })));
+const ThriftedTreasurePage = lazy(() => import('@/features/public/ThriftedTreasurePage').then((m) => ({ default: m.ThriftedTreasurePage })));
+const WishlistPage = lazy(() => import('@/features/public/WishlistPage').then((m) => ({ default: m.WishlistPage })));
 const AdminApp = lazy(() => import('@/admin/AdminApp'));
 
 function RootScrollWrapper() {
@@ -49,7 +50,9 @@ function RootScrollWrapper() {
   }, [pathname]);
   return (
     <>
-      <Outlet />
+      <Suspense fallback={null}>
+        <Outlet />
+      </Suspense>
       <ExitIntentModal />
     </>
   );

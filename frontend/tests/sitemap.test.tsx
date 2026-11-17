@@ -4,18 +4,19 @@ import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { SitemapPage } from '../src/features/public/SitemapPage';
 import { productService } from '../src/services/productService';
+import type { Product, ProductCategorySlug } from '../src/types/storefront';
 
-const MOCK_PRODUCTS = [
+const MOCK_PRODUCTS: Product[] = [
   {
     id: 'prod-1',
     serialNumber: 'SN-001',
     name: 'Top and Skirt Co-Ord Set',
     slug: 'top-and-skirt-co-ord-set',
-    category: 'womens-one-piece',
+    category: 'womens-one-piece' as ProductCategorySlug,
     categoryLabel: "Women's One-Piece",
     subcategory: 'Co-Ord Sets',
     productType: 'Pre-Loved',
-    condition: 'Verified Vintage',
+    condition: 'Vintage Wear',
     gender: 'Women',
     price: 3500,
     images: ['/mock-coord.jpg'],
@@ -23,7 +24,7 @@ const MOCK_PRODUCTS = [
     stock: 1,
     featured: true,
     isNewArrival: true,
-    availability: 'In Stock' as const,
+    availability: 'In Stock',
     description: 'Vintage co-ord set.',
     tags: ['vintage', 'coord'],
     variants: [],
@@ -34,11 +35,11 @@ const MOCK_PRODUCTS = [
     serialNumber: 'SN-002',
     name: 'Vintage Leather Handbag',
     slug: 'vintage-leather-handbag',
-    category: 'accessories',
+    category: 'accessories' as ProductCategorySlug,
     categoryLabel: 'Accessories',
     subcategory: 'Handbags',
     productType: 'Pre-Loved',
-    condition: 'Mint Condition',
+    condition: 'Mint',
     gender: 'Unisex',
     price: 2400,
     images: ['/mock-bag.jpg'],
@@ -46,7 +47,7 @@ const MOCK_PRODUCTS = [
     stock: 1,
     featured: false,
     isNewArrival: false,
-    availability: 'In Stock' as const,
+    availability: 'In Stock',
     description: 'Leather handheld satchel.',
     tags: ['leather', 'bag'],
     variants: [],

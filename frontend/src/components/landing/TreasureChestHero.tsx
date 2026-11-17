@@ -1,15 +1,15 @@
 import { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import bag1 from '@/assets/bag-1.jpg';
-import bag2 from '@/assets/bag-2.jpg';
-import heroDetail1 from '@/assets/hero-detail-1.jpg';
-import lookbook from '@/assets/lookbook.jpg';
-import rtw2 from '@/assets/rtw-2.jpg';
-import rtw3 from '@/assets/rtw-3.jpg';
-import rtw4 from '@/assets/rtw-4.jpg';
-import heroStoreRack from '@/assets/hero-store-rack.jpg';
-import heroStoreCounter from '@/assets/hero-store-counter.jpg';
-import heroStoreLamp from '@/assets/hero-store-lamp.jpg';
+import bag1 from '@/assets/bag-1.webp';
+import bag2 from '@/assets/bag-2.webp';
+import heroDetail1 from '@/assets/hero-detail-1.webp';
+import lookbook from '@/assets/lookbook.webp';
+import rtw2 from '@/assets/rtw-2.webp';
+import rtw3 from '@/assets/rtw-3.webp';
+import rtw4 from '@/assets/rtw-4.webp';
+import heroStoreRack from '@/assets/hero-store-rack.webp';
+import heroStoreCounter from '@/assets/hero-store-counter.webp';
+import heroStoreLamp from '@/assets/hero-store-lamp.webp';
 import { ChestModel } from './chest/ChestModel';
 import { formatPrice } from '@/services/cartService';
 import {
@@ -167,11 +167,13 @@ export function TreasureChestHero({ picks }: { picks?: ChestProduct[] } = {}) {
     const sizeUp = () => {
       const w = window.innerWidth;
       const mobile = w < 760;
-      navHeight = headerEl ? headerEl.offsetHeight : 76;
-      hero.style.setProperty('--tc-nav-h', `${navHeight}px`);
-      hero.style.setProperty('--tc-banner-h', `${bannerEl?.getBoundingClientRect().height ?? 40}px`);
 
-      const sh = stage.getBoundingClientRect().height || window.innerHeight - navHeight;
+      // 1. Batch all DOM layout reads first to avoid forced synchronous reflows
+      navHeight = headerEl ? headerEl.offsetHeight : 76;
+      const bannerH = bannerEl instanceof HTMLElement ? bannerEl.offsetHeight : (bannerEl?.getBoundingClientRect().height ?? 40);
+      const stageH = stage.getBoundingClientRect().height;
+      const sh = stageH || (window.innerHeight - navHeight);
+
       if (mobile) {
         // Mobile screens: scaled down so small screens (320px-440px) stay comfortably inside frame
         u = clamp((w * 0.52) / 440, 0.35, 0.50);
@@ -189,6 +191,10 @@ export function TreasureChestHero({ picks }: { picks?: ChestProduct[] } = {}) {
         u = clamp(Math.min((w * 0.27) / 440, sh / 560), 0.78, 1.02);
         cardU = u;
       }
+
+      // 2. Batch all style writes together
+      hero.style.setProperty('--tc-nav-h', `${navHeight}px`);
+      hero.style.setProperty('--tc-banner-h', `${bannerH}px`);
       hero.style.setProperty('--u', u.toFixed(3));
       hero.style.setProperty('--card-u', cardU.toFixed(3));
     };
@@ -338,6 +344,7 @@ export function TreasureChestHero({ picks }: { picks?: ChestProduct[] } = {}) {
       sy += (pty - sy) * 0.06;
       render(progress, now);
     };
+    render(0, 0);
 
     return () => {
       frameRendererRef.current = () => {};
@@ -382,9 +389,9 @@ export function TreasureChestHero({ picks }: { picks?: ChestProduct[] } = {}) {
 
         <div className="tc-collage" role="group" aria-label="A collage of curated thrifted finds in our studio">
           <span aria-hidden className="tc-collage-blob" />
-          <img className="tc-collage-photo tc-collage-one" src={heroStoreRack} alt="Curated clothing rails and jackets at CircleUp studio" width={382} height={456} loading="eager" decoding="async" />
-          <img className="tc-collage-photo tc-collage-two" src={heroStoreCounter} alt="CircleUp checkout studio counter and vinyl collection" width={377} height={348} loading="eager" decoding="async" />
-          <img className="tc-collage-photo tc-collage-three" src={heroStoreLamp} alt="Vintage straw hat pendant lamp in the shop window" width={379} height={315} loading="eager" decoding="async" />
+          <img className="tc-collage-photo tc-collage-one" src={heroStoreRack} alt="Curated clothing rails and jackets at CircleUp studio" width={382} height={456} fetchPriority="high" loading="eager" decoding="async" />
+          <img className="tc-collage-photo tc-collage-two" src={heroStoreCounter} alt="CircleUp checkout studio counter and vinyl collection" width={377} height={348} loading="lazy" decoding="async" />
+          <img className="tc-collage-photo tc-collage-three" src={heroStoreLamp} alt="Vintage straw hat pendant lamp in the shop window" width={379} height={315} loading="lazy" decoding="async" />
         </div>
 
         <div
@@ -463,7 +470,7 @@ export function TreasureChestHero({ picks }: { picks?: ChestProduct[] } = {}) {
                     alt={item.name}
                     width={300}
                     height={390}
-                    loading="eager"
+                    loading="lazy"
                     decoding="async"
                   />
                 </div>

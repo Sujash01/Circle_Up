@@ -120,6 +120,9 @@ async function fetchWithSwr<T>(
         timeout: 12000,
       };
       const res = await axios.get<{ success: true; data: T }>(url, config);
+      if (!res.data || typeof res.data !== 'object' || !('data' in res.data)) {
+        throw new Error('Invalid JSON API response shape');
+      }
       const data = res.data.data;
       swrCache.set(cacheKey, {
         data,

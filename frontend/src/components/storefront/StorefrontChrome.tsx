@@ -7,7 +7,7 @@ import { authService } from '@/services/authService';
 import { storefrontApi } from '@/services/storefrontApi';
 import bag1 from '@/assets/bag-1.jpg';
 import circleUpLogo from '@/assets/circle-up-logo.png';
-import crumpledPaper from '@/assets/crumpled-paper.jpg';
+import crumpledPaper from '@/assets/crumpled-paper.webp';
 import rtw1 from '@/assets/rtw-1.jpg';
 import { useStore } from '@/context/StoreContext';
 import { SpiralBinding } from '@/components/ui/SpiralBinding';

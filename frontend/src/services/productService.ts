@@ -314,7 +314,14 @@ export const productService = {
   },
 };
 
-// Initial live sync triggered upon client load (skipped during unit tests)
+// Initial live sync deferred after client hydration/idle (skipped during unit tests)
 if (typeof window !== 'undefined' && import.meta.env.MODE !== 'test') {
-  void productService.initLiveSync();
+  if ('requestIdleCallback' in window) {
+    (window as unknown as { requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => void }).requestIdleCallback(
+      () => void productService.initLiveSync(),
+      { timeout: 3000 },
+    );
+  } else {
+    setTimeout(() => void productService.initLiveSync(), 600);
+  }
 }

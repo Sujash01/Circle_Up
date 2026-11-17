@@ -256,18 +256,10 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
     void fonts?.ready.then(() => {
       if (!disposed) measure();
     });
-    const timer1 = setTimeout(() => {
-      if (!disposed) measure();
-    }, 150);
-    const timer2 = setTimeout(() => {
-      if (!disposed) measure();
-    }, 600);
 
     return () => {
       disposed = true;
       observer?.disconnect();
-      clearTimeout(timer1);
-      clearTimeout(timer2);
       container?.removeEventListener('load', measure, true);
       window.removeEventListener('resize', measure);
       window.removeEventListener('load', measure);
@@ -292,7 +284,7 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
       visiblePath.style.strokeDasharray = `${totalLength}`;
       visiblePath.style.strokeDashoffset = initialDashOffset.toFixed(2);
     });
-    const sampleCount = Math.min(800, Math.max(240, Math.ceil(size.height / 12)));
+    const sampleCount = Math.min(80, Math.max(30, Math.ceil(size.height / 60)));
     metricsRef.current.points = Array.from({ length: sampleCount + 1 }, (_, index) => {
       const point = path.getPointAtLength((index / sampleCount) * totalLength);
       return { x: point.x, y: point.y };
@@ -309,8 +301,8 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
       const t = 0.025 + ((index + 0.35 + variation.spacingJitter * 0.3) / count) * 0.94;
       const distance = t * totalLength;
       const point = path.getPointAtLength(distance);
-      const before = path.getPointAtLength(Math.max(0, distance - 5));
-      const after = path.getPointAtLength(Math.min(totalLength, distance + 5));
+      const before = path.getPointAtLength(Math.max(0, distance - 4));
+      const after = path.getPointAtLength(Math.min(totalLength, distance + 4));
       const tangent = (Math.atan2(after.y - before.y, after.x - before.x) * 180) / Math.PI;
       return {
         id: index,
@@ -424,22 +416,40 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
       unsubscribe = null;
       lastFrameTime = 0;
     };
+    let isVisible = false;
     const handleMotionChange = (event: MediaQueryListEvent) => {
       reducedMotion = event.matches;
       if (reducedMotion) {
         stop();
         metricsRef.current.progress = 1;
         applyProgress(1);
-      } else {
+      } else if (isVisible) {
         start();
       }
     };
     motionQuery?.addEventListener?.('change', handleMotionChange);
+
     if (reducedMotion) {
       metricsRef.current.progress = 1;
       applyProgress(1);
-    } else {
+    } else if (typeof IntersectionObserver === 'undefined') {
+      isVisible = true;
       start();
+    } else {
+      const io = new IntersectionObserver(
+        ([entry]) => {
+          isVisible = Boolean(entry?.isIntersecting);
+          if (isVisible) start();
+          else stop();
+        },
+        { rootMargin: '240px 0px' },
+      );
+      io.observe(container);
+      return () => {
+        io.disconnect();
+        stop();
+        motionQuery?.removeEventListener?.('change', handleMotionChange);
+      };
     }
 
     return () => {

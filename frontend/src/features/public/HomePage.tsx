@@ -6,7 +6,7 @@ import { storefrontApi, type HomepagePayload } from '@/services/storefrontApi';
 import bag1 from '@/assets/bag-1.jpg';
 import bag3 from '@/assets/bag-3.jpg';
 import communityVignette from '@/assets/community-vignette.svg';
-import crumpledPaper from '@/assets/crumpled-paper.jpg';
+import crumpledPaper from '@/assets/crumpled-paper.webp';
 import heroDetail1 from '@/assets/hero-detail-1.jpg';
 import heroDetail2 from '@/assets/hero-detail-2.jpg';
 import lookbook from '@/assets/lookbook.jpg';
