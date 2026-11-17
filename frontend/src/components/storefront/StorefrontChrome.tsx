@@ -35,21 +35,20 @@ const NAV_GROUPS = [
   {
     heading: 'Other Items',
     items: [
-      { label: 'Footwear', to: '/footwear' },
-      { label: 'Rentals', to: '/rentals' },
-      { label: 'Thrifted Treasure', to: '/thrifted-treasure' },
       { label: 'Jewellery', to: '/jewellery' },
       { label: 'Accessories', to: '/accessories' },
+      { label: 'Footwear', to: '/footwear' },
       { label: 'Handcrafted', to: '/handcrafted' },
+      { label: 'Rentals', to: '/rentals' },
     ],
   },
   {
     heading: 'CircleUp World',
     items: [
       { label: 'About Us', to: '/about' },
-      { label: 'Reviews', to: '/reviews' },
       { label: 'Events — Social Circle', to: '/events' },
       { label: '#ThriftCrew', to: '/thriftcrew' },
+      { label: 'Reviews', to: '/reviews' },
       { label: 'Contact', to: '/contact' },
     ],
   },

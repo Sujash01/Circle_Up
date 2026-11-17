@@ -8,6 +8,7 @@ import { StoreProvider } from '../src/context/StoreContext';
 import { BrandNewPage } from '../src/features/public/BrandNewPage';
 import { ThriftedPage } from '../src/features/public/ThriftedPage';
 import { CartPage } from '../src/features/public/CartPage';
+import { StorefrontHeader } from '../src/components/storefront/StorefrontChrome';
 import { productService } from '../src/services/productService';
 import { cartService, type CartState } from '../src/services/cartService';
 import type { Product } from '../src/types/storefront';
@@ -227,6 +228,63 @@ describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
     // Ensure COD is NOT present
     expect(host.textContent).not.toContain('Cash on Delivery (COD)');
     expect(host.textContent).not.toContain('Pay with cash or UPI on delivery');
+
+    act(() => {
+      root.unmount();
+    });
+    host.remove();
+  });
+
+  it('renders Collections directory dropdown with exact column headings and item order', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    act(() => {
+      root.render(
+        <Provider store={store}>
+          <StoreProvider>
+            <MemoryRouter initialEntries={['/#collections']}>
+              <StorefrontHeader />
+            </MemoryRouter>
+          </StoreProvider>
+        </Provider>,
+      );
+    });
+
+    const dropdown = host.querySelector('[role="dialog"][aria-label="CircleUp Collections Directory"]');
+    expect(dropdown).not.toBeNull();
+
+    // Check headings
+    const headings = Array.from(dropdown!.querySelectorAll('h2')).map((h) => h.textContent?.trim());
+    expect(headings).toEqual(['Clothing', 'Other Items', 'CircleUp World']);
+
+    // Check Other Items order
+    const columns = dropdown!.querySelectorAll('.grid-cols-3 > div');
+    expect(columns.length).toBe(3);
+
+    const otherItemsLinks = Array.from(columns[1]!.querySelectorAll('li a')).map((a) =>
+      a.textContent?.trim(),
+    );
+    expect(otherItemsLinks).toEqual([
+      'Jewellery',
+      'Accessories',
+      'Footwear',
+      'Handcrafted',
+      'Rentals',
+    ]);
+
+    // Check CircleUp World items order
+    const circleUpWorldLinks = Array.from(columns[2]!.querySelectorAll('li a')).map((a) =>
+      a.textContent?.trim(),
+    );
+    expect(circleUpWorldLinks).toEqual([
+      'About Us',
+      'Events — Social Circle',
+      '#ThriftCrew',
+      'Reviews',
+      'Contact',
+    ]);
 
     act(() => {
       root.unmount();

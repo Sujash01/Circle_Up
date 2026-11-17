@@ -21,7 +21,9 @@ describe('TreasureChestHero', () => {
     expect(host.querySelector('h1')?.textContent?.replace(/\s+/g, ' ')).toBe('Fashion That Lasts!');
     expect(host.querySelector('.tc-model')).toBeNull();
     expect(host.querySelectorAll('.tc-collage-photo')).toHaveLength(3);
-    expect(host.querySelector('.tc-photo-right img')).not.toBeNull();
+    expect(host.querySelector('.tc-photo-right')).toBeNull();
+    expect(host.querySelector('.tc-aside')).toBeNull();
+    expect(host.querySelector('.tc-tagline')).toBeNull();
     expect(host.querySelector('.tc-btn')?.textContent).toBe('Explore the edit');
     expect(host.querySelector('.tc-hint')).toBeNull();
     expect(host.querySelector('.tc-mouse')).toBeNull();

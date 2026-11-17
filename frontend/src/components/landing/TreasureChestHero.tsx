@@ -6,7 +6,6 @@ import heroDetail1 from '@/assets/hero-detail-1.webp';
 import lookbook from '@/assets/lookbook.webp';
 import rtw2 from '@/assets/rtw-2.webp';
 import rtw3 from '@/assets/rtw-3.webp';
-import rtw4 from '@/assets/rtw-4.webp';
 import heroStoreRack from '@/assets/hero-store-rack.webp';
 import heroStoreCounter from '@/assets/hero-store-counter.webp';
 import heroStoreLamp from '@/assets/hero-store-lamp.webp';
@@ -133,8 +132,6 @@ export function TreasureChestHero({ picks }: { picks?: ChestProduct[] } = {}) {
   const sparksRef = useRef<HTMLDivElement>(null);
   const underglowRef = useRef<HTMLDivElement>(null);
   const copyRef = useRef<HTMLDivElement>(null);
-  const asideRef = useRef<HTMLDivElement>(null);
-  const taglineRef = useRef<HTMLDivElement>(null);
   const exploreBtnRef = useRef<HTMLAnchorElement>(null);
   const seamGlintRef = useRef<HTMLDivElement>(null);
 
@@ -331,8 +328,6 @@ export function TreasureChestHero({ picks }: { picks?: ChestProduct[] } = {}) {
       }
 
       const fo = (1 - clamp((p - 0.02) / 0.1)).toFixed(3);
-      if (asideRef.current) asideRef.current.style.opacity = fo;
-      if (taglineRef.current) taglineRef.current.style.opacity = fo;
       if (exploreBtnRef.current) exploreBtnRef.current.style.opacity = fo;
       if (copyRef.current) {
         copyRef.current.style.transform = `translateY(${shift ? (-12 * p).toFixed(1) : 0}px)`;
@@ -372,19 +367,6 @@ export function TreasureChestHero({ picks }: { picks?: ChestProduct[] } = {}) {
           <Link ref={exploreBtnRef} className="tc-btn" to="/new-arrivals">
             Explore the edit
           </Link>
-          <div ref={taglineRef} className="tc-tagline">
-            A good find feels like fate.
-            <svg aria-hidden="true" viewBox="0 0 280 26" className="tc-underline">
-              <path d="M5 18C74 5 163 6 271 15M44 21C116 12 196 12 252 17" />
-            </svg>
-          </div>
-        </div>
-
-        <div ref={asideRef} className="tc-aside">
-          <span className="tc-script">The next chapter looks good on you.</span>
-          <figure className="tc-photo tc-photo-right">
-            <img src={rtw4} alt="A vintage denim jumpsuit from the CircleUp collection" width={912} height={1200} loading="eager" decoding="async" />
-          </figure>
         </div>
 
         <div className="tc-collage" role="group" aria-label="A collage of curated thrifted finds in our studio">
