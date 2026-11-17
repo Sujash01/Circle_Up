@@ -1,6 +1,7 @@
 import { CATEGORIES, CATEGORY_MAP } from '@/data/categories';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { apiClient } from '@/services/apiClient';
+import { extractCategoryCodeFromSerial } from '@circleup/shared';
 import type {
   CategoryMeta,
   GenderTag,
@@ -51,9 +52,16 @@ function mapSupabaseRowToProduct(row: Record<string, unknown>): Product {
   const sizes = Array.isArray(row.sizes) ? (row.sizes as string[]) : [];
   const tags = Array.isArray(row.tags) ? (row.tags as string[]) : [];
 
+  const rawSerial = (row.serial_number as string) || (row.id as string)?.toUpperCase();
+  const rawStatus = (row.status as string) || (stock > 0 ? 'AVAILABLE' : 'SOLD');
+  const catCode = (row.category_code as string) || (rawSerial ? extractCategoryCodeFromSerial(rawSerial) : undefined);
+
   return {
     id: (row.id as string) || (row.serial_number as string) || 'cu-unknown',
-    serialNumber: (row.serial_number as string) || (row.id as string)?.toUpperCase(),
+    serialNumber: rawSerial,
+    categoryCode: catCode,
+    sizeCategory: (row.size_category as string) || undefined,
+    measurementsData: (row.measurements_data as Record<string, string>) || undefined,
     name: (row.name as string) || 'Untitled Piece',
     slug: (row.slug as string) || normalizeToken((row.name as string) || 'untitled-piece'),
     description: (row.description as string) || '',
@@ -79,6 +87,7 @@ function mapSupabaseRowToProduct(row: Record<string, unknown>): Product {
     featured: Boolean(row.featured),
     isNewArrival: Boolean(row.is_new_arrival),
     availability: stock > 0 ? (stock <= 2 ? 'Low Stock' : 'In Stock') : 'Sold Out',
+    status: rawStatus,
     createdAt: (row.created_at as string) || new Date().toISOString(),
   };
 }
@@ -114,11 +123,15 @@ export const productService = {
         const { data, error } = await supabase
           .from('products')
           .select('*')
-          .in('status', ['ACTIVE', 'PUBLISHED'])
           .order('created_at', { ascending: false });
 
         if (!error && Array.isArray(data)) {
-          productCache = data.map(mapSupabaseRowToProduct);
+          // Exclude internal/back-of-house statuses: MISSING, NEED_ATTENTION, DRAFT, ARCHIVED
+          const visibleRows = data.filter((row: Record<string, unknown>) => {
+            const st = String(row.status || '').toUpperCase();
+            return !['MISSING', 'NEED_ATTENTION', 'DRAFT', 'ARCHIVED'].includes(st);
+          });
+          productCache = visibleRows.map(mapSupabaseRowToProduct);
           liveDatabaseConnected = true;
           notifyListeners();
           return;
@@ -131,7 +144,11 @@ export const productService = {
         .catch(() => null);
 
       if (response?.data?.success && Array.isArray(response.data.data)) {
-        productCache = response.data.data.map(mapSupabaseRowToProduct);
+        const visibleRows = response.data.data.filter((row: Record<string, unknown>) => {
+          const st = String(row.status || '').toUpperCase();
+          return !['MISSING', 'NEED_ATTENTION', 'DRAFT', 'ARCHIVED'].includes(st);
+        });
+        productCache = visibleRows.map(mapSupabaseRowToProduct);
         liveDatabaseConnected = true;
         notifyListeners();
       }
@@ -313,6 +330,10 @@ export const productService = {
     return updated;
   },
 };
+
+if (typeof window !== 'undefined') {
+  (window as unknown as { productService: typeof productService }).productService = productService;
+}
 
 // Initial live sync deferred after client hydration/idle (skipped during unit tests)
 if (typeof window !== 'undefined' && import.meta.env.MODE !== 'test') {

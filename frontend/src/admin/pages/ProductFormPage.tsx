@@ -7,10 +7,19 @@ import {
   UploadCloud,
   X,
   Star,
+  Ruler,
   Check,
   Sparkles,
   Save,
 } from 'lucide-react';
+import {
+  INVENTORY_CATEGORIES,
+  INVENTORY_STATUSES,
+  type InventoryStatusCode,
+  SIZE_CHARTS,
+  resolveSizeChartForCategory,
+  extractCategoryCodeFromSerial,
+} from '@circleup/shared';
 
 interface ImageItem {
   url: string;
@@ -38,6 +47,9 @@ export function ProductFormPage() {
   const [originalPriceRupees, setOriginalPriceRupees] = useState('');
   const [compareAtPriceRupees, setCompareAtPriceRupees] = useState('');
   const [stock, setStock] = useState('1');
+  const [categoryCode, setCategoryCode] = useState<string>('SET');
+  const [sizeCategory, setSizeCategory] = useState<string>('top-bralette');
+  const [measurementsData, setMeasurementsData] = useState<Record<string, string>>({});
   const [category, setCategory] = useState('womens-one-piece');
   const [subcategory, setSubcategory] = useState('Co-ords');
   const [condition, setCondition] = useState('Mint');
@@ -46,7 +58,7 @@ export function ProductFormPage() {
   const [tagsStr, setTagsStr] = useState('thrift, vintage');
   const [featured, setFeatured] = useState(false);
   const [chestPick, setChestPick] = useState(false);
-  const [status, setStatus] = useState<'DRAFT' | 'PUBLISHED' | 'ARCHIVED' | 'SOLD_OUT'>('PUBLISHED');
+  const [status, setStatus] = useState<string>('AVAILABLE');
 
   // Sizes & Per-size stock
   const [selectedSizes, setSelectedSizes] = useState<string[]>(['M']);
@@ -97,7 +109,33 @@ export function ProductFormPage() {
           setTagsStr((found.tags || []).join(', '));
           setFeatured(Boolean(found.featured));
           setChestPick(Boolean(found.chestPick));
-          setStatus((found.status as 'DRAFT' | 'PUBLISHED' | 'ARCHIVED' | 'SOLD_OUT') || 'PUBLISHED');
+          setStatus((found.status as string) || 'AVAILABLE');
+
+          const code = (found as { categoryCode?: string }).categoryCode || extractCategoryCodeFromSerial(found.serialNumber || '');
+          if (code && INVENTORY_CATEGORIES[code]) {
+            setCategoryCode(code);
+          }
+          const sizeCat =
+            (found as { sizeCategory?: string }).sizeCategory ||
+            resolveSizeChartForCategory(code || found.category || '')?.id ||
+            'top-bralette';
+          setSizeCategory(sizeCat);
+
+          const rawMeasData = (found as { measurementsData?: Record<string, string> }).measurementsData;
+          if (rawMeasData && typeof rawMeasData === 'object') {
+            setMeasurementsData(rawMeasData);
+          } else if (found.measurements && typeof found.measurements === 'string') {
+            // Best effort parse e.g. "Bust: 34 · Waist: 28"
+            const parts = found.measurements.split('·').map((p) => p.trim());
+            const parsed: Record<string, string> = {};
+            parts.forEach((part) => {
+              const [k, v] = part.split(':').map((s) => s.trim());
+              if (k && v) parsed[k] = v.replace(/"/g, '');
+            });
+            if (Object.keys(parsed).length > 0) {
+              setMeasurementsData(parsed);
+            }
+          }
 
           if (found.sizes && found.sizes.length > 0) {
             setSelectedSizes(found.sizes);
@@ -201,6 +239,26 @@ export function ProductFormPage() {
     setIsDirty(true);
   };
 
+  const handleCategoryCodeChange = (newCode: string) => {
+    setCategoryCode(newCode);
+    const meta = INVENTORY_CATEGORIES[newCode];
+    if (meta) {
+      if (!isEditing) {
+        // Auto-prefix serial number
+        setSerialNumber(`${newCode}-`);
+      }
+      setCategory(meta.defaultCategorySlug);
+      setSubcategory(meta.name);
+      if (meta.sizeChartType) {
+        setSizeCategory(meta.sizeChartType);
+      }
+      if (meta.department === 'Men') setGender('Men');
+      else if (meta.department === 'Women') setGender('Women');
+      else if (meta.department === 'Unisex') setGender('Unisex');
+    }
+    setIsDirty(true);
+  };
+
   const toggleSize = (sizeKey: string) => {
     setSelectedSizes((prev) => {
       const exists = prev.includes(sizeKey);
@@ -248,10 +306,20 @@ export function ProductFormPage() {
       ...images.filter((img) => !img.isCover).map((img) => img.url),
     ];
 
+    // Compile clean measurements string e.g. "Bust: 34" · Waist: 28""
+    const measurementsSummary = Object.entries(measurementsData)
+      .filter(([_, val]) => Boolean(val && val.trim()))
+      .map(([k, v]) => `${k}: ${v.trim().endsWith('"') ? v.trim() : `${v.trim()}"`}`)
+      .join(' · ');
+
     const payload: AdminProductFormValues = {
       name: name.trim(),
       slug: slug.trim(),
       serialNumber: serialNumber.trim() || undefined,
+      categoryCode,
+      sizeCategory,
+      measurementsData: Object.keys(measurementsData).length > 0 ? measurementsData : undefined,
+      measurements: measurementsSummary || undefined,
       description: description.trim(),
       price: priceInPaise,
       originalPrice: originalPriceInPaise,
@@ -331,11 +399,44 @@ export function ProductFormPage() {
       <form onSubmit={handleSubmit} className="space-y-8" onChange={() => setIsDirty(true)}>
         {/* Section 1: Basic Info */}
         <div className="p-6 sm:p-8 rounded-3xl border border-[#1e2a1c]/10 bg-white/80 shadow-xs space-y-6">
-          <h3 className="font-serif text-lg font-bold text-[#1e2a1c] border-b border-[#1e2a1c]/10 pb-2">
-            1. Garment Details
-          </h3>
+          <div className="flex items-center justify-between border-b border-[#1e2a1c]/10 pb-2">
+            <h3 className="font-serif text-lg font-bold text-[#1e2a1c]">
+              1. Garment Details &amp; Thrift Inventory Code
+            </h3>
+            <span className="text-xs uppercase tracking-wider font-semibold text-[#8b5a3e]">
+              31 Standard Codes
+            </span>
+          </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Inventory Category Code Selector */}
+            <div className="sm:col-span-2 p-4 rounded-2xl bg-[#1e2a1c]/5 border border-[#1e2a1c]/10 space-y-2">
+              <div className="flex items-center justify-between flex-wrap gap-1">
+                <label className="block text-xs font-bold uppercase tracking-wider text-[#1e2a1c]">
+                  Inventory Category Code *
+                </label>
+                <span className="text-[0.68rem] text-[#8b5a3e] font-semibold">
+                  Auto-prefixes Serial &amp; Silhouette Size Chart
+                </span>
+              </div>
+              <select
+                value={categoryCode}
+                onChange={(e) => handleCategoryCodeChange(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-[#1e2a1c]/20 bg-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#1e2a1c]"
+              >
+                {Object.values(INVENTORY_CATEGORIES).map((cat) => (
+                  <option key={cat.code} value={cat.code}>
+                    [{cat.code}] {cat.name} ({cat.department}) — {cat.sizeChartType ? `Size Chart: ${cat.sizeChartType}` : 'No dimensions chart'}
+                  </option>
+                ))}
+              </select>
+              {INVENTORY_CATEGORIES[categoryCode]?.description && (
+                <p className="text-[0.7rem] text-[#1e2a1c]/70 italic">
+                  {INVENTORY_CATEGORIES[categoryCode].description}
+                </p>
+              )}
+            </div>
+
             <div className="sm:col-span-2">
               <label className="block text-xs font-bold uppercase tracking-wider text-[#1e2a1c]/80 mb-1">
                 Product Name *
@@ -500,6 +601,57 @@ export function ProductFormPage() {
                 ))}
               </div>
             )}
+
+            {/* Exact Flat-Lay Garment Measurements (Inches) */}
+            <div className="pt-4 border-t border-[#1e2a1c]/10 space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#1e2a1c]">
+                  <Ruler className="size-4 text-[#8b5a3e]" />
+                  <span>Exact Flat-Lay Garment Measurements (Inches)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[0.68rem] text-[#1e2a1c]/70 font-medium">Silhouette:</span>
+                  <select
+                    value={sizeCategory}
+                    onChange={(e) => {
+                      setSizeCategory(e.target.value);
+                      setIsDirty(true);
+                    }}
+                    className="px-2 py-1 rounded-lg border border-[#1e2a1c]/20 bg-white text-xs font-semibold"
+                  >
+                    <option value="women-blazer">Women Blazer (Bust, Waist, Shoulder, Sleeve)</option>
+                    <option value="mens-blazer">Men's Blazer (Chest, Waist, Shoulder, Sleeve, Length)</option>
+                    <option value="top-bralette">Top &amp; Bralettes (Bust, Underbust, Waist, Shoulder)</option>
+                    <option value="mens-pants">Men's Pants (Waist, Hip, Inseam)</option>
+                    <option value="dress">Dresses (Bust, Waist, Hip, Shoulder)</option>
+                    <option value="skirt">Skirts (Waist, Hip)</option>
+                  </select>
+                </div>
+              </div>
+
+              {SIZE_CHARTS[sizeCategory] && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-[#faf7ee] p-3.5 rounded-2xl border border-[#1e2a1c]/10">
+                  {SIZE_CHARTS[sizeCategory].dimensions.map((dim) => (
+                    <div key={dim} className="space-y-1">
+                      <label className="block text-[0.68rem] font-bold uppercase tracking-wider text-[#1e2a1c]/80">
+                        {dim} (in)
+                      </label>
+                      <input
+                        type="text"
+                        value={measurementsData[dim] || ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setMeasurementsData((prev) => ({ ...prev, [dim]: val }));
+                          setIsDirty(true);
+                        }}
+                        placeholder='e.g. 34"'
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-[#1e2a1c]/20 bg-white text-xs font-mono font-medium focus:outline-none focus:ring-1 focus:ring-[#1e2a1c]"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -690,20 +842,37 @@ export function ProductFormPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-[#1e2a1c]/80 mb-1">
-                Publish Status
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-bold uppercase tracking-wider text-[#1e2a1c]/80">
+                  Inventory &amp; Storefront Status
+                </label>
+                {INVENTORY_STATUSES[status as InventoryStatusCode] && (
+                  <span
+                    style={{
+                      backgroundColor: INVENTORY_STATUSES[status as InventoryStatusCode].bgColor,
+                      color: INVENTORY_STATUSES[status as InventoryStatusCode].textColor,
+                      borderColor: INVENTORY_STATUSES[status as InventoryStatusCode].borderColor,
+                    }}
+                    className="text-[0.65rem] font-bold px-2 py-0.5 rounded border uppercase"
+                  >
+                    {INVENTORY_STATUSES[status as InventoryStatusCode].badgeText}
+                  </span>
+                )}
+              </div>
               <select
                 value={status}
-                onChange={(e) =>
-                  setStatus(e.target.value as 'DRAFT' | 'PUBLISHED' | 'ARCHIVED' | 'SOLD_OUT')
-                }
+                onChange={(e) => setStatus(e.target.value)}
                 className="w-full px-3 py-2 rounded-xl border border-[#1e2a1c]/20 bg-white text-xs font-semibold focus:outline-none"
               >
-                <option value="PUBLISHED">Published (Visible on site)</option>
-                <option value="DRAFT">Draft (Admin only)</option>
-                <option value="SOLD_OUT">Sold Out</option>
-                <option value="ARCHIVED">Archived (Soft Deleted)</option>
+                <option value="AVAILABLE">AVAILABLE — In Stock / Active</option>
+                <option value="SOLD">SOLD — Sold Out (Light Green)</option>
+                <option value="BOOKED">BOOKED — Reserved (Orange / Peach)</option>
+                <option value="EXCHANGE_BARTER">EXCHANGE_BARTER — Circular Swap (Blue)</option>
+                <option value="RENT">RENT — Rental Statements (Magenta / Pink)</option>
+                <option value="NEED_ATTENTION">NEED_ATTENTION — Under Repair (Grey, Hidden)</option>
+                <option value="MISSING">MISSING — Missing from Rack (Red, Hidden)</option>
+                <option value="DRAFT">DRAFT — Draft (Admin only)</option>
+                <option value="ARCHIVED">ARCHIVED — Soft Deleted</option>
               </select>
             </div>
 

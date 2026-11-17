@@ -18,11 +18,14 @@ create table if not exists public.products (
   variants jsonb not null default '[]'::jsonb,              -- Array of { id, label, size, stock, priceOverride }
   category text not null,                                   -- Slug e.g. 'womens-upperwear', 'womens-one-piece'
   category_label text,
+  category_code text,                                       -- Inventory code e.g. 'SET', 'DJ', 'B', 'WB-J'
+  size_category text,                                       -- 'women-blazer', 'mens-blazer', 'top-bralette', 'mens-pants', 'dress', 'skirt'
   subcategory text,
   product_type text not null default 'Pre-Loved',           -- 'Pre-Loved', 'Fresh Find', 'Handcrafted', 'Rental'
   condition text not null default 'Gently Used',            -- 'New With Tags', 'Mint', 'Gently Used', 'Vintage Wear', 'Artisan Made'
   gender text not null default 'Unisex',                    -- 'Women', 'Men', 'Unisex'
   measurements text,
+  measurements_data jsonb default '{}'::jsonb,              -- Structured measurements { bust, waist, shoulder, etc. }
   maker_note text,
   tags text[] not null default '{}',
   featured boolean not null default false,
@@ -32,13 +35,30 @@ create table if not exists public.products (
   sku text,
   seo_title text,
   seo_description text,
-  status text not null default 'PUBLISHED' check (status in ('ACTIVE', 'PUBLISHED', 'SOLD_OUT', 'DRAFT', 'ARCHIVED')),
+  status text not null default 'AVAILABLE' check (
+    status in (
+      'AVAILABLE',
+      'SOLD',
+      'BOOKED',
+      'MISSING',
+      'NEED_ATTENTION',
+      'EXCHANGE_BARTER',
+      'RENT',
+      'ACTIVE',
+      'PUBLISHED',
+      'SOLD_OUT',
+      'DRAFT',
+      'ARCHIVED'
+    )
+  ),
   created_at timestamptz not null default timezone('utc'::text, now()),
   updated_at timestamptz not null default timezone('utc'::text, now())
 );
 
 -- 2. Indexes for high-performance storefront queries & search
 create index if not exists idx_products_serial_number on public.products(serial_number);
+create index if not exists idx_products_category_code on public.products(category_code);
+create index if not exists idx_products_size_category on public.products(size_category);
 create index if not exists idx_products_slug on public.products(slug);
 create index if not exists idx_products_category on public.products(category);
 create index if not exists idx_products_status on public.products(status);

@@ -1,5 +1,6 @@
 export * from './constants/enums.js';
 export * from './constants/storeDefaults.js';
+export * from './constants/inventoryCodes.js';
 
 // Canonical Zod Schemas & Domain Types
 export * from './schemas/money.js';

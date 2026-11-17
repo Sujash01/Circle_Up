@@ -2,6 +2,9 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IProductDocument extends Document {
   serialNumber: string;
+  categoryCode?: string;
+  sizeCategory?: string;
+  measurementsData?: Record<string, string>;
   name: string;
   slug: string;
   description: string;
@@ -27,7 +30,19 @@ export interface IProductDocument extends Document {
   sku?: string;
   seoTitle?: string;
   seoDescription?: string;
-  status: 'ACTIVE' | 'PUBLISHED' | 'SOLD_OUT' | 'DRAFT' | 'ARCHIVED';
+  status:
+    | 'AVAILABLE'
+    | 'SOLD'
+    | 'BOOKED'
+    | 'MISSING'
+    | 'NEED_ATTENTION'
+    | 'EXCHANGE_BARTER'
+    | 'RENT'
+    | 'ACTIVE'
+    | 'PUBLISHED'
+    | 'SOLD_OUT'
+    | 'DRAFT'
+    | 'ARCHIVED';
   variants: Array<{
     id: string;
     label: string;
@@ -61,6 +76,19 @@ const ProductSchema = new Schema<IProductDocument>(
       uppercase: true,
       trim: true,
       index: true,
+    },
+    categoryCode: {
+      type: String,
+      uppercase: true,
+      trim: true,
+      index: true,
+    },
+    sizeCategory: {
+      type: String,
+      trim: true,
+    },
+    measurementsData: {
+      type: Schema.Types.Mixed,
     },
     name: {
       type: String,
@@ -189,8 +217,21 @@ const ProductSchema = new Schema<IProductDocument>(
     },
     status: {
       type: String,
-      enum: ['ACTIVE', 'PUBLISHED', 'SOLD_OUT', 'DRAFT', 'ARCHIVED'],
-      default: 'ACTIVE',
+      enum: [
+        'AVAILABLE',
+        'SOLD',
+        'BOOKED',
+        'MISSING',
+        'NEED_ATTENTION',
+        'EXCHANGE_BARTER',
+        'RENT',
+        'ACTIVE',
+        'PUBLISHED',
+        'SOLD_OUT',
+        'DRAFT',
+        'ARCHIVED',
+      ],
+      default: 'AVAILABLE',
       index: true,
     },
     variants: {

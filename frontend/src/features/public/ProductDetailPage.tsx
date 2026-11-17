@@ -1,14 +1,21 @@
-import { Heart, Minus, Plus } from 'lucide-react';
+import { Heart, Minus, Plus, Ruler } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { EmptyState } from '@/components/storefront/EmptyState';
 import { ProductCard } from '@/components/storefront/ProductCard';
+import { SizeGuideModal } from '@/components/storefront/SizeGuideModal';
 import { Blob } from '@/components/ui/Blob';
 import { useStore } from '@/context/StoreContext';
 import { cn } from '@/lib/utils';
 import { cartService, formatPrice } from '@/services/cartService';
 import { productService } from '@/services/productService';
 import { storefrontApi } from '@/services/storefrontApi';
+import {
+  INVENTORY_CATEGORIES,
+  INVENTORY_STATUSES,
+  type InventoryStatusCode,
+  extractCategoryCodeFromSerial,
+} from '@circleup/shared';
 
 function WhatsAppIcon({ className = 'size-4' }: { className?: string }) {
   return (
@@ -34,6 +41,7 @@ export function ProductDetailPage() {
   const [quantity, setQuantity] = useState(1);
   const [validationError, setValidationError] = useState<string>('');
   const [addedFeedback, setAddedFeedback] = useState(false);
+  const [isSizeGuideOpen, setIsSizeGuideOpen] = useState(false);
 
   useEffect(() => {
     setActiveImageIdx(0);
@@ -59,6 +67,18 @@ export function ProductDetailPage() {
     );
   }
 
+  const catCode =
+    product.categoryCode ||
+    (product.serialNumber ? extractCategoryCodeFromSerial(product.serialNumber) : undefined);
+  const catMeta = catCode ? INVENTORY_CATEGORIES[catCode] : undefined;
+
+  const rawStatus = (product.status || '').toUpperCase() as InventoryStatusCode;
+  const invStatus =
+    INVENTORY_STATUSES[rawStatus] ||
+    (product.stock <= 0 ? INVENTORY_STATUSES.SOLD : INVENTORY_STATUSES.AVAILABLE);
+
+  const isPurchasable = invStatus.isPurchasable && product.stock > 0;
+
   const selectedVariant = product.variants.find((v) => v.id === selectedVariantId);
   const activePrice = selectedVariant?.priceOverride ?? product.price;
   const maxStock = selectedVariant ? selectedVariant.stock : product.stock;
@@ -71,6 +91,10 @@ export function ProductDetailPage() {
   );
 
   const handleAddToBag = () => {
+    if (!isPurchasable) {
+      setValidationError(`This piece is marked as ${invStatus.badgeText} and is not available for standard purchase.`);
+      return;
+    }
     if (!selectedVariant) {
       setValidationError('Please select an available size or option before adding to bag.');
       return;
@@ -145,20 +169,42 @@ export function ProductDetailPage() {
         {/* Product storytelling & controls */}
         <div className="lg:pl-4 space-y-6">
           <div className="space-y-2 border-b border-foreground/15 pb-5">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.2em] text-terracotta">
-                {product.categoryLabel} · {product.subcategory}
-              </p>
-              <span className="font-mono text-[0.7rem] bg-secondary px-2 py-0.5 text-cocoa font-medium tracking-wide border border-foreground/10">
-                SERIAL: {product.serialNumber || product.id.toUpperCase()}
-              </span>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.2em] text-terracotta">
+                  {product.categoryLabel} · {product.subcategory}
+                </p>
+                {catCode && (
+                  <span className="font-mono text-[0.68rem] font-bold px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20" title={catMeta?.description}>
+                    CODE: {catCode}
+                  </span>
+                )}
+              </div>
+
+              {/* Exact spreadsheet inventory status pill */}
+              <div className="flex items-center gap-2">
+                <span
+                  style={{
+                    backgroundColor: invStatus.bgColor,
+                    color: invStatus.textColor,
+                    borderColor: invStatus.borderColor,
+                  }}
+                  className="font-medium text-[0.7rem] px-2.5 py-0.5 border shadow-2xs uppercase tracking-wider rounded-full"
+                >
+                  {invStatus.badgeText}
+                </span>
+                <span className="font-mono text-[0.7rem] bg-secondary px-2 py-0.5 text-cocoa font-medium tracking-wide border border-foreground/10">
+                  SERIAL: {product.serialNumber || product.id.toUpperCase()}
+                </span>
+              </div>
             </div>
+
             <h1 className="font-display text-3xl sm:text-4xl text-cocoa leading-tight">
               {product.name}
             </h1>
 
             <div className="pt-2 flex items-baseline gap-4">
-              <span className="text-2xl font-bold text-primary tabular-nums">
+              <span className="text-2xl font-bold text-destructive tabular-nums">
                 {formatPrice(activePrice)}
               </span>
               {product.originalPrice && product.originalPrice > activePrice && (
@@ -175,13 +221,37 @@ export function ProductDetailPage() {
             <dt className="uppercase tracking-wider text-terracotta">Item Serial No.</dt>
             <dd className="font-mono font-medium text-cocoa">{product.serialNumber || product.id.toUpperCase()}</dd>
 
+            {catCode && (
+              <>
+                <dt className="uppercase tracking-wider text-terracotta">Category Code</dt>
+                <dd className="font-medium text-cocoa">
+                  <span className="font-mono font-bold text-primary">{catCode}</span>
+                  {catMeta ? ` (${catMeta.name})` : ''}
+                </dd>
+              </>
+            )}
+
+            <dt className="uppercase tracking-wider text-terracotta">Inventory Status</dt>
+            <dd className="font-medium text-cocoa">
+              <span
+                style={{
+                  backgroundColor: invStatus.bgColor,
+                  color: invStatus.textColor,
+                  borderColor: invStatus.borderColor,
+                }}
+                className="inline-block px-2 py-0.5 text-[0.68rem] font-semibold rounded border"
+              >
+                {invStatus.label}
+              </span>
+            </dd>
+
             <dt className="uppercase tracking-wider text-terracotta">Condition</dt>
             <dd className="font-medium text-cocoa">{product.condition}</dd>
 
-            <dt className="uppercase tracking-wider text-terracotta">Availability</dt>
+            <dt className="uppercase tracking-wider text-terracotta">Stock / Pieces</dt>
             <dd className="font-medium text-cocoa">
               {product.stock > 0
-                ? `${product.availability} (${product.stock} total left)`
+                ? `${product.stock} piece${product.stock > 1 ? 's' : ''} available`
                 : 'Sold Out'}
             </dd>
 
@@ -196,23 +266,43 @@ export function ProductDetailPage() {
             <dd className="font-medium text-cocoa">{product.productType}</dd>
           </dl>
 
+          {/* Special Barter or Rental Notification */}
+          {invStatus.code === 'EXCHANGE_BARTER' && (
+            <div className="rounded-xl border border-[#9ec5fe] bg-[#cfe2ff]/40 p-3.5 text-xs text-[#084298] space-y-1">
+              <span className="font-bold uppercase tracking-wider block">Circular Barter &amp; Wardrobe Swap</span>
+              <p>This item is open for direct wardrobe barter or circular exchange. Send photos and measurements of your trade piece via WhatsApp!</p>
+            </div>
+          )}
+
+          {invStatus.code === 'RENT' && (
+            <div className="rounded-xl border border-[#e8a7d5] bg-[#f8d7da]/40 p-3.5 text-xs text-[#6f195d] space-y-1">
+              <span className="font-bold uppercase tracking-wider block">CircleUp Rental Archive</span>
+              <p>This archival piece is reserved for editorial shoots and short-term rentals. Contact us directly on WhatsApp to confirm dates.</p>
+            </div>
+          )}
+
           {product.makerNote && (
             <p className="border-l-2 border-primary pl-4 text-xs italic text-steel">
               {product.makerNote}
             </p>
           )}
 
-          {/* Size / Variant selector */}
+          {/* Size / Variant selector + Size Guide Trigger */}
           <div className="space-y-2.5">
-            <div className="flex items-center justify-between text-xs">
+            <div className="flex items-center justify-between text-xs flex-wrap gap-2">
               <span className="font-semibold uppercase tracking-wider text-cocoa">
                 Select Size / Option
               </span>
-              {selectedVariant && (
-                <span className="text-terracotta">
-                  {selectedVariant.stock} available in {selectedVariant.label}
-                </span>
-              )}
+
+              {/* Interactive Size Guide Modal Trigger */}
+              <button
+                type="button"
+                onClick={() => setIsSizeGuideOpen(true)}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:text-forest-deep underline underline-offset-4 transition-colors"
+              >
+                <Ruler className="size-3.5" />
+                <span>View Size Guide &amp; Measurements</span>
+              </button>
             </div>
 
             <div className="flex flex-wrap gap-2.5">
@@ -296,11 +386,17 @@ export function ProductDetailPage() {
 
             <button
               type="button"
-              disabled={product.stock <= 0}
+              disabled={!isPurchasable}
               onClick={handleAddToBag}
               className="flex-1 bg-primary px-7 py-3.5 text-xs font-semibold uppercase tracking-widest text-primary-foreground transition-colors hover:bg-forest-deep disabled:opacity-45"
             >
-              {product.stock <= 0 ? 'Sold Out' : 'Add to Cart'}
+              {!isPurchasable
+                ? invStatus.code === 'BOOKED'
+                  ? 'Reserved / Booked'
+                  : invStatus.code === 'RENT'
+                    ? 'Rental Piece (Enquire)'
+                    : 'Sold Out'
+                : 'Add to Cart'}
             </button>
 
             <button
@@ -346,6 +442,17 @@ export function ProductDetailPage() {
           </div>
         </section>
       )}
+
+      {/* Size Guide Modal with Canonical 6 Garment Silhouettes */}
+      <SizeGuideModal
+        isOpen={isSizeGuideOpen}
+        onClose={() => setIsSizeGuideOpen(false)}
+        categoryCode={catCode}
+        categorySlug={product.category}
+        productName={product.name}
+        measurementsData={product.measurementsData}
+        measurementsText={typeof product.measurements === 'string' ? product.measurements : undefined}
+      />
     </div>
   );
 }

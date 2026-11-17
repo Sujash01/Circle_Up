@@ -3,7 +3,7 @@ import { Product } from '../../models/Product.js';
 import { SEED_PRODUCTS } from '../../data/seedProducts.js';
 import { BadRequestError, NotFoundError } from '../../errors/AppError.js';
 import { buildPaginationMeta, parsePagination } from '../../utils/pagination.js';
-import type { IProductItem, ProductListQuery } from '@circleup/shared';
+import { extractCategoryCodeFromSerial, type IProductItem, type ProductListQuery } from '@circleup/shared';
 
 function isDatabaseConnected(): boolean {
   return mongoose.connection.readyState === 1;
@@ -37,7 +37,7 @@ export const productService = {
 
     if (isDatabaseConnected()) {
       const filter: Record<string, unknown> = {
-        status: { $in: ['ACTIVE', 'PUBLISHED'] },
+        status: { $nin: ['MISSING', 'NEED_ATTENTION', 'DRAFT', 'ARCHIVED'] },
         deletedAt: null,
       };
 
@@ -243,8 +243,13 @@ export const productService = {
     const sizes = Array.isArray(payload.sizes) ? payload.sizes : [];
     const images = Array.isArray(payload.images) && payload.images.length > 0 ? payload.images : ['/assets/rtw-1.jpg'];
 
+    const catCode = payload.categoryCode || extractCategoryCodeFromSerial(serialNumber);
+
     const newProduct = await Product.create({
       serialNumber,
+      categoryCode: catCode,
+      sizeCategory: payload.sizeCategory,
+      measurementsData: (payload as { measurementsData?: Record<string, string> }).measurementsData,
       name: payload.name,
       slug,
       description: payload.description || '',
@@ -264,7 +269,7 @@ export const productService = {
       tags: payload.tags || ['thrift'],
       featured: payload.featured ?? false,
       isNewArrival: payload.isNewArrival ?? true,
-      status: payload.stock > 0 ? (payload.status || 'ACTIVE') : 'SOLD_OUT',
+      status: payload.status || (payload.stock > 0 ? 'AVAILABLE' : 'SOLD'),
       variants: payload.variants || sizes.map((s, idx) => ({
         id: `${serialNumber.toLowerCase()}-${idx}`,
         label: `Size ${s}`,
@@ -302,9 +307,21 @@ export const productService = {
     if (updates.subcategory !== undefined) product.subcategory = updates.subcategory;
     if (updates.condition) product.condition = updates.condition;
     if (updates.gender) product.gender = updates.gender;
-    if (updates.measurements !== undefined) product.measurements = updates.measurements;
+    if (updates.measurements !== undefined) {
+      product.measurements =
+        typeof updates.measurements === 'string'
+          ? updates.measurements
+          : Object.entries(updates.measurements || {})
+              .map(([k, v]) => `${k}: ${v}`)
+              .join(' · ');
+    }
     if (updates.makerNote !== undefined) product.makerNote = updates.makerNote;
     if (updates.tags) product.tags = updates.tags;
+    if (updates.categoryCode) product.categoryCode = updates.categoryCode;
+    if (updates.sizeCategory) product.sizeCategory = updates.sizeCategory;
+    if ((updates as { measurementsData?: Record<string, string> }).measurementsData) {
+      product.measurementsData = (updates as { measurementsData?: Record<string, string> }).measurementsData;
+    }
     if (updates.featured !== undefined) product.featured = updates.featured;
     if (updates.isNewArrival !== undefined) product.isNewArrival = updates.isNewArrival;
     if (updates.status) product.status = updates.status;

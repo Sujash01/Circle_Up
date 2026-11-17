@@ -36,6 +36,9 @@ export interface ProductVariant {
 export interface Product {
   id: string;
   serialNumber?: string;
+  categoryCode?: string;
+  sizeCategory?: string;
+  measurementsData?: Record<string, string>;
   name: string;
   slug: string;
   description: string;
@@ -55,6 +58,7 @@ export interface Product {
   featured: boolean;
   isNewArrival: boolean;
   availability: 'In Stock' | 'Low Stock' | 'Sold Out';
+  status?: string;
   makerNote?: string;
   measurements?: string;
   createdAt: string;

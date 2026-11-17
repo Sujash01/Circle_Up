@@ -4,7 +4,13 @@ import { adminApi } from '../services/adminApi';
 import { useAdminAuth } from '../context/AdminAuthContext';
 import { useAdminToast } from '../context/AdminToastContext';
 import { AdminTableSkeleton } from '../components/AdminSkeleton';
-import { formatPrice, type Product } from '@circleup/shared';
+import {
+  formatPrice,
+  type Product,
+  INVENTORY_STATUSES,
+  type InventoryStatusCode,
+  extractCategoryCodeFromSerial,
+} from '@circleup/shared';
 import {
   Plus,
   Search,
@@ -56,10 +62,18 @@ export function ProductsPage() {
   const filteredProducts = useMemo(() => {
     return products.filter((p) => {
       if (statusFilter !== 'ALL') {
-        if (statusFilter === 'ARCHIVED' && p.status !== 'ARCHIVED') return false;
-        if (statusFilter === 'PUBLISHED' && p.status !== 'PUBLISHED' && p.status !== 'ACTIVE') return false;
-        if (statusFilter === 'DRAFT' && p.status !== 'DRAFT') return false;
-        if (statusFilter === 'SOLD_OUT' && p.status !== 'SOLD_OUT' && p.stock > 0) return false;
+        const pStatus = (p.status || '').toUpperCase();
+        if (statusFilter === 'AVAILABLE') {
+          if (pStatus !== 'AVAILABLE' && pStatus !== 'ACTIVE' && pStatus !== 'PUBLISHED') return false;
+        } else if (statusFilter === 'SOLD') {
+          if (pStatus !== 'SOLD' && pStatus !== 'SOLD_OUT' && p.stock > 0) return false;
+        } else if (statusFilter === 'ARCHIVED') {
+          if (pStatus !== 'ARCHIVED') return false;
+        } else if (statusFilter === 'DRAFT') {
+          if (pStatus !== 'DRAFT') return false;
+        } else {
+          if (pStatus !== statusFilter) return false;
+        }
       }
       if (categoryFilter !== 'ALL' && p.category !== categoryFilter) {
         return false;
@@ -69,6 +83,7 @@ export function ProductsPage() {
         const matches =
           p.name.toLowerCase().includes(q) ||
           p.serialNumber.toLowerCase().includes(q) ||
+          (p.categoryCode && p.categoryCode.toLowerCase().includes(q)) ||
           (p.subcategory && p.subcategory.toLowerCase().includes(q));
         if (!matches) return false;
       }
@@ -189,9 +204,14 @@ export function ProductsPage() {
               className="bg-white/80 border border-[#1e2a1c]/15 rounded-xl px-2.5 py-1.5 text-xs text-[#1e2a1c] focus:outline-none font-medium"
             >
               <option value="ALL">All Statuses</option>
-              <option value="PUBLISHED">Published / Active</option>
+              <option value="AVAILABLE">Available (In Stock)</option>
+              <option value="SOLD">Sold (Light Green)</option>
+              <option value="BOOKED">Booked (Peach / Orange)</option>
+              <option value="EXCHANGE_BARTER">Exchange / Barter (Blue)</option>
+              <option value="RENT">Rent (Magenta)</option>
+              <option value="NEED_ATTENTION">Need Attention (Grey)</option>
+              <option value="MISSING">Missing (Red)</option>
               <option value="DRAFT">Draft</option>
-              <option value="SOLD_OUT">Sold Out</option>
               <option value="ARCHIVED">Archived / Soft-Deleted</option>
             </select>
           </div>
@@ -309,6 +329,9 @@ export function ProductsPage() {
                 {filteredProducts.map((p) => {
                   const isSelected = selectedIds.includes(p.serialNumber);
                   const isArchived = p.status === 'ARCHIVED';
+                  const catCode = p.categoryCode || extractCategoryCodeFromSerial(p.serialNumber);
+                  const rawStatus = (p.status || '').toUpperCase() as InventoryStatusCode;
+                  const statusMeta = INVENTORY_STATUSES[rawStatus];
 
                   return (
                     <tr
@@ -342,15 +365,22 @@ export function ProductsPage() {
                             <span className="font-semibold text-[#1e2a1c] block truncate max-w-[200px] sm:max-w-xs">
                               {p.name}
                             </span>
-                            <span className="font-mono text-[0.65rem] text-[#8b5a3e] font-bold">
-                              {p.serialNumber}
-                            </span>
+                            <div className="flex items-center gap-1.5 pt-0.5">
+                              {catCode && (
+                                <span className="font-mono text-[0.62rem] font-bold px-1 py-0.2 bg-[#1e2a1c]/10 text-[#1e2a1c] rounded">
+                                  {catCode}
+                                </span>
+                              )}
+                              <span className="font-mono text-[0.65rem] text-[#8b5a3e] font-bold">
+                                {p.serialNumber}
+                              </span>
+                            </div>
                           </div>
                         </div>
                       </td>
 
                       <td className="py-3 px-3 text-[#1e2a1c]/80">
-                        <span className="block">{p.categoryLabel || p.category}</span>
+                        <span className="block font-medium">{p.categoryLabel || p.category}</span>
                         {p.subcategory && (
                           <span className="text-[0.68rem] text-[#8b5a3e]">{p.subcategory}</span>
                         )}
@@ -375,19 +405,32 @@ export function ProductsPage() {
                       </td>
 
                       <td className="py-3 px-3 text-center">
-                        <span
-                          className={`inline-block px-2.5 py-0.5 rounded-full text-[0.65rem] font-bold uppercase tracking-wider ${
-                            isArchived
-                              ? 'bg-stone-200 text-stone-700'
-                              : p.status === 'PUBLISHED' || p.status === 'ACTIVE'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : p.status === 'SOLD_OUT'
-                                  ? 'bg-red-100 text-red-800'
-                                  : 'bg-amber-100 text-amber-800'
-                          }`}
-                        >
-                          {p.status}
-                        </span>
+                        {statusMeta ? (
+                          <span
+                            style={{
+                              backgroundColor: statusMeta.bgColor,
+                              color: statusMeta.textColor,
+                              borderColor: statusMeta.borderColor,
+                            }}
+                            className="inline-block px-2.5 py-0.5 rounded-full text-[0.65rem] font-bold uppercase tracking-wider border shadow-2xs"
+                          >
+                            {statusMeta.badgeText}
+                          </span>
+                        ) : (
+                          <span
+                            className={`inline-block px-2.5 py-0.5 rounded-full text-[0.65rem] font-bold uppercase tracking-wider ${
+                              isArchived
+                                ? 'bg-stone-200 text-stone-700'
+                                : p.status === 'PUBLISHED' || p.status === 'ACTIVE'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : p.status === 'SOLD_OUT'
+                                    ? 'bg-red-100 text-red-800'
+                                    : 'bg-amber-100 text-amber-800'
+                            }`}
+                          >
+                            {p.status}
+                          </span>
+                        )}
                       </td>
 
                       <td className="py-3 px-3 text-right">

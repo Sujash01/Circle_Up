@@ -6,6 +6,11 @@ import { Blob } from '@/components/ui/Blob';
 import { cn } from '@/lib/utils';
 import { formatPrice } from '@/services/cartService';
 import type { Product } from '@/types/storefront';
+import {
+  INVENTORY_STATUSES,
+  type InventoryStatusCode,
+  extractCategoryCodeFromSerial,
+} from '@circleup/shared';
 
 interface ProductCardProps {
   product: Product;
@@ -28,6 +33,17 @@ export function ProductCard({
     7,
   );
   const tilt = ((tiltHash % 5) - 2) * 0.22;
+
+  const rawSerial = product.serialNumber || product.id.toUpperCase();
+  const catCode = product.categoryCode || extractCategoryCodeFromSerial(rawSerial);
+  const rawStatus = (product.status || '').toUpperCase() as InventoryStatusCode;
+  const statusMeta =
+    INVENTORY_STATUSES[rawStatus] ||
+    (product.stock <= 0
+      ? INVENTORY_STATUSES.SOLD
+      : product.availability === 'Sold Out'
+        ? INVENTORY_STATUSES.SOLD
+        : undefined);
 
   return (
     <article
@@ -52,9 +68,16 @@ export function ProductCard({
           onError={(event) => event.currentTarget.classList.add('is-loaded')}
         />
 
-        {product.availability === 'Sold Out' && (
-          <span className="absolute bottom-3 left-3 bg-footer/90 px-2.5 py-1 text-[0.68rem] uppercase tracking-widest text-footer-foreground">
-            Sold Out
+        {statusMeta && statusMeta.code !== 'AVAILABLE' && (
+          <span
+            style={{
+              backgroundColor: statusMeta.bgColor,
+              color: statusMeta.textColor,
+              borderColor: statusMeta.borderColor,
+            }}
+            className="absolute bottom-3 left-3 border px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-wider shadow-xs rounded-sm"
+          >
+            {statusMeta.badgeText}
           </span>
         )}
       </Link>
@@ -86,12 +109,17 @@ export function ProductCard({
           </span>
         </div>
 
-        <p className="text-[0.74rem] text-terracotta">
-          <span className="font-mono text-[0.68rem] text-cocoa/70 font-semibold">{product.serialNumber || product.id.toUpperCase()}</span>
-          {' · '}
-          {showSubcategory ? `${product.subcategory} · ` : ''}
-          {product.condition}
-          {product.stock === 1 ? ' · Only 1 piece' : ''}
+        <p className="text-[0.74rem] text-terracotta flex items-center flex-wrap gap-1">
+          {catCode && (
+            <span className="font-mono text-[0.65rem] font-bold px-1 py-0.2 bg-[#1e2a1c]/10 text-[#1e2a1c] rounded">
+              {catCode}
+            </span>
+          )}
+          <span className="font-mono text-[0.68rem] text-cocoa/70 font-semibold">{rawSerial}</span>
+          <span>·</span>
+          {showSubcategory ? <span>{product.subcategory} ·</span> : null}
+          <span>{product.condition}</span>
+          {product.stock === 1 ? <span className="text-terracotta">· Only 1 left</span> : null}
         </p>
       </div>
     </article>

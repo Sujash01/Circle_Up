@@ -1,5 +1,7 @@
 import axios, { type AxiosInstance } from 'axios';
 import { normalizeApiError } from '@/services/apiClient';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase';
+import { productService } from '@/services/productService';
 import type {
   AdminUser,
   Coupon,
@@ -41,6 +43,10 @@ export interface AdminProductFormValues {
   name: string;
   slug?: string;
   serialNumber?: string;
+  categoryCode?: string;
+  sizeCategory?: string;
+  measurementsData?: Record<string, string>;
+  measurements?: string;
   description: string;
   price: number;
   originalPrice?: number;
@@ -60,7 +66,19 @@ export interface AdminProductFormValues {
   featured?: boolean;
   chestPick?: boolean;
   isNewArrival?: boolean;
-  status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED' | 'SOLD_OUT';
+  status:
+    | 'AVAILABLE'
+    | 'SOLD'
+    | 'BOOKED'
+    | 'MISSING'
+    | 'NEED_ATTENTION'
+    | 'EXCHANGE_BARTER'
+    | 'RENT'
+    | 'DRAFT'
+    | 'PUBLISHED'
+    | 'ARCHIVED'
+    | 'SOLD_OUT'
+    | string;
   images: string[];
   sizes: string[];
   variants?: Array<{ id: string; label: string; size: string; stock: number }>;
@@ -128,6 +146,52 @@ export const adminApi = {
 
   // === PRODUCTS ===
   async getProducts(params?: ProductListQuery & { includeArchived?: boolean; includeDeleted?: boolean }) {
+    if (isSupabaseConfigured()) {
+      try {
+        let query = supabase.from('products').select('*').order('created_at', { ascending: false });
+        if (!params?.includeArchived) {
+          query = query.neq('status', 'ARCHIVED');
+        }
+        const { data, error } = await query;
+        if (!error && Array.isArray(data)) {
+          const mapped = data.map((row: Record<string, unknown>) => ({
+            id: (row.id as string) || (row.serial_number as string),
+            serialNumber: (row.serial_number as string) || (row.id as string),
+            categoryCode: (row.category_code as string) || undefined,
+            sizeCategory: (row.size_category as string) || undefined,
+            measurementsData: (row.measurements_data as Record<string, string>) || undefined,
+            measurements: (row.measurements as string) || undefined,
+            name: (row.name as string) || 'Untitled Piece',
+            slug: (row.slug as string) || 'untitled-piece',
+            description: (row.description as string) || '',
+            price: Number(row.price || 0),
+            originalPrice: row.original_price ? Number(row.original_price) : undefined,
+            compareAtPrice: row.compare_at_price ? Number(row.compare_at_price) : undefined,
+            stock: Number(row.stock ?? 1),
+            images: Array.isArray(row.images) ? (row.images as string[]) : [],
+            sizes: Array.isArray(row.sizes) ? (row.sizes as string[]) : [],
+            category: (row.category as string) || 'thrifted-treasure',
+            categoryLabel: (row.category_label as string) || undefined,
+            subcategory: (row.subcategory as string) || '',
+            condition: (row.condition as Product['condition']) || 'Mint',
+            gender: (row.gender as Product['gender']) || 'Women',
+            status: (row.status as Product['status']) || 'AVAILABLE',
+            tags: Array.isArray(row.tags) ? (row.tags as string[]) : [],
+            featured: Boolean(row.featured),
+            isNewArrival: Boolean(row.is_new_arrival),
+            createdAt: (row.created_at as string) || new Date().toISOString(),
+          })) as unknown as Product[];
+
+          return {
+            data: mapped,
+            meta: { total: mapped.length, page: 1, limit: 100, totalPages: 1, hasNext: false },
+          };
+        }
+      } catch {
+        // Fall back to REST API
+      }
+    }
+
     try {
       const res = await adminClient.get<{
         data: Product[];
@@ -140,8 +204,60 @@ export const adminApi = {
   },
 
   async createProduct(data: AdminProductFormValues) {
+    if (isSupabaseConfigured()) {
+      try {
+        const serial = data.serialNumber?.trim().toUpperCase() || `CU-${Date.now().toString(36).toUpperCase()}`;
+        const slug =
+          data.slug?.trim().toLowerCase() ||
+          `${data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${serial.toLowerCase()}`;
+
+        const row = {
+          name: data.name.trim(),
+          slug,
+          serial_number: serial,
+          category_code: data.categoryCode || null,
+          size_category: data.sizeCategory || null,
+          measurements_data: data.measurementsData || {},
+          measurements: data.measurements || null,
+          description: data.description,
+          price: data.price,
+          original_price: data.originalPrice || null,
+          compare_at_price: data.compareAtPrice || null,
+          stock: data.stock,
+          category: data.category,
+          category_label: data.categoryLabel || null,
+          subcategory: data.subcategory || null,
+          product_type: data.productType || 'Pre-Loved',
+          condition: data.condition || 'Mint',
+          gender: data.gender || 'Women',
+          badge: data.badge || null,
+          tags: data.tags || [],
+          featured: Boolean(data.featured),
+          is_new_arrival: Boolean(data.isNewArrival ?? true),
+          status: data.status || 'AVAILABLE',
+          images: data.images,
+          sizes: data.sizes,
+          variants: data.variants || [],
+        };
+
+        const { data: inserted, error } = await supabase
+          .from('products')
+          .insert([row])
+          .select()
+          .single();
+
+        if (!error && inserted) {
+          void productService.initLiveSync();
+          return inserted as unknown as Product;
+        }
+      } catch {
+        // Fall back to REST API
+      }
+    }
+
     try {
       const res = await adminClient.post<{ data: Product }>('/products', data);
+      void productService.initLiveSync();
       return res.data.data;
     } catch (err) {
       throw normalizeApiError(err);
@@ -149,8 +265,47 @@ export const adminApi = {
   },
 
   async updateProduct(id: string, data: Partial<AdminProductFormValues>) {
+    if (isSupabaseConfigured()) {
+      try {
+        const updates: Record<string, unknown> = {};
+        if (data.name !== undefined) updates.name = data.name;
+        if (data.slug !== undefined) updates.slug = data.slug;
+        if (data.serialNumber !== undefined) updates.serial_number = data.serialNumber;
+        if (data.categoryCode !== undefined) updates.category_code = data.categoryCode;
+        if (data.sizeCategory !== undefined) updates.size_category = data.sizeCategory;
+        if (data.measurementsData !== undefined) updates.measurements_data = data.measurementsData;
+        if (data.measurements !== undefined) updates.measurements = data.measurements;
+        if (data.description !== undefined) updates.description = data.description;
+        if (data.price !== undefined) updates.price = data.price;
+        if (data.originalPrice !== undefined) updates.original_price = data.originalPrice;
+        if (data.stock !== undefined) updates.stock = data.stock;
+        if (data.category !== undefined) updates.category = data.category;
+        if (data.subcategory !== undefined) updates.subcategory = data.subcategory;
+        if (data.condition !== undefined) updates.condition = data.condition;
+        if (data.gender !== undefined) updates.gender = data.gender;
+        if (data.status !== undefined) updates.status = data.status;
+        if (data.images !== undefined) updates.images = data.images;
+        if (data.sizes !== undefined) updates.sizes = data.sizes;
+
+        const { data: updated, error } = await supabase
+          .from('products')
+          .update(updates)
+          .or(`id.eq.${id},serial_number.eq.${id}`)
+          .select()
+          .single();
+
+        if (!error && updated) {
+          void productService.initLiveSync();
+          return updated as unknown as Product;
+        }
+      } catch {
+        // Fall back to REST API
+      }
+    }
+
     try {
       const res = await adminClient.put<{ data: Product }>(`/products/${id}`, data);
+      void productService.initLiveSync();
       return res.data.data;
     } catch (err) {
       throw normalizeApiError(err);

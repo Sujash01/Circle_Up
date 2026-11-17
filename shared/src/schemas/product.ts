@@ -20,7 +20,20 @@ export const productVariantSchema = z.object({
 });
 export type ProductVariant = z.infer<typeof productVariantSchema>;
 
-export const productStatusSchema = z.enum(['ACTIVE', 'PUBLISHED', 'SOLD_OUT', 'DRAFT', 'ARCHIVED']);
+export const productStatusSchema = z.enum([
+  'AVAILABLE',
+  'SOLD',
+  'BOOKED',
+  'MISSING',
+  'NEED_ATTENTION',
+  'EXCHANGE_BARTER',
+  'RENT',
+  'ACTIVE',
+  'PUBLISHED',
+  'SOLD_OUT',
+  'DRAFT',
+  'ARCHIVED',
+]);
 export const productTypeSchema = z.enum([
   'Pre-Loved',
   'Fresh Find',
@@ -36,10 +49,25 @@ export const productConditionSchema = z.enum([
 ]);
 export const productGenderSchema = z.enum(['Women', 'Men', 'Unisex']);
 
+export const productMeasurementsSchema = z.object({
+  bust: z.string().optional(),
+  waist: z.string().optional(),
+  shoulder: z.string().optional(),
+  sleeve: z.string().optional(),
+  chest: z.string().optional(),
+  length: z.string().optional(),
+  underbust: z.string().optional(),
+  hip: z.string().optional(),
+  inseam: z.string().optional(),
+}).passthrough();
+export type ProductMeasurements = z.infer<typeof productMeasurementsSchema>;
+
 export const productSchema = z.object({
   id: z.string().optional(),
   _id: z.string().optional(),
   serialNumber: z.string().min(1),
+  categoryCode: z.string().optional(),
+  sizeCategory: z.string().optional(),
   name: z.string().min(1).max(200),
   slug: z.string().min(1),
   description: z.string().default(''),
@@ -57,7 +85,7 @@ export const productSchema = z.object({
   productType: productTypeSchema.default('Pre-Loved'),
   condition: productConditionSchema.default('Gently Used'),
   gender: productGenderSchema.default('Unisex'),
-  measurements: z.string().optional(),
+  measurements: z.union([z.string(), productMeasurementsSchema]).optional(),
   makerNote: z.string().optional(),
   tags: z.array(z.string()).default([]),
   featured: z.boolean().default(false),
@@ -67,7 +95,7 @@ export const productSchema = z.object({
   sku: z.string().optional(),
   seoTitle: z.string().optional(),
   seoDescription: z.string().optional(),
-  status: productStatusSchema.default('PUBLISHED'),
+  status: productStatusSchema.default('AVAILABLE'),
   deletedAt: z.string().nullable().optional(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
