@@ -28,6 +28,7 @@ import { ReviewsPage } from '@/features/public/ReviewsPage';
 import { SearchPage } from '@/features/public/SearchPage';
 import { SignInPage } from '@/features/public/SignInPage';
 import { SignUpPage } from '@/features/public/SignUpPage';
+import { SitemapPage } from '@/features/public/SitemapPage';
 import { CustomerAccountPage } from '@/features/customer/CustomerAccountPage';
 import { ForgotPasswordPage } from '@/features/auth/ForgotPasswordPage';
 import { ResetPasswordPage } from '@/features/auth/ResetPasswordPage';
@@ -160,6 +161,7 @@ export const router = createBrowserRouter([
 
           { path: 'about', element: <AboutPage /> },
           { path: 'contact', element: <ContactPage /> },
+          { path: 'sitemap', element: <SitemapPage /> },
           { path: 'reviews', element: <ReviewsPage /> },
           { path: 'events', element: <EventsPage /> },
           { path: 'events/:id', element: <EventDetailPage /> },

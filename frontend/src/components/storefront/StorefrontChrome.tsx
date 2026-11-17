@@ -861,6 +861,7 @@ export function StorefrontFooter() {
               { label: 'Customer Portal', to: '/account' },
               { label: 'Admin Workspace', to: '/admin' },
               { label: 'Contact', to: '/contact' },
+              { label: 'Sitemap', to: '/sitemap' },
               { label: 'Shopping Bag', to: '/cart' },
               { label: 'Saved Wishlist', to: '/wishlist' },
             ]}
