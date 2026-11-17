@@ -161,6 +161,9 @@ export function VinylMusicPlayer() {
   const [prevVolume, setPrevVolume] = useState(0.45);
 
   useEffect(() => {
+    if (!lofiAudio.isUserExplicitlyPaused()) {
+      void lofiAudio.start(false);
+    }
     return lofiAudio.subscribe((newState) => {
       setState(newState);
     });

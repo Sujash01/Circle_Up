@@ -107,7 +107,8 @@ class LofiAudioEngine {
   private crackleGain: GainNode | null = null;
   private compressor: DynamicsCompressorNode | null = null;
   private crackleSource: AudioBufferSourceNode | null = null;
-  private isRunning = false;
+  private isRunning = true; // Enabled by default as requested
+  private userExplicitlyPaused = false;
   private volume = 0.45;
   private crackleEnabled = true;
   private trackIndex = 0;
@@ -115,9 +116,61 @@ class LofiAudioEngine {
   private loopTimer: number | null = null;
   private arpTimer: number | null = null;
   private listeners = new Set<StateListener>();
+  private gestureListenersAttached = false;
 
   constructor() {
-    // Lazy AudioContext initialization upon user gesture
+    if (typeof window !== 'undefined') {
+      try {
+        this.userExplicitlyPaused = sessionStorage.getItem('circleup_music_paused') === 'true';
+        if (this.userExplicitlyPaused) {
+          this.isRunning = false;
+        } else {
+          this.attachGestureUnlock();
+        }
+      } catch {
+        // Fallback for restricted storage environments
+      }
+    }
+  }
+
+  public isUserExplicitlyPaused(): boolean {
+    return this.userExplicitlyPaused;
+  }
+
+  /**
+   * Browser Autoplay Policy Handler:
+   * Browsers restrict unmuted audio before user interaction.
+   * We attach passive listeners to instantly unlock AudioContext on the first tap, click, or scroll.
+   */
+  public attachGestureUnlock(): void {
+    if (typeof window === 'undefined' || this.gestureListenersAttached || this.userExplicitlyPaused) return;
+    this.gestureListenersAttached = true;
+
+    const unlock = () => {
+      if (!this.userExplicitlyPaused && this.isRunning) {
+        if (!this.ctx) {
+          void this.start();
+        } else if (this.ctx.state === 'suspended') {
+          void this.ctx.resume();
+        }
+      }
+      cleanup();
+    };
+
+    const cleanup = () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('click', unlock);
+      window.removeEventListener('touchstart', unlock);
+      window.removeEventListener('keydown', unlock);
+      window.removeEventListener('scroll', unlock);
+      this.gestureListenersAttached = false;
+    };
+
+    window.addEventListener('pointerdown', unlock, { passive: true, once: true });
+    window.addEventListener('click', unlock, { passive: true, once: true });
+    window.addEventListener('touchstart', unlock, { passive: true, once: true });
+    window.addEventListener('keydown', unlock, { passive: true, once: true });
+    window.addEventListener('scroll', unlock, { passive: true, once: true });
   }
 
   private emitState() {
@@ -141,26 +194,32 @@ class LofiAudioEngine {
     return () => this.listeners.delete(listener);
   }
 
-  private initContext(): AudioContext {
-    if (!this.ctx) {
+  private initContext(): AudioContext | null {
+    if (!this.ctx && typeof window !== 'undefined') {
       const AudioContextClass =
         window.AudioContext ||
         (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      this.ctx = new AudioContextClass();
+      if (!AudioContextClass) return null;
 
-      // Master dynamics compressor (prevents harsh clipping, adds analog glue)
-      this.compressor = this.ctx.createDynamicsCompressor();
-      this.compressor.threshold.value = -18;
-      this.compressor.knee.value = 14;
-      this.compressor.ratio.value = 3.5;
-      this.compressor.attack.value = 0.02;
-      this.compressor.release.value = 0.25;
+      try {
+        this.ctx = new AudioContextClass();
 
-      this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.setValueAtTime(this.volume, this.ctx.currentTime);
+        // Master dynamics compressor (prevents harsh clipping, adds analog glue)
+        this.compressor = this.ctx.createDynamicsCompressor();
+        this.compressor.threshold.value = -18;
+        this.compressor.knee.value = 14;
+        this.compressor.ratio.value = 3.5;
+        this.compressor.attack.value = 0.02;
+        this.compressor.release.value = 0.25;
 
-      this.compressor.connect(this.masterGain);
-      this.masterGain.connect(this.ctx.destination);
+        this.masterGain = this.ctx.createGain();
+        this.masterGain.gain.setValueAtTime(this.volume, this.ctx.currentTime);
+
+        this.compressor.connect(this.masterGain);
+        this.masterGain.connect(this.ctx.destination);
+      } catch {
+        return null;
+      }
     }
     return this.ctx;
   }
@@ -339,18 +398,31 @@ class LofiAudioEngine {
     this.loopTimer = window.setTimeout(this.scheduleNextBar, (barDuration - 0.1) * 1000);
   };
 
-  public async start(): Promise<boolean> {
-    if (this.isRunning) return true;
+  public async start(explicit = true): Promise<boolean> {
+    if (explicit) {
+      this.userExplicitlyPaused = false;
+      try {
+        sessionStorage.removeItem('circleup_music_paused');
+      } catch {
+        // Ignored
+      }
+    }
+    if (this.isRunning && this.ctx && this.ctx.state === 'running') return true;
+
     try {
       const ctx = this.initContext();
-      if (ctx.state === 'suspended') {
-        await ctx.resume();
+      if (ctx) {
+        if (ctx.state === 'suspended') {
+          void ctx.resume();
+        }
+        if (!this.loopTimer) {
+          this.chordIndex = 0;
+          this.startCrackle(ctx);
+          this.scheduleNextBar();
+        }
       }
 
       this.isRunning = true;
-      this.chordIndex = 0;
-      this.startCrackle(ctx);
-      this.scheduleNextBar();
       this.emitState();
       return true;
     } catch {
@@ -360,7 +432,15 @@ class LofiAudioEngine {
     }
   }
 
-  public stop(): void {
+  public stop(explicit = true): void {
+    if (explicit) {
+      this.userExplicitlyPaused = true;
+      try {
+        sessionStorage.setItem('circleup_music_paused', 'true');
+      } catch {
+        // Ignored
+      }
+    }
     if (!this.isRunning) return;
     this.isRunning = false;
     if (this.loopTimer) {

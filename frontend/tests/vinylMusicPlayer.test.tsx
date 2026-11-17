@@ -6,10 +6,15 @@ import { lofiAudio, TRACKS } from '../src/lib/lofiAudioEngine';
 
 describe('VinylMusicPlayer & Lo-Fi Audio Engine', () => {
   beforeEach(() => {
-    lofiAudio.stop();
+    try {
+      sessionStorage.clear();
+    } catch {
+      // Ignored for restricted storage
+    }
+    void lofiAudio.start(false);
   });
 
-  it('renders compact floating vinyl dock button with CircleUp 33⅓ label', () => {
+  it('renders compact floating vinyl dock button playing by default with CircleUp 33⅓ label', () => {
     const host = document.createElement('div');
     document.body.appendChild(host);
     const root = createRoot(host);
@@ -18,15 +23,16 @@ describe('VinylMusicPlayer & Lo-Fi Audio Engine', () => {
       root.render(<VinylMusicPlayer />);
     });
 
-    const playButton = host.querySelector('button[aria-label*="Play background vinyl music"]');
-    expect(playButton).not.toBeNull();
+    // Default is playing
+    const dockButton = host.querySelector('button[aria-label*="background vinyl music"]');
+    expect(dockButton).not.toBeNull();
     expect(host.textContent).toContain('33⅓ Vinyl');
-    expect(host.textContent).toContain('Play Music');
+    expect(host.textContent).toContain('Thrift Radio');
   });
 
   it('toggles playback on click and reflects running state', async () => {
     const toggleSpy = vi.spyOn(lofiAudio, 'toggle').mockImplementation(async () => {
-      return true;
+      return false;
     });
 
     const host = document.createElement('div');
@@ -37,11 +43,11 @@ describe('VinylMusicPlayer & Lo-Fi Audio Engine', () => {
       root.render(<VinylMusicPlayer />);
     });
 
-    const playButton = host.querySelector('button[aria-label*="Play background vinyl music"]') as HTMLButtonElement;
-    expect(playButton).not.toBeNull();
+    const dockButton = host.querySelector('button[aria-label*="background vinyl music"]') as HTMLButtonElement;
+    expect(dockButton).not.toBeNull();
 
     await act(async () => {
-      playButton.click();
+      dockButton.click();
     });
 
     expect(toggleSpy).toHaveBeenCalled();
