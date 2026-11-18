@@ -850,7 +850,6 @@ export function StorefrontFooter() {
               { label: 'The Social Circle Events', to: '/events' },
               { label: '#ThriftCrew Gallery', to: '/thriftcrew' },
               { label: 'Customer Reviews', to: '/reviews' },
-              { label: 'Thrifted Treasure', to: '/thrifted-treasure' },
             ]}
           />
           <FooterCol
