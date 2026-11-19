@@ -2,10 +2,11 @@ import { useMemo, useState } from 'react';
 import { EmptyState } from '@/components/storefront/EmptyState';
 import { ProductCard } from '@/components/storefront/ProductCard';
 import { cn } from '@/lib/utils';
-import { productService, type ProductSortOption } from '@/services/productService';
+import { productService, useCatalogVersion, type ProductSortOption } from '@/services/productService';
 import type { ProductCategorySlug } from '@/types/storefront';
 
 export function ThriftedPage() {
+  const catalogVersion = useCatalogVersion();
   const [selectedCategory, setSelectedCategory] = useState<ProductCategorySlug | 'all'>('all');
   const [sort, setSort] = useState<ProductSortOption>('newest');
 
@@ -15,7 +16,7 @@ export function ThriftedPage() {
         category: selectedCategory,
         sort,
       }),
-    [selectedCategory, sort],
+    [selectedCategory, sort, catalogVersion],
   );
 
   const categories = productService.getCategories();

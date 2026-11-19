@@ -1,9 +1,14 @@
+import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { formatPrice } from '@/services/cartService';
-import { productService } from '@/services/productService';
+import { productService, useCatalogVersion } from '@/services/productService';
 
 export function HandcraftedPage() {
-  const handcraftedProducts = productService.queryProducts({ category: 'handcrafted' });
+  const catalogVersion = useCatalogVersion();
+  const handcraftedProducts = useMemo(
+    () => productService.queryProducts({ category: 'handcrafted' }),
+    [catalogVersion],
+  );
 
   return (
     <div className="space-y-14">

@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { EmptyState } from '@/components/storefront/EmptyState';
 import { ProductCard } from '@/components/storefront/ProductCard';
-import { productService, type ProductSortOption } from '@/services/productService';
+import { productService, useCatalogVersion, type ProductSortOption } from '@/services/productService';
 
 export function ThriftedTreasurePage() {
+  const catalogVersion = useCatalogVersion();
   const meta = productService.getCategoryMeta('thrifted-treasure')!;
   const [sort, setSort] = useState<ProductSortOption>('newest');
 
@@ -21,7 +22,7 @@ export function ThriftedTreasurePage() {
           (p.tags.includes('treasure') || p.tags.includes('one-of-a-kind')),
       );
     return [...base, ...smallFinds];
-  }, [sort]);
+  }, [sort, catalogVersion]);
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto">

@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { EmptyState } from '@/components/storefront/EmptyState';
 import { ProductCard } from '@/components/storefront/ProductCard';
-import { productService, type ProductSortOption } from '@/services/productService';
+import { productService, useCatalogVersion, type ProductSortOption } from '@/services/productService';
 
 export function JewelleryPage() {
+  const catalogVersion = useCatalogVersion();
   const meta = productService.getCategoryMeta('jewellery')!;
   const [sort, setSort] = useState<ProductSortOption>('newest');
 
@@ -13,7 +14,7 @@ export function JewelleryPage() {
         category: 'jewellery',
         sort,
       }),
-    [sort],
+    [sort, catalogVersion],
   );
 
   return (

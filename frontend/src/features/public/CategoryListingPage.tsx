@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { EmptyState } from '@/components/storefront/EmptyState';
 import { ProductCard } from '@/components/storefront/ProductCard';
 import { cn } from '@/lib/utils';
-import { productService, type ProductSortOption } from '@/services/productService';
+import { productService, useCatalogVersion, type ProductSortOption } from '@/services/productService';
 import type { ProductCategorySlug } from '@/types/storefront';
 
 interface CategoryListingPageProps {
@@ -18,10 +18,11 @@ export function CategoryListingPage({
   categorySlug,
   aspectClass = 'aspect-[4/5]',
 }: CategoryListingPageProps) {
+  const catalogVersion = useCatalogVersion();
   const meta = productService.getCategoryMeta(categorySlug);
   const allInCategory = useMemo(
     () => productService.queryProducts({ category: categorySlug }),
-    [categorySlug],
+    [categorySlug, catalogVersion],
   );
 
   const [size, setSize] = useState<string>('all');
@@ -51,7 +52,7 @@ export function CategoryListingPage({
         inStockOnly,
         sort,
       }),
-    [categorySlug, size, inStockOnly, sort],
+    [categorySlug, size, inStockOnly, sort, catalogVersion],
   );
 
   const resetFilters = () => {

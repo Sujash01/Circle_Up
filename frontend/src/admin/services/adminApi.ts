@@ -1,6 +1,7 @@
 import axios, { type AxiosInstance } from 'axios';
 import { normalizeApiError } from '@/services/apiClient';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
+import { normalizeCategorySlug } from '@/services/productService';
 import { productService } from '@/services/productService';
 import type {
   AdminUser,
@@ -170,8 +171,8 @@ export const adminApi = {
             stock: Number(row.stock ?? 1),
             images: Array.isArray(row.images) ? (row.images as string[]) : [],
             sizes: Array.isArray(row.sizes) ? (row.sizes as string[]) : [],
-            category: (row.category as string) || 'thrifted-treasure',
-            categoryLabel: (row.category_label as string) || undefined,
+            category: normalizeCategorySlug(row.category as string, (row.serial_number as string) || (row.id as string)),
+            categoryLabel: (row.category_label as string) || (row.category as string) || undefined,
             subcategory: (row.subcategory as string) || '',
             condition: (row.condition as Product['condition']) || 'Mint',
             gender: (row.gender as Product['gender']) || 'Women',

@@ -79,7 +79,7 @@ const MOCK_RENTALS: RentalProduct[] = [
     images: ['/test-rental.jpg'],
     condition: 'Mint',
     sizes: ['M', 'L'],
-    unavailableDates: ['2026-11-18', '2026-11-19', '2026-11-20'],
+    unavailableDates: ['2027-02-18', '2027-02-19', '2027-02-20'],
     description: 'Test rental item',
     terms: ['Dry clean before return'],
     availabilityLabel: 'Available',
@@ -164,9 +164,9 @@ describe('CircleUp Storefront Services & LocalStorage Persistence', () => {
     const rental = rentalService.getAllRentalProducts()[0]!; // minDays: 2, unavailable includes 2026-11-18..20
 
     // Overlapping blocked date fails
-    const conflict = rentalService.evaluateQuote(rental, '2026-11-18', '2026-11-20');
+    const conflict = rentalService.evaluateQuote(rental, '2027-02-18', '2027-02-20');
     expect(conflict.valid).toBe(false);
-    expect(conflict.conflictingDates).toContain('2026-11-18');
+    expect(conflict.conflictingDates).toContain('2027-02-18');
 
     // Valid future non-conflicting range calculates fee + deposit
     const valid = rentalService.evaluateQuote(rental, '2027-01-10', '2027-01-12'); // 3 days

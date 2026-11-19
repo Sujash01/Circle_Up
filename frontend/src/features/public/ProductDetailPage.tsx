@@ -1,5 +1,6 @@
 import { Heart, Minus, Plus, Ruler } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import type { Product } from '@/types/storefront';
 import { Link, useParams } from 'react-router-dom';
 import { EmptyState } from '@/components/storefront/EmptyState';
 import { ProductCard } from '@/components/storefront/ProductCard';
@@ -8,7 +9,7 @@ import { Blob } from '@/components/ui/Blob';
 import { useStore } from '@/context/StoreContext';
 import { cn } from '@/lib/utils';
 import { cartService, formatPrice } from '@/services/cartService';
-import { productService } from '@/services/productService';
+import { productService, useCatalogVersion } from '@/services/productService';
 import { storefrontApi } from '@/services/storefrontApi';
 import {
   INVENTORY_CATEGORIES,
@@ -27,7 +28,8 @@ function WhatsAppIcon({ className = 'size-4' }: { className?: string }) {
 
 export function ProductDetailPage() {
   const { slug = '' } = useParams();
-  const product = productService.getProductBySlug(slug);
+  const catalogVersion = useCatalogVersion();
+  const product: Product | undefined = useMemo(() => productService.getProductBySlug(slug), [slug, catalogVersion]);
   const { addToCart, isWishlisted, toggleWishlist } = useStore();
 
   useEffect(() => {

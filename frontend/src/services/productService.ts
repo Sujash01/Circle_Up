@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { CATEGORIES, CATEGORY_MAP } from '@/data/categories';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { apiClient } from '@/services/apiClient';
@@ -29,6 +30,99 @@ export interface ProductQueryParams {
 
 function normalizeToken(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
+}
+
+/**
+ * Normalizes raw category text (from CSV, spreadsheet, or legacy DB) into canonical ProductCategorySlug.
+ */
+export function normalizeCategorySlug(rawCategory?: string, rawSerial?: string): ProductCategorySlug {
+  if (!rawCategory) return 'thrifted-treasure';
+  const c = String(rawCategory).trim().toLowerCase();
+
+  // If already a valid canonical slug, preserve it
+  if (
+    c === 'womens-upperwear' ||
+    c === 'womens-bottomwear' ||
+    c === 'womens-one-piece' ||
+    c === 'mens-upperwear' ||
+    c === 'mens-bottomwear' ||
+    c === 'footwear' ||
+    c === 'ethnic-wear' ||
+    c === 'jewellery' ||
+    c === 'accessories' ||
+    c === 'rentals' ||
+    c === 'handcrafted' ||
+    c === 'thrifted-treasure' ||
+    c === 'other-items'
+  ) {
+    return c as ProductCategorySlug;
+  }
+
+  // Exact & substring matching for spreadsheet import strings
+  if (
+    c.includes('one piece') ||
+    c.includes('dress') ||
+    c.includes('gown') ||
+    c.includes('bodysuit') ||
+    c.includes('co-ord') ||
+    c.includes('jumpsuit') ||
+    c.includes('romper')
+  ) {
+    return 'womens-one-piece';
+  }
+  if (c.includes('women') && (c.includes('upper') || c.includes('winter') || c.includes('hoodie') || c.includes('jacket') || c.includes('top'))) {
+    return 'womens-upperwear';
+  }
+  if (c.includes('women') && (c.includes('bottom') || c.includes('pant') || c.includes('jean') || c.includes('skirt') || c.includes('lower'))) {
+    return 'womens-bottomwear';
+  }
+  if (c.includes('men') && (c.includes('upper') || c.includes('winter') || c.includes('shirt') || c.includes('hoodie') || c.includes('jacket') || c.includes('t-shirt'))) {
+    return 'mens-upperwear';
+  }
+  if (c.includes('men') && (c.includes('bottom') || c.includes('pant') || c.includes('jean') || c.includes('trouser') || c.includes('lower'))) {
+    return 'mens-bottomwear';
+  }
+  if (c.includes('unisex') && c.includes('upper')) {
+    return 'mens-upperwear';
+  }
+  if (c.includes('unisex') && c.includes('bottom')) {
+    return 'mens-bottomwear';
+  }
+  if (c.includes('footwear') || c.includes('shoe') || c.includes('boot') || c.includes('sneaker')) {
+    return 'footwear';
+  }
+  if (c.includes('ethnic') || c.includes('kurta') || c.includes('saree')) {
+    return 'ethnic-wear';
+  }
+  if (c.includes('jewel') || c.includes('ring') || c.includes('necklace') || c.includes('earring')) {
+    return 'jewellery';
+  }
+  if (c.includes('accessor') || c.includes('bag') || c.includes('belt') || c.includes('scarf') || c.includes('sling')) {
+    return 'accessories';
+  }
+  if (c.includes('handcraft') || c.includes('artisan') || c.includes('diy')) {
+    return 'handcrafted';
+  }
+  if (c.includes('rental')) {
+    return 'womens-one-piece';
+  }
+  if (c.includes('treasure') || c.includes('find')) {
+    return 'thrifted-treasure';
+  }
+
+  // Fallback to inventory serial code prefix if available
+  if (rawSerial) {
+    const code = extractCategoryCodeFromSerial(rawSerial);
+    if (code) {
+      if (['WB-J', 'WB-L', 'WB-O', 'CWZ', 'TCE', 'OWJ'].includes(code)) return 'womens-upperwear';
+      if (['MB-J', 'MB-L', 'MB-O', 'MS', 'SH', 'DJ', 'LJ', 'SZ'].includes(code)) return 'mens-upperwear';
+      if (['SET', 'SC', 'FS', 'DB'].includes(code)) return 'womens-one-piece';
+      if (['JW'].includes(code)) return 'jewellery';
+      if (['BB', 'SB'].includes(code)) return 'accessories';
+    }
+  }
+
+  return 'thrifted-treasure';
 }
 
 // Tracks whether a live database connection is active
@@ -75,7 +169,7 @@ function mapSupabaseRowToProduct(row: Record<string, unknown>): Product {
     images,
     sizes,
     variants: Array.isArray(row.variants) ? (row.variants as Product['variants']) : [],
-    category: (row.category as ProductCategorySlug) || 'thrifted-treasure',
+    category: normalizeCategorySlug(row.category as string, rawSerial),
     categoryLabel: (row.category_label as string) || (row.category as string) || 'Curated Piece',
     subcategory: (row.subcategory as string) || '',
     productType: (row.product_type as Product['productType']) || 'Pre-Loved',
@@ -90,6 +184,17 @@ function mapSupabaseRowToProduct(row: Record<string, unknown>): Product {
     status: rawStatus,
     createdAt: (row.created_at as string) || new Date().toISOString(),
   };
+}
+
+/**
+ * React hook that subscribes components to live product catalog updates (e.g. Supabase sync).
+ */
+export function useCatalogVersion(): number {
+  const [version, setVersion] = useState(0);
+  useEffect(() => {
+    return productService.subscribe(() => setVersion((v) => v + 1));
+  }, []);
+  return version;
 }
 
 export const productService = {

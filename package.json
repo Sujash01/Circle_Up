@@ -30,6 +30,7 @@
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
-    "@supabase/supabase-js": "^2.119.0"
+    "@supabase/supabase-js": "^2.119.0",
+    "heic-convert": "^2.1.0"
   }
 }

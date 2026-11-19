@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { Product } from '@/types/storefront';
 import { Heart } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { storefrontApi, type HomepagePayload } from '@/services/storefrontApi';
@@ -33,7 +34,7 @@ import { useStore } from '@/context/StoreContext';
 import { cn } from '@/lib/utils';
 import { subscribeToScrollFrames } from '@/lib/scrollScheduler';
 import { formatPrice } from '@/services/cartService';
-import { productService } from '@/services/productService';
+import { productService, useCatalogVersion } from '@/services/productService';
 
 interface ProductPreview {
   id: string;
@@ -561,8 +562,8 @@ function WorldsSection({ tiles }: { tiles?: Array<{ to: string; title: string; n
 export function HomePage() {
   const belowHeroRef = useRef<HTMLDivElement>(null);
   const vineTrailRef = useRef<HTMLDivElement>(null);
-  const allProducts = productService.getAllProducts();
-  const isDbLive = productService.isDatabaseLive();
+  const catalogVersion = useCatalogVersion();
+  const allProducts: Product[] = useMemo(() => productService.getAllProducts(), [catalogVersion]);
 
   useEffect(() => {
     const root = belowHeroRef.current;
@@ -714,22 +715,18 @@ export function HomePage() {
     : [];
 
   const activeReadyToWear =
-    apiReadyToWear.length > 0
-      ? apiReadyToWear
-      : isDbLive
-        ? liveReadyToWear
-        : liveReadyToWear.length > 0
-          ? liveReadyToWear
-          : readyToWear;
+    liveReadyToWear.length > 0
+      ? liveReadyToWear
+      : apiReadyToWear.length > 0
+        ? apiReadyToWear
+        : readyToWear;
 
   const activeHandbags =
-    apiHandbags.length > 0
-      ? apiHandbags
-      : isDbLive
-        ? liveHandbags
-        : liveHandbags.length > 0
-          ? liveHandbags
-          : handbags;
+    liveHandbags.length > 0
+      ? liveHandbags
+      : apiHandbags.length > 0
+        ? apiHandbags
+        : handbags;
 
   return (
     <div className="relative min-h-screen w-full bg-[#f8f4e2] overflow-x-clip">

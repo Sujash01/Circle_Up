@@ -4,23 +4,28 @@ import { EmptyState } from '@/components/storefront/EmptyState';
 import { ProductCard } from '@/components/storefront/ProductCard';
 import { cn } from '@/lib/utils';
 import { formatPrice } from '@/services/cartService';
-import { productService, type ProductSortOption } from '@/services/productService';
+import { productService, useCatalogVersion, type ProductSortOption } from '@/services/productService';
 import type { ProductCategorySlug } from '@/types/storefront';
 
 export function NewArrivalsPage() {
+  const catalogVersion = useCatalogVersion();
   const [selectedCategory, setSelectedCategory] = useState<ProductCategorySlug | 'all'>('all');
   const [sort, setSort] = useState<ProductSortOption>('newest');
 
   const categories = productService.getCategories();
-  const products = useMemo(
-    () =>
-      productService.queryProducts({
-        newArrivalsOnly: true,
-        category: selectedCategory,
-        sort,
-      }),
-    [selectedCategory, sort],
-  );
+  const products = useMemo(() => {
+    const fresh = productService.queryProducts({
+      newArrivalsOnly: true,
+      category: selectedCategory,
+      sort,
+    });
+    if (fresh.length > 0) return fresh;
+    // Graceful fallback to freshest catalog items if none explicitly flagged
+    return productService.queryProducts({
+      category: selectedCategory,
+      sort,
+    });
+  }, [selectedCategory, sort, catalogVersion]);
 
   const spotlight = products[0];
   const rest = selectedCategory === 'all' && sort === 'newest' ? products.slice(1) : products;
