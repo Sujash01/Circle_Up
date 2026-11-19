@@ -101,7 +101,7 @@ const DEFAULT_SETTINGS = {
   storeAddress: 'CircleUp Studio Courtyard, Sector 7, Chandigarh',
   contactEmail: 'care@circleuponline.com',
   contactPhone: '+91 98765 43210',
-  whatsappNumber: '+919876543210',
+  whatsappNumber: '',
   contentVersion: 1,
 };
 

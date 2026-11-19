@@ -4,6 +4,9 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: false,
+    // Integration fixtures replace Mongoose's process-wide default connection.
+    // Run files serially so each replica-set fixture remains isolated.
+    fileParallelism: false,
     include: ['tests/**/*.test.ts'],
     env: {
       NODE_ENV: 'test',

@@ -1,8 +1,9 @@
 import mongoose, { type ClientSession } from 'mongoose';
 import { Coupon, type ICouponDocument } from '../models/Coupon.js';
+import { ConflictError } from '../errors/AppError.js';
 
 export const couponRepository = {
-  async findByCode(code: string): Promise<ICouponDocument | null> {
+  async findByCode(code: string, session?: ClientSession): Promise<ICouponDocument | null> {
     const upper = code.trim().toUpperCase();
     if (mongoose.connection.readyState !== 1) {
       // In-memory support for the two official launch coupons
@@ -30,16 +31,17 @@ export const couponRepository = {
     return Coupon.findOne({
       code: upper,
       isActive: true,
-    }).lean() as Promise<ICouponDocument | null>;
+    }).session(session || null).lean() as Promise<ICouponDocument | null>;
   },
 
   async incrementUsage(code: string, session?: ClientSession): Promise<void> {
-    if (mongoose.connection.readyState !== 1) return;
-    await Coupon.updateOne(
-      { code: code.trim().toUpperCase() },
+    if (mongoose.connection.readyState !== 1) throw new Error('Coupon database unavailable');
+    const coupon = await Coupon.updateOne(
+      { code: code.trim().toUpperCase(), isActive: true },
       { $inc: { usageCount: 1 } },
       { session },
     );
+    if (coupon.modifiedCount !== 1) throw new ConflictError('Coupon could not be reserved. Please retry checkout.', 'COUPON_RESERVATION_FAILED');
   },
 };
 

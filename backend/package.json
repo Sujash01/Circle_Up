@@ -9,6 +9,7 @@
     "start": "node dist/server.js",
     "seed": "tsx src/scripts/seed.ts",
     "admin:create": "tsx src/scripts/adminCreate.ts",
+    "migrate:checkout-indexes": "tsx src/scripts/checkoutIndexes.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src tests",
     "test": "vitest run"

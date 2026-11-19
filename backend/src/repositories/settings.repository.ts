@@ -15,9 +15,16 @@ const DEFAULT_SETTINGS = {
   storeAddress: 'CircleUp Studio Courtyard, Sector 7, Chandigarh',
   contactEmail: 'care@circleuponline.com',
   contactPhone: '+91 98765 43210',
-  whatsappNumber: '+919876543210',
+  whatsappNumber: '',
   contentVersion: 1,
 };
+
+export function getConfiguredWhatsappNumber(value: string | undefined): string {
+  const digits = (value || '').replace(/\D/g, '');
+  // These numbers have appeared as repository defaults/placeholders; never expose them as payment contacts.
+  if (!/^[1-9]\d{9,14}$/.test(digits) || ['919876543210', '910000000000'].includes(digits)) return '';
+  return digits;
+}
 
 export const settingsRepository = {
   async getSettings(): Promise<ISiteSettingsDocument> {

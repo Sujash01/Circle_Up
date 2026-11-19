@@ -4,6 +4,8 @@ import { logger } from './logger.js';
 
 mongoose.set('strictQuery', true);
 mongoose.set('sanitizeFilter', true);
+// All schema index creation is managed by explicit migration commands, never model startup.
+mongoose.set('autoIndex', false);
 
 let pendingConnection: Promise<void> | null = null;
 
@@ -30,6 +32,7 @@ export async function connectDatabase(uri: string = env.MONGODB_URI): Promise<vo
       maxPoolSize: env.NODE_ENV === 'test' || process.env.VERCEL ? 5 : 20,
       serverSelectionTimeoutMS: 5000,
       socketTimeoutMS: 45000,
+      autoIndex: false,
     })
     .then(() => {
       logger.info('Connected to MongoDB');

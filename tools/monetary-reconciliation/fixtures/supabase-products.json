@@ -1,0 +1,6 @@
+[
+  { "serial_number": "SYN-P-001", "price": 4000, "original_price": 6800 },
+  { "serial_number": "SYN-P-002", "price": null, "original_price": 5000 },
+  { "serial_number": "SYN-P-DUP", "price": 1250 },
+  { "serial_number": "SYN-P-DUP", "price": 1300 }
+]

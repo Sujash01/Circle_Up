@@ -1,0 +1,15 @@
+{
+  "entities": {
+    "products": {
+      "identifiers": { "supabase": "serial_number", "mongodb": "serialNumber" },
+      "monetaryFields": {
+        "price": {
+          "supabase": "price",
+          "mongodb": "price",
+          "classification": { "supabase": "AMBIGUOUS", "mongodb": "AMBIGUOUS" }
+        },
+        "originalPrice": { "supabase": "original_price", "mongodb": "originalPrice" }
+      }
+    }
+  }
+}

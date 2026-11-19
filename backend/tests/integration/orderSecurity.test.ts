@@ -1,11 +1,22 @@
 import jwt from 'jsonwebtoken';
 import request from 'supertest';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
 import { signSessionToken } from '../../src/services/adminAuth.service.js';
 import { hashGuestToken, orderService } from '../../src/modules/orders/order.service.js';
+import { startTestDatabase, stopTestDatabase } from '../helpers/testDatabase.js';
+import type { MongoMemoryReplSet } from 'mongodb-memory-server';
 
 const app = createApp();
+let testDatabase: MongoMemoryReplSet;
+
+beforeAll(async () => {
+  testDatabase = await startTestDatabase();
+}, 120_000);
+
+afterAll(async () => {
+  if (testDatabase) await stopTestDatabase(testDatabase);
+});
 
 const CUSTOMER_SECRET =
   process.env.SUPABASE_JWT_SECRET ||
@@ -111,6 +122,7 @@ describe('Order & Admin Security Remediation Suite', () => {
     it('Creates an authenticated order associated strictly with Customer A', async () => {
       const res = await request(app)
         .post('/api/v1/orders')
+        .set('Idempotency-Key', 'customer-a-order-key-0001')
         .set('Authorization', `Bearer ${customerA.token}`)
         .send({
           customer: {
@@ -137,6 +149,7 @@ describe('Order & Admin Security Remediation Suite', () => {
     it('Unauthenticated guest CANNOT attach an order to an arbitrary customer ID', async () => {
       const res = await request(app)
         .post('/api/v1/orders')
+        .set('Idempotency-Key', 'guest-spoof-order-key-0002')
         .send({
           customerId: customerA.id, // Malicious attempt by unauthenticated caller to spoof Customer A
           customer: {
@@ -156,7 +169,7 @@ describe('Order & Admin Security Remediation Suite', () => {
 
       expect(res.status).toBe(201);
       // The order must NOT be associated with Customer A's ID
-      expect(res.body.data.customerId).toBeUndefined();
+      expect(res.body.data.customerId).toBeNull();
       // It must be treated as a guest order with a guest access token
       expect(res.body.data).toHaveProperty('guestAccessToken');
     });
@@ -206,6 +219,7 @@ describe('Order & Admin Security Remediation Suite', () => {
     it('Places guest order and returns raw token only on checkout response', async () => {
       const res = await request(app)
         .post('/api/v1/orders')
+        .set('Idempotency-Key', 'guest-order-token-key-0003')
         .send({
           customer: {
             name: 'Guest Shopper',
@@ -373,13 +387,12 @@ describe('Order & Admin Security Remediation Suite', () => {
         paymentStatus: 'PAID', // Attempt to spoof payment status
       };
 
-      const res = await request(app).post('/api/v1/orders').send(tamperedPricePayload);
+      const res = await request(app).post('/api/v1/orders')
+        .set('Idempotency-Key', 'tampered-price-key-0004')
+        .send(tamperedPricePayload);
 
-      expect(res.status).toBe(201);
-      // The server ignores client price (1) and resolves against catalog price (CU-001 price in seed catalog = 4000)
-      expect(res.body.data.subtotal).toBe(4000);
-      expect(res.body.data.items[0].price).toBe(4000);
-      expect(res.body.data.paymentStatus).toBe('PENDING'); // Cannot forge payment status
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('VALIDATION_ERROR');
     });
   });
 

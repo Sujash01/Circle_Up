@@ -37,7 +37,7 @@ export const productService = {
 
     if (isDatabaseConnected()) {
       const filter: Record<string, unknown> = {
-        status: { $nin: ['MISSING', 'NEED_ATTENTION', 'DRAFT', 'ARCHIVED'] },
+        status: mongoose.trusted({ $nin: ['MISSING', 'NEED_ATTENTION', 'DRAFT', 'ARCHIVED'] }),
         deletedAt: null,
       };
 

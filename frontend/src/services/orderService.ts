@@ -1,8 +1,35 @@
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import { apiClient } from '@/services/apiClient';
+import { apiClient, ApiClientError } from '@/services/apiClient';
 import { readStorage, writeStorage } from '@/services/storage';
 
 export const ORDERS_STORAGE_KEY = 'circleup_customer_orders_v1';
+
+export function getCheckoutPaymentLabel(paymentMethod: string, paymentStatus: 'PENDING' | 'PAID'): string {
+  const methodLabel = paymentMethod === 'CASH_ON_DELIVERY'
+    ? 'Cash on delivery'
+    : paymentMethod === 'WHATSAPP_UPI'
+      ? 'WhatsApp / UPI'
+      : paymentMethod === 'ONLINE_UPI'
+        ? 'Online payment'
+        : 'Payment';
+  return paymentStatus === 'PAID'
+    ? `${methodLabel} · Payment received and verified`
+    : paymentMethod === 'CASH_ON_DELIVERY'
+      ? `${methodLabel} · Payment due on delivery`
+      : paymentMethod === 'WHATSAPP_UPI'
+        ? `${methodLabel} · Payment pending verification`
+        : `${methodLabel} · Payment pending`;
+}
+
+export function getCheckoutErrorMessage(error: unknown): string {
+  if (error instanceof ApiClientError && error.code === 'PAYMENT_PROVIDER_UNAVAILABLE') {
+    return 'Razorpay online payment is temporarily unavailable. No payment was taken. Select Cash on Delivery or WhatsApp / UPI if that option is available.';
+  }
+  if (error instanceof ApiClientError && error.code === 'PAYMENT_METHOD_UNAVAILABLE') {
+    return 'WhatsApp / UPI payment is unavailable because the store payment contact is not configured. Select Cash on Delivery or try again later.';
+  }
+  return error instanceof Error ? error.message : 'Failed to place order. Please check item availability.';
+}
 
 export interface OrderItemRecord {
   name: string;
@@ -34,6 +61,7 @@ export interface OrderRecord {
   customerName: string;
   customerPhone?: string;
   paymentMethod: string;
+  paymentStatus: 'PENDING' | 'PAID';
   guestAccessToken?: string;
   createdAt: string;
 }
@@ -76,6 +104,7 @@ export interface CreateOrderInput {
   shippingFee: number;
   totalAmount: number;
   paymentMethod: string;
+  promoCode?: string;
   notes?: string;
   customerId?: string;
 }
@@ -93,6 +122,9 @@ interface BackendOrderResponse {
   customer?: { name?: string; email?: string; phone?: string };
   shippingAddress?: { addressLine?: string; city?: string; state?: string; postalCode?: string };
   paymentMethod?: string;
+  paymentStatus?: 'PENDING' | 'PAID';
+  trackingNumber?: string;
+  courier?: string;
   items?: Array<{ serialNumber?: string; name?: string; price?: number; quantity?: number; size?: string; image?: string }>;
 }
 
@@ -109,6 +141,7 @@ interface SupabaseOrderRow {
   shipping_amount?: number;
   status?: 'CONFIRMED' | 'IN_TRANSIT' | 'DELIVERED' | 'CANCELLED';
   payment_method?: string;
+  payment_status?: 'PENDING' | 'PAID';
   shipping_address?: string | { addressLine?: string; city?: string; state?: string; postalCode?: string };
   tracking_number?: string;
   courier?: string;
@@ -138,9 +171,6 @@ export const orderService = {
    * Server validates inventory, unit prices, discounts, and computes official totals.
    */
   async createOrder(input: CreateOrderInput): Promise<OrderRecord> {
-    const now = new Date();
-    const estDate = new Date(now.getTime() + 4 * 24 * 60 * 60 * 1000);
-
     // Call authoritative Express backend to place the order
     const payload = {
       customerId: input.customerId,
@@ -151,66 +181,78 @@ export const orderService = {
         quantity: it.quantity,
         size: it.size,
       })),
-      promoCode: '',
+      promoCode: input.promoCode || '',
       paymentMethod: input.paymentMethod,
       notes: input.notes,
     };
 
-    let serverOrder: BackendOrderResponse | null = null;
-    try {
-      const res = await apiClient.post<{ data: BackendOrderResponse }>('/orders', payload);
-      serverOrder = res.data?.data || null;
-    } catch (err) {
-      console.warn('[OrderService] Backend order gateway unavailable, using offline fallback', err);
+    const fingerprint = JSON.stringify(payload);
+    const storageKey = 'circleup_checkout_idempotency_v1';
+    let attempt: { fingerprint: string; key: string } | undefined;
+    try { attempt = JSON.parse(sessionStorage.getItem(storageKey) || 'null') as typeof attempt; } catch { attempt = undefined; }
+    if (!attempt || attempt.fingerprint !== fingerprint) {
+      const key = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}`;
+      attempt = { fingerprint, key };
+      sessionStorage.setItem(storageKey, JSON.stringify(attempt));
+    }
+    const res = await apiClient.post<{ data: BackendOrderResponse }>('/orders', payload, { headers: { 'Idempotency-Key': attempt.key } });
+    const serverOrder = res.data?.data;
+    if (
+      !serverOrder?.orderNumber ||
+      typeof serverOrder.subtotal !== 'number' ||
+      typeof serverOrder.discount !== 'number' ||
+      typeof serverOrder.deliveryFee !== 'number' ||
+      typeof serverOrder.totalAmount !== 'number' ||
+      !Array.isArray(serverOrder.items) ||
+      serverOrder.items.length === 0
+    ) {
+      throw new Error('The server did not return a persisted order confirmation. Please check your orders before trying again.');
     }
 
-    const orderNumber = serverOrder?.orderNumber || `CU-${Math.floor(10000 + Math.random() * 90000)}`;
-    const trackingNumber = `BD-${Math.floor(100000000 + Math.random() * 900000000)}`;
-    const courier = 'Bluedart Express';
+    const now = serverOrder.createdAt ? new Date(serverOrder.createdAt) : new Date();
     const fullAddress = `${input.shippingAddress.addressLine}, ${input.shippingAddress.city}, ${input.shippingAddress.state} ${input.shippingAddress.postalCode}`;
 
-    // Prefer server-verified totals; never trust client-submitted calculations
-    const finalTotal = serverOrder?.totalAmount ?? input.totalAmount;
-    const finalSubtotal = serverOrder?.subtotal ?? input.subtotal;
-    const finalDiscount = serverOrder?.discount ?? input.discount;
-    const finalDeliveryFee = serverOrder?.deliveryFee ?? input.shippingFee;
     const guestAccessToken = serverOrder?.guestAccessToken;
+    sessionStorage.removeItem(storageKey);
 
     const orderRecord: OrderRecord = {
-      id: orderNumber,
-      orderNumber,
+      id: serverOrder.orderNumber,
+      orderNumber: serverOrder.orderNumber,
       date: formatDate(now),
-      estimatedDelivery: formatDate(estDate),
-      courier,
-      trackingNumber,
-      status: 'CONFIRMED',
+      estimatedDelivery: '',
+      courier: '',
+      trackingNumber: '',
+      status: serverOrder.status === 'DELIVERED' ? 'DELIVERED' : serverOrder.status === 'CANCELLED' ? 'CANCELLED' : 'CONFIRMED',
       step: 2,
       shippingAddress: fullAddress,
-      totalAmount: finalTotal,
-      subtotal: finalSubtotal,
-      discount: finalDiscount,
-      shippingFee: finalDeliveryFee,
-      items: input.items.map((it) => ({
-        name: it.name,
+      totalAmount: serverOrder.totalAmount,
+      subtotal: serverOrder.subtotal,
+      discount: serverOrder.discount,
+      shippingFee: serverOrder.deliveryFee,
+      items: serverOrder.items.map((it) => ({
+        name: it.name || '',
         size: it.size || 'Free Size',
-        color: it.color || 'Curated Wash',
+        color: 'Curated Wash',
         image: it.image || '',
-        price: it.price,
-        qty: it.quantity,
+        price: it.price || 0,
+        qty: it.quantity || 0,
         serialNumber: it.serialNumber,
       })),
-      customerId: input.customerId,
-      customerEmail: input.customer.email.toLowerCase().trim(),
-      customerName: input.customer.name.trim(),
-      customerPhone: input.customer.phone.trim(),
-      paymentMethod: input.paymentMethod,
+      customerId: serverOrder.customerId,
+      customerEmail: serverOrder.customer?.email?.toLowerCase().trim() || input.customer.email.toLowerCase().trim(),
+      customerName: serverOrder.customer?.name?.trim() || input.customer.name.trim(),
+      customerPhone: serverOrder.customer?.phone?.trim() || input.customer.phone.trim(),
+      paymentMethod: serverOrder.paymentMethod || input.paymentMethod,
+      paymentStatus: serverOrder.paymentStatus === 'PAID' ? 'PAID' : 'PENDING',
       guestAccessToken,
-      createdAt: now.toISOString(),
+      createdAt: serverOrder.createdAt || now.toISOString(),
     };
 
-    // Store in browser LocalStorage for immediate checkout confirmation display
+    // Persist locally only after the backend has confirmed a durable order.
     const localExisting = readStorage<OrderRecord[]>(ORDERS_STORAGE_KEY, []);
-    const nextLocal = [orderRecord, ...localExisting.filter((o) => o.id !== orderNumber)];
+    const nextLocal = [orderRecord, ...localExisting.filter((o) => o.id !== serverOrder.orderNumber)];
     writeStorage(ORDERS_STORAGE_KEY, nextLocal);
 
     // Notify listening UI components
@@ -254,8 +296,8 @@ export const orderService = {
               orderNumber: row.orderNumber || '',
               date: formatDate(createdAt),
               estimatedDelivery: formatDate(estDate),
-              courier: 'Bluedart Express',
-              trackingNumber: `BD-${row.orderNumber || 'TRK'}`,
+              courier: row.courier || '',
+              trackingNumber: row.trackingNumber || '',
               status: row.status || 'CONFIRMED',
               step: row.status === 'DELIVERED' ? 4 : row.status === 'IN_TRANSIT' ? 3 : 2,
               shippingAddress: address,
@@ -268,6 +310,7 @@ export const orderService = {
               customerName: row.customer?.name || '',
               customerPhone: row.customer?.phone || '',
               paymentMethod: row.paymentMethod || 'WHATSAPP_UPI',
+              paymentStatus: row.paymentStatus === 'PAID' ? 'PAID' : 'PENDING',
               createdAt: row.createdAt || new Date().toISOString(),
               items: (row.items || []).map((it) => ({
                 name: it.name || 'Thrift Find',
@@ -353,8 +396,8 @@ export const orderService = {
               orderNumber: row.order_number || row.id || '',
               date: formatDate(createdAt),
               estimatedDelivery: formatDate(estDate),
-              courier: row.courier || 'Bluedart Express',
-              trackingNumber: row.tracking_number || `BD-${row.order_number || 'TRK'}`,
+              courier: row.courier || '',
+              trackingNumber: row.tracking_number || '',
               status: row.status || 'CONFIRMED',
               step: row.status === 'DELIVERED' ? 4 : row.status === 'IN_TRANSIT' ? 3 : 2,
               shippingAddress: fullAddress,
@@ -367,6 +410,7 @@ export const orderService = {
               customerName: row.customer_name || '',
               customerPhone: row.customer_phone || '',
               paymentMethod: row.payment_method || 'COD',
+              paymentStatus: row.payment_status === 'PAID' ? 'PAID' : 'PENDING',
               createdAt: row.created_at || new Date().toISOString(),
               items: rawItems.map((it) => ({
                 name: it.name || 'Thrift Find',
@@ -449,8 +493,8 @@ export const orderService = {
       orderNumber: row.orderNumber || '',
       date: formatDate(createdAt),
       estimatedDelivery: formatDate(estDate),
-      courier: 'Bluedart Express',
-      trackingNumber: `BD-${row.orderNumber || 'TRK'}`,
+      courier: row.courier || '',
+      trackingNumber: row.trackingNumber || '',
       status: row.status || 'CONFIRMED',
       step: row.status === 'DELIVERED' ? 4 : row.status === 'IN_TRANSIT' ? 3 : 2,
       shippingAddress: address,
@@ -463,6 +507,7 @@ export const orderService = {
       customerName: row.customer?.name || '',
       customerPhone: row.customer?.phone || '',
       paymentMethod: row.paymentMethod || 'WHATSAPP_UPI',
+      paymentStatus: row.paymentStatus === 'PAID' ? 'PAID' : 'PENDING',
       guestAccessToken: guestToken,
       createdAt: row.createdAt || new Date().toISOString(),
       items: (row.items || []).map((it) => ({

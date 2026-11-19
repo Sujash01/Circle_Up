@@ -1,0 +1,21 @@
+{
+  "entities": {
+    "products": {
+      "identifiers": { "supabase": "serial_number", "mongodb": "serialNumber" },
+      "monetaryFields": {
+        "price": { "supabase": "price", "mongodb": "price" },
+        "originalPrice": { "supabase": "original_price", "mongodb": "originalPrice" },
+        "compareAtPrice": { "supabase": "compare_at_price", "mongodb": "compareAtPrice" }
+      }
+    },
+    "orders": {
+      "identifiers": { "supabase": "order_number", "mongodb": "orderNumber" },
+      "monetaryFields": {
+        "subtotal": { "supabase": "subtotal", "mongodb": "subtotal" },
+        "discount": { "supabase": "discount_amount", "mongodb": "discount" },
+        "delivery": { "supabase": "shipping_amount", "mongodb": "deliveryFee" },
+        "total": { "supabase": "total_amount", "mongodb": "totalAmount" }
+      }
+    }
+  }
+}

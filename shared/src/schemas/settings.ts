@@ -35,7 +35,7 @@ export const siteSettingsSchema = z.object({
   storeAddress: z.string().default('CircleUp Studio Courtyard, Sector 7, Chandigarh'),
   contactEmail: z.string().email().default('care@circleuponline.com'),
   contactPhone: z.string().default('+91 98765 43210'),
-  whatsappNumber: z.string().default('+919876543210'),
+  whatsappNumber: z.string().default(''),
   contentVersion: z.number().int().default(1),
   updatedAt: z.string().optional(),
 });

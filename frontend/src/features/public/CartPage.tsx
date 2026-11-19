@@ -1,4 +1,4 @@
-import { ArrowRight, Check, CheckCircle2, Copy, Minus, Package, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
+import { ArrowRight, Check, CheckCircle2, Copy, Minus, Package, Plus, Trash2, X } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
@@ -8,7 +8,8 @@ import { Blob } from '@/components/ui/Blob';
 import { useStore } from '@/context/StoreContext';
 import { cn } from '@/lib/utils';
 import { cartService, formatPrice } from '@/services/cartService';
-import { orderService } from '@/services/orderService';
+import { getCheckoutErrorMessage, getCheckoutPaymentLabel, orderService } from '@/services/orderService';
+import { storefrontApi } from '@/services/storefrontApi';
 
 import type { PaymentMethod } from '@circleup/shared';
 
@@ -50,6 +51,7 @@ interface PlacedOrderDetails {
   deliveryFee: number;
   totalAmount: number;
   paymentMethod: string;
+  paymentStatus: 'PENDING' | 'PAID';
   createdAt: string;
 }
 
@@ -74,6 +76,7 @@ export function CartPage() {
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
   const [orderError, setOrderError] = useState('');
   const [placedOrder, setPlacedOrder] = useState<PlacedOrderDetails | null>(null);
+  const [whatsappPaymentNumber, setWhatsappPaymentNumber] = useState('');
 
   // Checkout Form State
   const [formData, setFormData] = useState({
@@ -84,10 +87,32 @@ export function CartPage() {
     city: '',
     state: '',
     postalCode: '',
-    paymentMethod: 'ONLINE_UPI' as PaymentMethod,
+    paymentMethod: 'CASH_ON_DELIVERY' as PaymentMethod,
   });
 
   const authUser = useSelector((state: RootState) => state.auth.user);
+  const checkoutDeliveryFee = totals.subtotal - totals.discount >= 150000 ? 0 : 9000;
+  const checkoutTotal = totals.estimatedTotal + checkoutDeliveryFee;
+
+  useEffect(() => {
+    if (!isCheckoutModalOpen || checkoutStep !== 2) return;
+    let active = true;
+    storefrontApi.getHomepage()
+      .then((data) => {
+        if (!active) return;
+        const configuredNumber = data.siteSettings?.whatsappNumber || '';
+        setWhatsappPaymentNumber(configuredNumber);
+        if (!configuredNumber) {
+          setFormData((previous) => previous.paymentMethod === 'WHATSAPP_UPI'
+            ? { ...previous, paymentMethod: 'CASH_ON_DELIVERY' }
+            : previous);
+        }
+      })
+      .catch(() => {
+        if (active) setWhatsappPaymentNumber('');
+      });
+    return () => { active = false; };
+  }, [isCheckoutModalOpen, checkoutStep]);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window.location.hash === '#checkout-step2') {
@@ -144,9 +169,15 @@ export function CartPage() {
             <p className="text-xs text-muted-foreground">
               Payment Method:{' '}
               <strong className="text-cocoa">
-                Paid Online (Razorpay Gateway)
+                {getCheckoutPaymentLabel(placedOrder.paymentMethod, placedOrder.paymentStatus)}
               </strong>
             </p>
+            {placedOrder.paymentMethod === 'CASH_ON_DELIVERY' && placedOrder.paymentStatus === 'PENDING' && (
+              <p className="text-xs text-muted-foreground">Payment is due when your order is delivered.</p>
+            )}
+            {placedOrder.paymentMethod === 'WHATSAPP_UPI' && placedOrder.paymentStatus === 'PENDING' && (
+              <p className="text-xs text-muted-foreground">Payment remains pending until CircleUp verifies receipt.</p>
+            )}
             <p className="text-xs text-muted-foreground">
               A confirmation email will be sent to <strong>{placedOrder.customer.email}</strong>.
             </p>
@@ -172,7 +203,7 @@ export function CartPage() {
             </div>
 
             <div className="pt-3 border-t border-foreground/15 flex justify-between text-sm font-bold text-cocoa">
-              <span>Total Paid / Payable</span>
+              <span>{placedOrder.paymentStatus === 'PAID' ? 'Total Paid' : 'Total Payable'}</span>
               <span className="text-primary">{formatPrice(placedOrder.totalAmount)}</span>
             </div>
           </div>
@@ -244,7 +275,7 @@ export function CartPage() {
 
     try {
       setIsSubmittingOrder(true);
-      const deliveryFee = totals.subtotal - totals.discount >= 150000 ? 0 : 9000;
+      const deliveryFee = checkoutDeliveryFee;
 
       const placed = await orderService.createOrder({
         customer: {
@@ -269,7 +300,8 @@ export function CartPage() {
         subtotal: totals.subtotal,
         discount: totals.discount,
         shippingFee: deliveryFee,
-        totalAmount: totals.estimatedTotal,
+        totalAmount: checkoutTotal,
+        promoCode: cart.promoCode,
         paymentMethod: formData.paymentMethod,
         notes: customerNote,
         customerId: authUser?.id,
@@ -300,14 +332,14 @@ export function CartPage() {
         deliveryFee: placed.shippingFee,
         totalAmount: placed.totalAmount,
         paymentMethod: placed.paymentMethod,
+        paymentStatus: placed.paymentStatus,
         createdAt: placed.createdAt,
       });
 
       clearCart();
       setIsCheckoutModalOpen(false);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to place order. Please check item availability.';
-      setOrderError(msg);
+      setOrderError(getCheckoutErrorMessage(err));
     } finally {
       setIsSubmittingOrder(false);
     }
@@ -750,32 +782,59 @@ export function CartPage() {
                   </button>
                 </div>
 
-                {/* Payment Option Selection */}
-                <div className="space-y-2.5">
-                  <label className="font-semibold uppercase tracking-wider text-cocoa text-xs">
-                    Payment Method
+                {/* Payment methods use the existing checkout surface and remain honest about availability. */}
+                <fieldset className="space-y-2.5">
+                  <legend className="font-semibold uppercase tracking-wider text-cocoa text-xs">Payment Method</legend>
+                  <label className={cn(
+                    'block rounded border p-3.5 space-y-1.5 cursor-pointer',
+                    formData.paymentMethod === 'CASH_ON_DELIVERY'
+                      ? 'border-primary/40 bg-primary/8 ring-1 ring-primary/40'
+                      : 'border-foreground/15',
+                  )}>
+                    <span className="flex items-center gap-2 text-xs font-bold text-cocoa">
+                      <input
+                        type="radio"
+                        name="paymentMethod"
+                        value="CASH_ON_DELIVERY"
+                        checked={formData.paymentMethod === 'CASH_ON_DELIVERY'}
+                        onChange={() => setFormData((previous) => ({ ...previous, paymentMethod: 'CASH_ON_DELIVERY' }))}
+                      />
+                      Cash on Delivery (COD)
+                    </span>
+                    <span className="block pl-6 text-[0.72rem] text-muted-foreground">Pay when your order is delivered. Payment remains pending until received.</span>
                   </label>
-                  <div className="rounded border border-primary/40 bg-primary/8 p-3.5 shadow-xs ring-1 ring-primary/40 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="size-3.5 rounded-full border border-primary bg-primary flex items-center justify-center">
-                          <span className="size-1.5 rounded-full bg-white" />
-                        </span>
-                        <span className="text-xs font-bold text-cocoa">Pay Online</span>
-                      </div>
-                      <span className="text-[0.68rem] font-semibold text-primary uppercase tracking-wider bg-primary/10 px-2 py-0.5 rounded">
-                        Fast &amp; Secure
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-xs text-primary font-medium">
-                      <ShieldCheck className="size-4 shrink-0" />
-                      <span>Razorpay Payment Gateway · Zero Fee</span>
-                    </div>
-                    <p className="text-[0.72rem] text-muted-foreground leading-snug">
-                      Instant and encrypted checkout via UPI (Google Pay, PhonePe, Paytm, BHIM), Debit/Credit Cards (Visa, Mastercard, RuPay), and NetBanking.
-                    </p>
+
+                  <label className={cn(
+                    'block rounded border p-3.5 space-y-1.5',
+                    whatsappPaymentNumber ? 'cursor-pointer' : 'cursor-not-allowed opacity-60',
+                    formData.paymentMethod === 'WHATSAPP_UPI'
+                      ? 'border-primary/40 bg-primary/8 ring-1 ring-primary/40'
+                      : 'border-foreground/15',
+                  )}>
+                    <span className="flex items-center gap-2 text-xs font-bold text-cocoa">
+                      <input
+                        type="radio"
+                        name="paymentMethod"
+                        value="WHATSAPP_UPI"
+                        checked={formData.paymentMethod === 'WHATSAPP_UPI'}
+                        disabled={!whatsappPaymentNumber}
+                        onChange={() => setFormData((previous) => ({ ...previous, paymentMethod: 'WHATSAPP_UPI' }))}
+                      />
+                      WhatsApp / UPI
+                    </span>
+                    {whatsappPaymentNumber
+                      ? <span className="block pl-6 text-[0.72rem] text-muted-foreground">After placing your order, contact CircleUp at +{whatsappPaymentNumber} to arrange UPI payment. Payment stays pending until receipt is verified.</span>
+                      : <span className="block pl-6 text-[0.72rem] text-muted-foreground">Temporarily unavailable because the store payment contact is not configured.</span>}
+                  </label>
+
+                  <div className="rounded border border-foreground/15 p-3.5 space-y-1.5 opacity-60">
+                    <span className="flex items-center gap-2 text-xs font-bold text-cocoa">
+                      <input type="radio" name="paymentMethod" disabled />
+                      Razorpay online payment — temporarily unavailable
+                    </span>
+                    <span className="block pl-6 text-[0.72rem] text-muted-foreground">No payment will be taken. Online checkout will be enabled after server-side payment verification is configured.</span>
                   </div>
-                </div>
+                </fieldset>
 
                 {/* Price Breakdown */}
                 <div className="border-t border-foreground/15 pt-3 space-y-1.5 text-xs text-cocoa">
@@ -791,11 +850,11 @@ export function CartPage() {
                   )}
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Delivery</span>
-                    <span className="text-forest font-medium">Complimentary</span>
+                    <span className="text-forest font-medium">{checkoutDeliveryFee === 0 ? 'Complimentary' : formatPrice(checkoutDeliveryFee)}</span>
                   </div>
                   <div className="flex justify-between font-bold text-sm pt-2 border-t border-foreground/10">
                     <span>Total Amount Due</span>
-                    <span className="text-primary tabular-nums">{formatPrice(totals.estimatedTotal)}</span>
+                    <span className="text-primary tabular-nums">{formatPrice(checkoutTotal)}</span>
                   </div>
                 </div>
 
@@ -815,7 +874,7 @@ export function CartPage() {
                   >
                     {isSubmittingOrder
                       ? 'Processing Order...'
-                      : `Pay Online with Razorpay · ${formatPrice(totals.estimatedTotal)}`}
+                      : `${formData.paymentMethod === 'CASH_ON_DELIVERY' ? 'Place COD Order' : 'Place WhatsApp / UPI Order'} · ${formatPrice(checkoutTotal)}`}
                   </button>
                 </div>
               </form>

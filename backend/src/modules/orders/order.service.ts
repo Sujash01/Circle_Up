@@ -1,20 +1,23 @@
 import crypto from 'crypto';
 import mongoose from 'mongoose';
+import { createHash } from 'crypto';
 import { Order } from '../../models/Order.js';
-import { Product } from '../../models/Product.js';
-import { SEED_PRODUCTS } from '../../data/seedProducts.js';
+import { Product, type IProductDocument } from '../../models/Product.js';
+import { CheckoutIdempotency } from '../../models/CheckoutIdempotency.js';
 import { couponService } from '../../services/coupon.service.js';
 import { couponRepository } from '../../repositories/coupon.repository.js';
-import { BadRequestError, NotFoundError } from '../../errors/AppError.js';
+import { BadRequestError, NotFoundError, ServiceUnavailableError } from '../../errors/AppError.js';
 import { buildPaginationMeta, parsePagination } from '../../utils/pagination.js';
 import type { CreateOrderPayload } from '@circleup/shared';
+import { runInTransaction } from '../../utils/transaction.js';
+import { ConflictError, UnprocessableEntityError } from '../../errors/AppError.js';
+import { env } from '../../config/env.js';
+import { verifyCheckoutIndexes } from '../../utils/checkoutIndexes.js';
+import { getConfiguredWhatsappNumber, settingsRepository } from '../../repositories/settings.repository.js';
 
 function isDatabaseConnected(): boolean {
   return mongoose.connection.readyState === 1;
 }
-
-// In-memory order storage for test and offline simulation mode
-const IN_MEMORY_ORDERS = new Map<string, Record<string, unknown>>();
 
 function generateOrderNumber(): string {
   const dateStr = new Date().toISOString().slice(2, 10).replace(/-/g, '');
@@ -24,6 +27,10 @@ function generateOrderNumber(): string {
 
 function generateGuestAccessToken(): string {
   return crypto.randomBytes(32).toString('hex');
+}
+
+function deriveGuestAccessToken(orderNumber: string): string {
+  return crypto.createHmac('sha256', env.SESSION_SECRET).update(`guest-order:${orderNumber}`).digest('hex');
 }
 
 export function hashGuestToken(token: string): string {
@@ -72,13 +79,6 @@ export const orderService = {
     const expiredDate = new Date(0);
 
     if (!isDatabaseConnected()) {
-      const mock = IN_MEMORY_ORDERS.get(cleanNum);
-      if (mock) {
-        mock.guestAccessToken = null;
-        mock.guestAccessTokenHash = null;
-        mock.guestAccessExpiresAt = expiredDate;
-        return true;
-      }
       return false;
     }
 
@@ -102,14 +102,7 @@ export const orderService = {
     const newExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
     if (!isDatabaseConnected()) {
-      const mock = IN_MEMORY_ORDERS.get(cleanNum);
-      if (mock) {
-        mock.guestAccessToken = newHash;
-        mock.guestAccessTokenHash = newHash;
-        mock.guestAccessExpiresAt = newExpiresAt;
-        return newRawToken;
-      }
-      throw new NotFoundError(`Order ${orderNumber} not found`, 'ORDER_NOT_FOUND');
+      throw new ServiceUnavailableError('Order storage is temporarily unavailable.', 'DATABASE_UNAVAILABLE');
     }
 
     const order = await Order.findOneAndUpdate(
@@ -131,8 +124,31 @@ export const orderService = {
     return newRawToken;
   },
 
-  async createOrder(payload: CreateOrderPayload) {
-    const { customer, shippingAddress, items, promoCode, paymentMethod, notes, customerId } = payload;
+  async createOrder(payload: CreateOrderPayload & { idempotencyKey: string }) {
+    const { customer, shippingAddress, items, promoCode, paymentMethod, notes, customerId, idempotencyKey } = payload;
+
+    // No Razorpay initiation or verification flow is configured in this application yet.
+    // Reject online payment before any order, coupon, or inventory mutation can occur.
+    if (paymentMethod === 'ONLINE_UPI') {
+      throw new ServiceUnavailableError(
+        'Online payment is temporarily unavailable. Please try again later.',
+        'PAYMENT_PROVIDER_UNAVAILABLE',
+      );
+    }
+
+    if (!isDatabaseConnected()) {
+      throw new ServiceUnavailableError('Checkout is temporarily unavailable because order storage is offline.', 'DATABASE_UNAVAILABLE');
+    }
+
+    if (paymentMethod === 'WHATSAPP_UPI') {
+      const settings = await settingsRepository.getSettings();
+      if (!getConfiguredWhatsappNumber(settings.whatsappNumber)) {
+        throw new ServiceUnavailableError(
+          'WhatsApp / UPI payment is temporarily unavailable because store contact details are not configured.',
+          'PAYMENT_METHOD_UNAVAILABLE',
+        );
+      }
+    }
 
     if (!customer?.name || !customer?.email || !customer?.phone) {
       throw new BadRequestError('Customer name, email, and phone are required.', 'MISSING_CUSTOMER_INFO');
@@ -146,186 +162,119 @@ export const orderService = {
       throw new BadRequestError('Order must contain at least one item.', 'EMPTY_ORDER_ITEMS');
     }
 
-    if (!isDatabaseConnected()) {
-      // Offline/simulation mode: resolve against seed catalog
-      let subtotal = 0;
-      const resolvedItems = items.map((it) => {
-        const seed = SEED_PRODUCTS.find((p) => p.serialNumber.toUpperCase() === it.serialNumber.toUpperCase());
-        const price = seed ? seed.price : 150000;
-        const name = seed ? seed.name : `Thrift Item ${it.serialNumber}`;
-        const qty = it.quantity || 1;
-        subtotal += price * qty;
-        return {
-          serialNumber: it.serialNumber.toUpperCase(),
-          name,
-          price,
-          quantity: qty,
-          size: it.size || seed?.sizes?.[0] || 'Free Size',
-          image: seed?.images?.[0] || '',
-          slug: seed?.slug || '',
-        };
-      });
-
-      let discount = 0;
-      if (promoCode) {
-        const val = await couponService.validateCoupon(promoCode, subtotal);
-        if (val.valid) discount = val.discountInPaise;
-      }
-
-      const deliveryFee = subtotal - discount >= 150000 ? 0 : 9000;
-      const totalAmount = Math.max(0, subtotal - discount + deliveryFee);
-
-      const rawGuestToken = customerId ? undefined : generateGuestAccessToken();
-      const guestAccessTokenHash = rawGuestToken ? hashGuestToken(rawGuestToken) : undefined;
-      const guestAccessExpiresAt = customerId
-        ? undefined
-        : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-
-      const orderNumber = generateOrderNumber();
-      const simulatedOrder = {
-        id: orderNumber,
-        orderNumber,
-        customerId: customerId || undefined,
-        guestAccessToken: guestAccessTokenHash,
-        guestAccessTokenHash,
-        guestAccessExpiresAt,
-        customer,
-        shippingAddress,
-        items: resolvedItems,
-        subtotal,
-        discount,
-        deliveryFee,
-        totalAmount,
-        status: 'CONFIRMED',
-        paymentMethod: paymentMethod || 'WHATSAPP_UPI',
-        paymentStatus: 'PENDING',
-        promoCode: promoCode || '',
-        notes: notes || '',
-        createdAt: new Date().toISOString(),
-      };
-
-      IN_MEMORY_ORDERS.set(orderNumber, simulatedOrder);
-      // Return raw token only in the immediate checkout response to the customer
-      return {
-        ...simulatedOrder,
-        guestAccessToken: rawGuestToken,
-      };
-    }
-
-    // Process each item against live MongoDB inventory
-    const resolvedItems = [];
-    let subtotal = 0;
-
-    for (const cartItem of items) {
-      const serialNumber = cartItem.serialNumber.trim().toUpperCase();
-      const quantity = Math.max(1, cartItem.quantity || 1);
-
-      const product = await Product.findOne({ serialNumber, deletedAt: null });
-      if (!product) {
-        throw new NotFoundError(`Product with serial number "${serialNumber}" does not exist in catalog.`, 'PRODUCT_NOT_FOUND');
-      }
-
-      if (product.stock < quantity) {
-        throw new BadRequestError(
-          `Insufficient stock for "${product.name}" (${serialNumber}). Requested ${quantity}, but only ${product.stock} available.`,
-          'OUT_OF_STOCK',
-        );
-      }
-
-      const itemPrice = product.price;
-      subtotal += itemPrice * quantity;
-
-      resolvedItems.push({
-        serialNumber,
-        productId: product._id,
-        name: product.name,
-        price: itemPrice,
-        quantity,
-        size: cartItem.size || (product.sizes?.[0] ?? ''),
-        image: product.images?.[0] || '',
-        slug: product.slug,
-      });
-    }
-
-    // Apply promo discounts via couponService
-    let discount = 0;
-    if (promoCode) {
-      const couponResult = await couponService.validateCoupon(promoCode, subtotal);
-      if (couponResult.valid) {
-        discount = couponResult.discountInPaise;
-        await couponRepository.incrementUsage(promoCode);
-      }
-    }
-
-    const deliveryFee = subtotal - discount >= 150000 ? 0 : 9000;
-    const totalAmount = Math.max(0, subtotal - discount + deliveryFee);
-
-    // Atomically decrement inventory for each item
-    for (const item of resolvedItems) {
-      const updated = await Product.findOneAndUpdate(
-        {
-          serialNumber: item.serialNumber,
-          stock: { $gte: item.quantity },
-        },
-        {
-          $inc: { stock: -item.quantity },
-        },
-        { new: true },
-      );
-
-      if (!updated) {
-        throw new BadRequestError(`Stock conflict for item ${item.serialNumber}. Please try again.`, 'INVENTORY_RACE_CONDITION');
-      }
-
-      if (updated.stock <= 0) {
-        updated.status = 'SOLD_OUT';
-        await updated.save();
+    const keyHash = createHash('sha256').update(idempotencyKey).digest('hex');
+    const fingerprint = createHash('sha256').update(JSON.stringify({ customer, shippingAddress, items, promoCode, paymentMethod, notes, customerId })).digest('hex');
+    // Fail closed unless the controlled deployment migration installed both required indexes.
+    await verifyCheckoutIndexes();
+    const existing = await CheckoutIdempotency.findOne({ keyHash, expiresAt: mongoose.trusted({ $gt: new Date() }) }).lean();
+    if (existing) {
+      if (existing.fingerprint !== fingerprint) throw new ConflictError('This idempotency key was already used for a different checkout.', 'IDEMPOTENCY_KEY_REUSED');
+      const priorOrder = await Order.findOne({ orderNumber: existing.orderNumber }).lean();
+      if (!priorOrder) throw new ConflictError('Checkout with this key is still being resolved. Retry shortly.', 'CHECKOUT_IN_PROGRESS');
+      // The record may expire while its order is being read. Do not replay it
+      // beyond the idempotency window; the transaction below can replace it.
+      if (existing.expiresAt.getTime() > Date.now()) {
+        return { ...priorOrder, id: String(priorOrder._id), guestAccessToken: priorOrder.customerId ? undefined : deriveGuestAccessToken(priorOrder.orderNumber) };
       }
     }
 
     const orderNumber = generateOrderNumber();
-    const rawGuestToken = customerId ? null : generateGuestAccessToken();
+    const rawGuestToken = customerId ? undefined : deriveGuestAccessToken(orderNumber);
     const guestAccessTokenHash = rawGuestToken ? hashGuestToken(rawGuestToken) : null;
-    const guestAccessExpiresAt = customerId
-      ? null
-      : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    try {
+      const created = await runInTransaction(async (session) => {
+        const competing = await CheckoutIdempotency.findOne({ keyHash, expiresAt: mongoose.trusted({ $gt: new Date() }) }).session(session).lean();
+        if (competing) throw new ConflictError('Checkout with this key is already being processed.', 'CHECKOUT_IN_PROGRESS');
+        await CheckoutIdempotency.deleteOne({ keyHash, expiresAt: mongoose.trusted({ $lte: new Date() }) }, { session });
 
-    const order = await Order.create({
-      orderNumber,
-      customerId: customerId || null,
-      guestAccessToken: guestAccessTokenHash,
-      guestAccessTokenHash,
-      guestAccessExpiresAt,
-      customer,
-      shippingAddress,
-      items: resolvedItems,
-      subtotal,
-      discount,
-      deliveryFee,
-      totalAmount,
-      status: 'CONFIRMED',
-      paymentMethod: paymentMethod || 'WHATSAPP_UPI',
-      paymentStatus: 'PENDING',
-      promoCode: promoCode || '',
-      notes: notes || '',
-    });
+        const quantities = new Map<string, number>();
+        for (const item of items) {
+          const serial = item.serialNumber.trim().toUpperCase();
+          quantities.set(serial, (quantities.get(serial) || 0) + item.quantity);
+        }
+        const resolvedItems = [];
+        let subtotal = 0;
+        const products = new Map<string, IProductDocument>();
+        for (const [serialNumber, quantity] of quantities) {
+          if (quantity > 10) throw new BadRequestError(`Maximum quantity per product is 10.`, 'INVALID_QUANTITY');
+          const product = await Product.findOne({ serialNumber, deletedAt: null, status: mongoose.trusted({ $in: ['ACTIVE', 'PUBLISHED', 'AVAILABLE'] }) }).session(session);
+          if (!product) throw new NotFoundError(`Product "${serialNumber}" is not available to order.`, 'PRODUCT_NOT_ORDERABLE');
+          if (!Number.isSafeInteger(product.price) || product.price < 0) throw new UnprocessableEntityError(`Product "${serialNumber}" has an invalid stored price.`, 'INVALID_PRODUCT_PRICE');
+          if (!Number.isSafeInteger(product.stock) || product.stock < quantity) throw new BadRequestError(`Insufficient stock for "${serialNumber}".`, 'OUT_OF_STOCK');
+          products.set(serialNumber, product);
+          subtotal += product.price * quantity;
+        }
+        if (!Number.isSafeInteger(subtotal)) throw new UnprocessableEntityError('Order total exceeds supported currency range.', 'INVALID_ORDER_TOTAL');
 
-    const orderJson = order.toJSON();
-    return {
-      ...orderJson,
-      guestAccessToken: rawGuestToken || undefined,
-    };
+        for (const item of items) {
+          const serialNumber = item.serialNumber.trim().toUpperCase();
+          const product = products.get(serialNumber)!;
+          resolvedItems.push({ serialNumber, productId: product._id, name: product.name, price: product.price, quantity: item.quantity, size: item.size || product.sizes?.[0] || '', image: product.images?.[0] || '', slug: product.slug });
+        }
+
+        let discount = 0;
+        if (promoCode) {
+          const couponResult = await couponService.validateCoupon(promoCode, subtotal, session);
+          if (couponResult.valid) {
+            discount = couponResult.discountInPaise;
+            if (!Number.isSafeInteger(discount) || discount < 0 || discount > subtotal) {
+              throw new UnprocessableEntityError('Coupon has an invalid stored discount.', 'INVALID_COUPON_DISCOUNT');
+            }
+            await couponRepository.incrementUsage(promoCode, session);
+          }
+        }
+        const deliveryFee = subtotal - discount >= 150000 ? 0 : 9000;
+        const totalAmount = subtotal - discount + deliveryFee;
+        if (!Number.isSafeInteger(totalAmount)) throw new UnprocessableEntityError('Order total exceeds supported currency range.', 'INVALID_ORDER_TOTAL');
+        for (const [serialNumber, quantity] of quantities) {
+          const product = products.get(serialNumber)!;
+          const updated = await Product.findOneAndUpdate(
+            { _id: product._id, deletedAt: null, status: mongoose.trusted({ $in: ['ACTIVE', 'PUBLISHED', 'AVAILABLE'] }), stock: mongoose.trusted({ $gte: quantity }) },
+            { $inc: { stock: -quantity } }, { new: true, session },
+          );
+          if (!updated) throw new BadRequestError(`Stock conflict for item ${serialNumber}.`, 'INVENTORY_RACE_CONDITION');
+          if (updated.stock === 0) { updated.status = 'SOLD_OUT'; await updated.save({ session }); }
+        }
+        const [order] = await Order.create([{
+          orderNumber, customerId: customerId || null, guestAccessToken: guestAccessTokenHash, guestAccessTokenHash,
+          guestAccessExpiresAt: customerId ? null : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          customer, shippingAddress, items: resolvedItems, subtotal, discount, deliveryFee, totalAmount,
+          status: 'CONFIRMED', paymentMethod: paymentMethod || 'WHATSAPP_UPI', paymentStatus: 'PENDING', promoCode: promoCode || '', notes: notes || '',
+        }], { session });
+        await CheckoutIdempotency.create([{
+          keyHash, fingerprint, orderNumber, expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        }], { session });
+        return order;
+      });
+      if (!created) throw new ServiceUnavailableError('Order transaction did not commit.', 'CHECKOUT_NOT_COMMITTED');
+      return { ...created.toJSON(), guestAccessToken: rawGuestToken };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (/Transaction numbers are only allowed|does not support transactions|transactions are not supported/i.test(message)) {
+        throw new ServiceUnavailableError('Checkout requires MongoDB replica set or sharded transaction support.', 'TRANSACTIONS_UNAVAILABLE');
+      }
+      if ((error as { code?: number })?.code === 11000) {
+        const replayAt = new Date();
+        const replay = await CheckoutIdempotency.findOne({
+          keyHash,
+          expiresAt: mongoose.trusted({ $gt: replayAt }),
+        }).lean();
+        if (replay?.fingerprint === fingerprint) {
+          const priorOrder = await Order.findOne({ orderNumber: replay.orderNumber }).lean();
+          if (priorOrder && replay.expiresAt.getTime() > Date.now()) {
+            return { ...priorOrder, id: String(priorOrder._id), guestAccessToken: priorOrder.customerId ? undefined : deriveGuestAccessToken(priorOrder.orderNumber) };
+          }
+        }
+      }
+      throw error;
+    }
   },
 
   async listCustomerOrders(customerId: string, query: { page?: unknown; limit?: unknown }) {
     const { page, limit, skip } = parsePagination(query);
 
     if (!isDatabaseConnected()) {
-      const all = Array.from(IN_MEMORY_ORDERS.values()).filter((o) => o.customerId === customerId);
-      return {
-        orders: all.slice(skip, skip + limit),
-        meta: buildPaginationMeta(page, limit, all.length),
-      };
+      throw new ServiceUnavailableError('Order storage is temporarily unavailable.', 'DATABASE_UNAVAILABLE');
     }
 
     const filter = { customerId };
@@ -347,16 +296,7 @@ export const orderService = {
     const { page, limit, skip } = parsePagination(query);
 
     if (!isDatabaseConnected()) {
-      const all = Array.from(IN_MEMORY_ORDERS.values());
-      const filtered = all.filter((o) => {
-        if (query.status && o.status !== query.status) return false;
-        if (query.phone && (o.customer as { phone?: string } | undefined)?.phone !== query.phone) return false;
-        return true;
-      });
-      return {
-        orders: filtered.slice(skip, skip + limit),
-        meta: buildPaginationMeta(page, limit, filtered.length),
-      };
+      throw new ServiceUnavailableError('Order storage is temporarily unavailable.', 'DATABASE_UNAVAILABLE');
     }
 
     const filter: Record<string, unknown> = {};
@@ -384,11 +324,7 @@ export const orderService = {
   async getOrderByNumber(orderNumber: string) {
     const cleanNum = orderNumber.trim().toUpperCase();
     if (!isDatabaseConnected()) {
-      const mock = IN_MEMORY_ORDERS.get(cleanNum);
-      if (!mock) {
-        throw new NotFoundError(`Order ${orderNumber} not found`, 'ORDER_NOT_FOUND');
-      }
-      return mock;
+      throw new ServiceUnavailableError('Order storage is temporarily unavailable.', 'DATABASE_UNAVAILABLE');
     }
 
     const order = await Order.findOne({ orderNumber: cleanNum }).lean();

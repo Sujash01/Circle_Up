@@ -1,6 +1,7 @@
 import { productRepository } from '../repositories/product.repository.js';
 import { settingsRepository } from '../repositories/settings.repository.js';
 import { formatPrice } from '@circleup/shared';
+import { getConfiguredWhatsappNumber } from '../repositories/settings.repository.js';
 
 export const homepageService = {
   async getHomepagePayload() {
@@ -119,7 +120,7 @@ export const homepageService = {
         storeAddress: settings.storeAddress,
         contactEmail: settings.contactEmail,
         contactPhone: settings.contactPhone,
-        whatsappNumber: settings.whatsappNumber,
+        whatsappNumber: getConfiguredWhatsappNumber(settings.whatsappNumber),
         contentVersion: settings.contentVersion,
       },
     };

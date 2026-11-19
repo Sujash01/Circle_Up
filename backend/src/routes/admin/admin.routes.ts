@@ -73,6 +73,12 @@ adminRouter.put(
   verifyAdminCsrf,
   adminOrderController.updateStatus,
 );
+adminRouter.put(
+  '/orders/:id/payment-status',
+  requireAdminAuth('owner'),
+  verifyAdminCsrf,
+  adminOrderController.markPaymentReceived,
+);
 
 // === CUSTOMERS (CRM) ===
 adminRouter.get('/customers', requireAdminAuth(), adminCustomerController.list);

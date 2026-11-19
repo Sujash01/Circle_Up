@@ -89,7 +89,7 @@ const SiteSettingsSchema = new Schema<ISiteSettingsDocument>(
     },
     whatsappNumber: {
       type: String,
-      default: '+919876543210',
+      default: '',
     },
     contentVersion: {
       type: Number,

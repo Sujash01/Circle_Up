@@ -1,14 +1,15 @@
 import { couponRepository } from '../repositories/coupon.repository.js';
 import { BadRequestError } from '../errors/AppError.js';
 import type { CouponValidateResult } from '@circleup/shared';
+import type { ClientSession } from 'mongoose';
 
 export const couponService = {
-  async validateCoupon(code: string, subtotalInPaise: number): Promise<CouponValidateResult> {
+  async validateCoupon(code: string, subtotalInPaise: number, session?: ClientSession): Promise<CouponValidateResult> {
     if (!code || !code.trim()) {
       throw new BadRequestError('Coupon code is required.', 'COUPON_REQUIRED');
     }
 
-    const coupon = await couponRepository.findByCode(code);
+    const coupon = await couponRepository.findByCode(code, session);
     if (!coupon || !coupon.isActive) {
       return {
         valid: false,

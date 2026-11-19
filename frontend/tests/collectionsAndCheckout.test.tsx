@@ -2,7 +2,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import { Provider } from 'react-redux';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { store } from '../src/app/store';
 import { StoreProvider } from '../src/context/StoreContext';
 import { BrandNewPage } from '../src/features/public/BrandNewPage';
@@ -11,6 +11,7 @@ import { CartPage } from '../src/features/public/CartPage';
 import { StorefrontHeader } from '../src/components/storefront/StorefrontChrome';
 import { productService } from '../src/services/productService';
 import { cartService, type CartState } from '../src/services/cartService';
+import { storefrontApi, type HomepagePayload } from '../src/services/storefrontApi';
 import type { Product } from '../src/types/storefront';
 
 const TEST_PRODUCTS: Product[] = [
@@ -63,6 +64,8 @@ const TEST_PRODUCTS: Product[] = [
 ];
 
 describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
+  afterEach(() => vi.restoreAllMocks());
+
   beforeEach(() => {
     productService.setProducts(TEST_PRODUCTS);
     cartService.clearCart();
@@ -133,7 +136,10 @@ describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
     host.remove();
   });
 
-  it('renders CartPage checkout modal with Online Payment exclusively and no COD option', () => {
+  it('offers COD, disables unconfigured WhatsApp payment, and keeps Razorpay unavailable', async () => {
+    vi.spyOn(storefrontApi, 'getHomepage').mockResolvedValue({
+      siteSettings: { whatsappNumber: '' },
+    } as HomepagePayload);
     const cartWithItem: CartState = {
       cartId: 'test-cart-123',
       items: [
@@ -218,16 +224,19 @@ describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
     );
     expect(checkoutForm).toBeDefined();
 
-    act(() => {
+    await act(async () => {
       checkoutForm?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await Promise.resolve();
     });
 
-    // Check step 2 payment option text
-    expect(host.textContent).toContain('Razorpay Payment Gateway');
-    expect(host.textContent).toContain('Pay Online');
-    // Ensure COD is NOT present
-    expect(host.textContent).not.toContain('Cash on Delivery (COD)');
-    expect(host.textContent).not.toContain('Pay with cash or UPI on delivery');
+    expect(host.textContent).toContain('Cash on Delivery (COD)');
+    expect(host.textContent).toContain('WhatsApp / UPI');
+    expect(host.textContent).toContain('store payment contact is not configured');
+    expect(host.textContent).toContain('Razorpay online payment — temporarily unavailable');
+    const whatsappChoice = host.querySelector('input[name="paymentMethod"][value="WHATSAPP_UPI"]') as HTMLInputElement;
+    const codChoice = host.querySelector('input[name="paymentMethod"][value="CASH_ON_DELIVERY"]') as HTMLInputElement;
+    expect(whatsappChoice.disabled).toBe(true);
+    expect(codChoice.checked).toBe(true);
 
     act(() => {
       root.unmount();

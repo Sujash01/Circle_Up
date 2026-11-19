@@ -1,0 +1,5 @@
+serialNumber,price,originalPrice
+SYN-P-001,4000,6800
+SYN-P-002,not-a-number,5000
+SYN-P-003,999,1200
+SYN-P-DUP,1250,

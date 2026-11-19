@@ -18,7 +18,7 @@ export const orderItemSchema = z.object({
   serialNumber: z.string().min(1),
   name: z.string().min(1),
   price: moneyPaiseSchema,
-  quantity: z.number().int().positive().default(1),
+  quantity: z.number().int().min(1).max(10).default(1),
   size: z.string().optional(),
   image: z.string().optional(),
   slug: z.string().optional(),
@@ -61,7 +61,6 @@ export const paymentMethodSchema = z.enum([
   'WHATSAPP_UPI',
   'CASH_ON_DELIVERY',
   'ONLINE_UPI',
-  'WHATSAPP_BANK_TRANSFER',
 ]);
 
 export const orderSchema = z.object({
@@ -92,17 +91,17 @@ export type IOrder = Order;
 
 export const createOrderPayloadSchema = z.object({
   customerId: z.string().optional(),
-  customer: customerInfoSchema,
-  shippingAddress: shippingAddressSchema,
+  customer: customerInfoSchema.strict(),
+  shippingAddress: shippingAddressSchema.strict(),
   items: z.array(
     z.object({
-      serialNumber: z.string().min(1),
-      quantity: z.number().int().positive().default(1),
+      serialNumber: z.string().trim().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/),
+      quantity: z.number().int().min(1).max(10),
       size: z.string().optional(),
-    }),
-  ).min(1, 'Order must contain at least one item'),
-  promoCode: z.string().optional(),
+    }).strict(),
+  ).min(1, 'Order must contain at least one item').max(20),
+  promoCode: z.string().trim().max(64).optional(),
   paymentMethod: paymentMethodSchema.default('WHATSAPP_UPI'),
-  notes: z.string().optional(),
-});
+  notes: z.string().max(1000).optional(),
+}).strict();
 export type CreateOrderPayload = z.infer<typeof createOrderPayloadSchema>;
