@@ -77,11 +77,11 @@ export function SizeGuideModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="size-guide-title"
-      className="fixed inset-0 z-[70] flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200 overflow-y-auto"
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200 overflow-y-auto"
       onClick={onClose}
     >
       <div
-        className="relative my-auto w-full max-w-3xl max-h-[90vh] overflow-y-auto bg-[#faf7ee] border border-[#1e2a1c]/20 shadow-2xl rounded-2xl p-6 sm:p-8 space-y-6 text-[#2c221e]"
+        className="relative my-auto w-full max-w-3xl max-h-[88vh] overflow-y-auto bg-[#faf7ee] border border-[#1e2a1c]/20 shadow-2xl rounded-2xl p-6 sm:p-8 space-y-6 text-[#2c221e]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

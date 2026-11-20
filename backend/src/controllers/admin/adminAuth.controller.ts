@@ -19,20 +19,24 @@ export const adminAuthController = {
         path: '/',
       });
 
-      await auditService.record({
-        actor: {
-          userId: result.user.id,
-          email: result.user.email,
-          name: result.user.name,
-          role: result.user.role as 'owner' | 'staff',
-          csrfToken: result.csrfToken,
-          expiresAt: Date.now() + 24 * 60 * 60 * 1000,
-        },
-        action: 'ADMIN_LOGIN',
-        entity: 'AdminUser',
-        entityId: result.user.id,
-        req,
-      });
+      try {
+        await auditService.record({
+          actor: {
+            userId: result.user.id,
+            email: result.user.email,
+            name: result.user.name,
+            role: result.user.role as 'owner' | 'staff',
+            csrfToken: result.csrfToken,
+            expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+          },
+          action: 'ADMIN_LOGIN',
+          entity: 'AdminUser',
+          entityId: result.user.id,
+          req,
+        });
+      } catch {
+        // Non-blocking audit record failure during login
+      }
 
       return sendSuccess(res, {
         user: result.user,

@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import mongoose from 'mongoose';
 import { AdminUser, type IAdminUserDocument } from '../models/AdminUser.js';
 import { env } from '../config/env.js';
+import { isSupabaseBackendConfigured, getSupabaseServiceClient } from '../config/supabase.js';
 import {
   BadRequestError,
   ForbiddenError,
@@ -139,6 +140,19 @@ export const adminAuthService = {
         };
         MOCK_ADMIN_USERS.push(mock);
       }
+      if (!mock && cleanEmail === 'staff@circleuponline.com') {
+        mock = {
+          id: 'staff-default-01',
+          email: 'staff@circleuponline.com',
+          name: 'CircleUp Staff',
+          passwordHash: await this.hashPassword('StaffPassword123'),
+          role: 'staff',
+          isActive: true,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        MOCK_ADMIN_USERS.push(mock);
+      }
 
       if (!mock || !(await this.verifyPassword(String(mock.passwordHash), plainPassword))) {
         throw new UnauthorizedError('Invalid admin email or password.', 'INVALID_CREDENTIALS');
@@ -171,6 +185,94 @@ export const adminAuthService = {
 
     const user = await AdminUser.findOne({ email: cleanEmail });
     if (!user) {
+      if (isSupabaseBackendConfigured()) {
+        try {
+          const { data: supaUser } = await getSupabaseServiceClient()
+            .from('admin_users')
+            .select('*')
+            .eq('email', cleanEmail)
+            .maybeSingle();
+          if (supaUser && supaUser.is_active) {
+            const valid = await this.verifyPassword(supaUser.password_hash, plainPassword);
+            if (valid) {
+              const csrfToken = generateCsrfToken();
+              const sessionData: AdminSessionData = {
+                userId: String(supaUser.id),
+                email: supaUser.email,
+                name: supaUser.name,
+                role: supaUser.role as 'owner' | 'staff',
+                csrfToken,
+                expiresAt: Date.now() + SESSION_TTL_MS,
+              };
+              const sessionToken = signSessionToken(sessionData);
+              IN_MEMORY_SESSIONS.set(sessionToken, sessionData);
+              return {
+                user: {
+                  id: sessionData.userId,
+                  email: sessionData.email,
+                  name: sessionData.name,
+                  role: sessionData.role,
+                },
+                sessionToken,
+                csrfToken,
+              };
+            }
+          }
+        } catch {
+          // Continue to fallback
+        }
+      }
+
+      // Allow demo credentials in development if MongoDB collection has not been seeded
+      if (!isProductionEnvironment()) {
+        if (cleanEmail === 'owner@circleuponline.com' && plainPassword === 'OwnerPassword123') {
+          const csrfToken = generateCsrfToken();
+          const sessionData: AdminSessionData = {
+            userId: 'owner-default-01',
+            email: 'owner@circleuponline.com',
+            name: 'CircleUp Owner',
+            role: 'owner',
+            csrfToken,
+            expiresAt: Date.now() + SESSION_TTL_MS,
+          };
+          const sessionToken = signSessionToken(sessionData);
+          IN_MEMORY_SESSIONS.set(sessionToken, sessionData);
+          return {
+            user: {
+              id: sessionData.userId,
+              email: sessionData.email,
+              name: sessionData.name,
+              role: sessionData.role,
+            },
+            sessionToken,
+            csrfToken,
+          };
+        }
+        if (cleanEmail === 'staff@circleuponline.com' && plainPassword === 'StaffPassword123') {
+          const csrfToken = generateCsrfToken();
+          const sessionData: AdminSessionData = {
+            userId: 'staff-default-01',
+            email: 'staff@circleuponline.com',
+            name: 'CircleUp Staff',
+            role: 'staff',
+            csrfToken,
+            expiresAt: Date.now() + SESSION_TTL_MS,
+          };
+          const sessionToken = signSessionToken(sessionData);
+          IN_MEMORY_SESSIONS.set(sessionToken, sessionData);
+          return {
+            user: {
+              id: sessionData.userId,
+              email: sessionData.email,
+              name: sessionData.name,
+              role: sessionData.role,
+            },
+            sessionToken,
+            csrfToken,
+          };
+        }
+      }
+
       throw new UnauthorizedError('Invalid admin email or password.', 'INVALID_CREDENTIALS');
     }
 

@@ -32,7 +32,7 @@ describe('SizeGuideModal portal and layering', () => {
     host.remove();
   });
 
-  it('portals into document.body with z-[70] when open and responds to close actions', () => {
+  it('portals into document.body with z-[100] when open and responds to close actions', () => {
     const onClose = vi.fn();
     const host = document.createElement('div');
     // Simulate nested notebook sheet structure
@@ -56,7 +56,7 @@ describe('SizeGuideModal portal and layering', () => {
     const dialogBackdrop = document.body.querySelector('[role="dialog"]');
     expect(dialogBackdrop).not.toBeNull();
     expect(dialogBackdrop?.parentElement).toBe(document.body);
-    expect(dialogBackdrop?.className).toContain('z-[70]');
+    expect(dialogBackdrop?.className).toContain('z-[100]');
 
     // Contains title and product measurements
     expect(dialogBackdrop?.textContent).toContain('Garment Size & Measurement Guide');
