@@ -23,6 +23,7 @@ const envSchema = z.object({
   SUPABASE_JWT_SECRET: z.string().optional(),
   SUPABASE_URL: z.string().optional(),
   SUPABASE_ANON_KEY: z.string().optional(),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
   STORAGE_CDN_URL: z.string().optional(),
   COOKIE_DOMAIN: z.string().optional(),
   CORS_ALLOWED_ORIGINS: z

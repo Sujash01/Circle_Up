@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { subscribeToScrollFrames } from '@/lib/scrollScheduler';
 import { formatPrice } from '@/services/cartService';
 import { productService } from '@/services/productService';
+import { useHeaderPromo } from '@/services/storefrontSettingsService';
 
 const pad = 'px-5 sm:px-10 lg:px-14 xl:px-20 2xl:px-28 max-w-[2000px] mx-auto';
 
@@ -55,10 +56,15 @@ const NAV_GROUPS = [
 ];
 
 export function StorefrontTopBanner({ text }: { text?: string }) {
+  const promo = useHeaderPromo();
+  if (!promo.isActive && !text) return null;
+
   return (
     <div className="storefront-top-banner" role="note" aria-label="Store announcement">
       {text ? (
         <span>{text}</span>
+      ) : promo.text ? (
+        <span>{promo.text}</span>
       ) : (
         <>
           <span>

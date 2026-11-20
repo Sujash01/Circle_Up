@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '@/context/StoreContext';
 import { SpiralBinding } from '@/components/ui/SpiralBinding';
+import { useExitIntentOffer } from '@/services/storefrontSettingsService';
 
 /**
  * Exit-intent overlay styled after CircleUp's Forest-Green & Warm Cream store
@@ -12,6 +13,7 @@ import { SpiralBinding } from '@/components/ui/SpiralBinding';
  */
 export function ExitIntentModal() {
   const { totals, isSearchOpen, applyPromoCode, showNotice } = useStore();
+  const exitOffer = useExitIntentOffer();
   const [open, setOpen] = useState(false);
   const hasTriggeredRef = useRef(false);
   const navigate = useNavigate();
@@ -57,9 +59,9 @@ export function ExitIntentModal() {
   if (!open || typeof document === 'undefined') return null;
 
   const hasItems = totals.itemCount > 0;
-  const code = totals.subtotal >= 1500 ? 'CIRCLE20' : 'THRIFT10';
+  const code = exitOffer?.code || (totals.subtotal >= 1500 ? 'CIRCLE20' : 'THRIFT10');
   const codeDesc =
-    code === 'CIRCLE20' ? '20% off orders ₹1,500+' : '10% off your curated find';
+    exitOffer?.badgeText || (code === 'CIRCLE20' ? '20% off orders ₹1,500+' : '10% off your curated find');
 
   const copyCode = async () => {
     try { await navigator.clipboard.writeText(code); setCopied(true); }

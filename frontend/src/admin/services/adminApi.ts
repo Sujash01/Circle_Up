@@ -400,6 +400,27 @@ export const adminApi = {
 
   // === SETTINGS ===
   async getSettings() {
+    if (isSupabaseConfigured()) {
+      try {
+        const { data, error } = await supabase.from('site_settings').select('*').eq('id', 'default').single();
+        if (!error && data) {
+          return {
+            announcementText: data.announcement_text || '',
+            announcementLink: data.announcement_link || '',
+            isAnnouncementActive: Boolean(data.is_announcement_active),
+            marqueePhrases: Array.isArray(data.marquee_phrases) ? data.marquee_phrases : [],
+            storeAddress: data.store_address || '',
+            contactEmail: data.contact_email || '',
+            contactPhone: data.contact_phone || '',
+            whatsappNumber: data.whatsapp_number || '',
+            categoryTiles: data.category_tiles || [],
+            curatedDrop: data.curated_drop || { enabled: false },
+          } as unknown as SiteSettings;
+        }
+      } catch {
+        // Fall back to REST API
+      }
+    }
     try {
       const res = await adminClient.get<{ data: SiteSettings }>('/settings');
       return res.data.data;
@@ -408,7 +429,47 @@ export const adminApi = {
     }
   },
 
-  async updateSettings(data: Partial<SiteSettings>) {
+  async updateSettings(data: Partial<SiteSettings> & Record<string, unknown>) {
+    if (isSupabaseConfigured()) {
+      try {
+        const row: Record<string, unknown> = {};
+        if (data.announcementText !== undefined) row.announcement_text = data.announcementText;
+        if (data.announcementLink !== undefined) row.announcement_link = data.announcementLink;
+        if (data.isAnnouncementActive !== undefined) row.is_announcement_active = data.isAnnouncementActive;
+        if (data.marqueePhrases !== undefined) row.marquee_phrases = data.marqueePhrases;
+        if (data.storeAddress !== undefined) row.store_address = data.storeAddress;
+        if (data.contactEmail !== undefined) row.contact_email = data.contactEmail;
+        if (data.contactPhone !== undefined) row.contact_phone = data.contactPhone;
+        if (data.whatsappNumber !== undefined) row.whatsapp_number = data.whatsappNumber;
+        if (data.categoryTiles !== undefined) row.category_tiles = data.categoryTiles;
+        if (data.customDrop !== undefined) row.curated_drop = data.customDrop;
+        if (data.curatedDrop !== undefined) row.curated_drop = data.curatedDrop;
+
+        const { data: updated, error } = await supabase
+          .from('site_settings')
+          .update(row)
+          .eq('id', 'default')
+          .select()
+          .single();
+
+        if (!error && updated) {
+          return {
+            announcementText: updated.announcement_text,
+            announcementLink: updated.announcement_link,
+            isAnnouncementActive: updated.is_announcement_active,
+            marqueePhrases: updated.marquee_phrases,
+            storeAddress: updated.store_address,
+            contactEmail: updated.contact_email,
+            contactPhone: updated.contact_phone,
+            whatsappNumber: updated.whatsapp_number,
+            categoryTiles: updated.category_tiles,
+            customDrop: updated.curated_drop,
+          } as unknown as SiteSettings;
+        }
+      } catch {
+        // Fall back to REST API
+      }
+    }
     try {
       const res = await adminClient.put<{ data: SiteSettings }>('/settings', data);
       return res.data.data;
@@ -419,6 +480,35 @@ export const adminApi = {
 
   // === COUPONS ===
   async getCoupons() {
+    if (isSupabaseConfigured()) {
+      try {
+        const { data, error } = await supabase.from('coupons').select('*').order('created_at', { ascending: false });
+        if (!error && Array.isArray(data)) {
+          return data.map((c: Record<string, unknown>) => ({
+            id: c.id as string,
+            code: c.code as string,
+            description: (c.description as string) || '',
+            type: (c.discount_type as string) || 'PERCENTAGE',
+            value: Number(c.discount_value || 0),
+            maxDiscount: c.max_discount_paise ? Number(c.max_discount_paise) : undefined,
+            minCartSubtotal: Number(c.min_order_paise || 0),
+            usageLimit: c.usage_limit ? Number(c.usage_limit) : undefined,
+            usageCount: Number(c.usage_count || 0),
+            isActive: Boolean(c.is_active),
+            showInHeader: Boolean(c.show_in_header),
+            headerBannerText: (c.header_banner_text as string) || undefined,
+            showInExitIntent: Boolean(c.show_in_exit_intent),
+            popupHeadline: (c.popup_headline as string) || undefined,
+            popupSubtext: (c.popup_subtext as string) || undefined,
+            popupBadgeText: (c.popup_badge_text as string) || undefined,
+            startsAt: (c.starts_at as string) || undefined,
+            expiresAt: (c.ends_at as string) || undefined,
+          })) as unknown as Coupon[];
+        }
+      } catch {
+        // Fall back
+      }
+    }
     try {
       const res = await adminClient.get<{ data: Coupon[] }>('/coupons');
       return res.data.data;
@@ -427,7 +517,57 @@ export const adminApi = {
     }
   },
 
-  async createCoupon(data: Partial<Coupon>) {
+  async createCoupon(data: Partial<Coupon> & Record<string, unknown>) {
+    if (isSupabaseConfigured()) {
+      try {
+        const discountType = String(data.discountType || data.type || 'PERCENTAGE').toUpperCase();
+        const row = {
+          code: (data.code || '').trim().toUpperCase(),
+          description: data.description || '',
+          discount_type: discountType,
+          discount_value: Number(data.value || 0),
+          max_discount_paise: data.maxDiscount ? Number(data.maxDiscount) : null,
+          min_order_paise: Number(data.minCartSubtotal || data.minOrderAmount || 0),
+          usage_limit: data.usageLimit ? Number(data.usageLimit) : null,
+          is_active: data.isActive !== false,
+          show_in_header: Boolean(data.showInHeader),
+          header_banner_text: (data.headerBannerText as string) || null,
+          show_in_exit_intent: Boolean(data.showInExitIntent),
+          popup_headline: (data.popupHeadline as string) || null,
+          popup_subtext: (data.popupSubtext as string) || null,
+          popup_badge_text: (data.popupBadgeText as string) || null,
+          starts_at: (data.startsAt as string) || null,
+          ends_at: (data.expiresAt as string) || null,
+        };
+        const { data: inserted, error } = await supabase.from('coupons').insert([row]).select().single();
+        if (!error && inserted) {
+          return {
+            id: inserted.id,
+            code: inserted.code,
+            description: inserted.description,
+            discountType: inserted.discount_type,
+            type: inserted.discount_type,
+            value: inserted.discount_value,
+            maxDiscount: inserted.max_discount_paise,
+            minCartSubtotal: inserted.min_order_paise,
+            minOrderAmount: inserted.min_order_paise,
+            usageLimit: inserted.usage_limit,
+            usageCount: inserted.usage_count,
+            isActive: inserted.is_active,
+            showInHeader: inserted.show_in_header,
+            headerBannerText: inserted.header_banner_text,
+            showInExitIntent: inserted.show_in_exit_intent,
+            popupHeadline: inserted.popup_headline,
+            popupSubtext: inserted.popup_subtext,
+            popupBadgeText: inserted.popup_badge_text,
+            startsAt: inserted.starts_at,
+            expiresAt: inserted.ends_at,
+          } as unknown as Coupon;
+        }
+      } catch {
+        // Fall back
+      }
+    }
     try {
       const res = await adminClient.post<{ data: Coupon }>('/coupons', data);
       return res.data.data;
@@ -436,7 +576,59 @@ export const adminApi = {
     }
   },
 
-  async updateCoupon(id: string, data: Partial<Coupon>) {
+  async updateCoupon(id: string, data: Partial<Coupon> & Record<string, unknown>) {
+    if (isSupabaseConfigured()) {
+      try {
+        const row: Record<string, unknown> = {};
+        if (data.code !== undefined) row.code = String(data.code).trim().toUpperCase();
+        if (data.description !== undefined) row.description = data.description;
+        if (data.discountType !== undefined || data.type !== undefined) {
+          row.discount_type = String(data.discountType || data.type).toUpperCase();
+        }
+        if (data.value !== undefined) row.discount_value = Number(data.value);
+        if (data.maxDiscount !== undefined) row.max_discount_paise = data.maxDiscount;
+        if (data.minCartSubtotal !== undefined) row.min_order_paise = Number(data.minCartSubtotal);
+        if (data.minOrderAmount !== undefined) row.min_order_paise = Number(data.minOrderAmount);
+        if (data.usageLimit !== undefined) row.usage_limit = data.usageLimit;
+        if (data.isActive !== undefined) row.is_active = data.isActive;
+        if (data.showInHeader !== undefined) row.show_in_header = Boolean(data.showInHeader);
+        if (data.headerBannerText !== undefined) row.header_banner_text = data.headerBannerText;
+        if (data.showInExitIntent !== undefined) row.show_in_exit_intent = Boolean(data.showInExitIntent);
+        if (data.popupHeadline !== undefined) row.popup_headline = data.popupHeadline;
+        if (data.popupSubtext !== undefined) row.popup_subtext = data.popupSubtext;
+        if (data.popupBadgeText !== undefined) row.popup_badge_text = data.popupBadgeText;
+        if (data.startsAt !== undefined) row.starts_at = data.startsAt;
+        if (data.expiresAt !== undefined) row.ends_at = data.expiresAt;
+
+        const { data: updated, error } = await supabase.from('coupons').update(row).eq('id', id).select().single();
+        if (!error && updated) {
+          return {
+            id: updated.id,
+            code: updated.code,
+            description: updated.description,
+            discountType: updated.discount_type,
+            type: updated.discount_type,
+            value: updated.discount_value,
+            maxDiscount: updated.max_discount_paise,
+            minCartSubtotal: updated.min_order_paise,
+            minOrderAmount: updated.min_order_paise,
+            usageLimit: updated.usage_limit,
+            usageCount: updated.usage_count,
+            isActive: updated.is_active,
+            showInHeader: updated.show_in_header,
+            headerBannerText: updated.header_banner_text,
+            showInExitIntent: updated.show_in_exit_intent,
+            popupHeadline: updated.popup_headline,
+            popupSubtext: updated.popup_subtext,
+            popupBadgeText: updated.popup_badge_text,
+            startsAt: updated.starts_at,
+            expiresAt: updated.ends_at,
+          } as unknown as Coupon;
+        }
+      } catch {
+        // Fall back
+      }
+    }
     try {
       const res = await adminClient.put<{ data: Coupon }>(`/coupons/${id}`, data);
       return res.data.data;
@@ -446,6 +638,14 @@ export const adminApi = {
   },
 
   async deleteCoupon(id: string) {
+    if (isSupabaseConfigured()) {
+      try {
+        const { error } = await supabase.from('coupons').delete().eq('id', id);
+        if (!error) return { success: true };
+      } catch {
+        // Fall back
+      }
+    }
     try {
       const res = await adminClient.delete(`/coupons/${id}`);
       return res.data;
@@ -530,6 +730,30 @@ export const adminApi = {
 
   // === ACTIVITY ===
   async getActivity() {
+    if (isSupabaseConfigured()) {
+      try {
+        const { data, error } = await supabase
+          .from('activity_audit_logs')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(100);
+        if (!error && Array.isArray(data)) {
+          return data.map((log: Record<string, unknown>) => ({
+            id: log.id as string,
+            actorEmail: (log.actor_email as string) || (log.actor_id as string) || 'system',
+            actorRole: (log.actor_role as string) || 'admin',
+            action: (log.action as string) || 'UPDATE',
+            entity: (log.table_name as string) || 'Unknown',
+            entityId: (log.record_id as string) || '',
+            diff: (log.after_state as Record<string, unknown>) || (log.before_state as Record<string, unknown>) || {},
+            ipAddress: (log.ip_address as string) || undefined,
+            createdAt: (log.created_at as string) || new Date().toISOString(),
+          }));
+        }
+      } catch {
+        // Fall back
+      }
+    }
     try {
       const res = await adminClient.get<{
         data: Array<{
