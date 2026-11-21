@@ -6,6 +6,7 @@ import { buildPaginationMeta, parsePagination } from '../../utils/pagination.js'
 import { extractCategoryCodeFromSerial, type IProductItem, type ProductListQuery } from '@circleup/shared';
 import { isSupabaseConfigured } from '../../services/supabase.service.js';
 import { supabaseCatalogService } from '../../services/supabaseCatalog.service.js';
+import { env } from '../../config/env.js';
 
 function isDatabaseConnected(): boolean {
   return mongoose.connection.readyState === 1;

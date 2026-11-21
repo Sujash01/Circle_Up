@@ -4,6 +4,7 @@ import { BadRequestError } from '../errors/AppError.js';
 import mongoose from 'mongoose';
 import { isSupabaseConfigured } from './supabase.service.js';
 import { supabaseCatalogService } from './supabaseCatalog.service.js';
+import { env } from '../config/env.js';
 
 export interface SearchMatch {
   id: string;
