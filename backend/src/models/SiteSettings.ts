@@ -25,6 +25,7 @@ export interface ISiteSettingsDocument extends Document {
   contactEmail: string;
   contactPhone: string;
   whatsappNumber: string;
+  isWhatsappVerified: boolean;
   contentVersion: number;
   createdAt: Date;
   updatedAt: Date;
@@ -90,6 +91,10 @@ const SiteSettingsSchema = new Schema<ISiteSettingsDocument>(
     whatsappNumber: {
       type: String,
       default: '',
+    },
+    isWhatsappVerified: {
+      type: Boolean,
+      default: false,
     },
     contentVersion: {
       type: Number,

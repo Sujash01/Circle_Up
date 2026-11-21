@@ -5,6 +5,8 @@ import { settingsRepository } from '../repositories/settings.repository.js';
 import { BadRequestError, NotFoundError } from '../errors/AppError.js';
 import type { Product as ProductType, ProductListQuery } from '@circleup/shared';
 import { SEED_PRODUCTS } from '../data/seedProducts.js';
+import { isSupabaseConfigured } from './supabase.service.js';
+import { supabaseCatalogService } from './supabaseCatalog.service.js';
 
 function isDbConnected(): boolean {
   return mongoose.connection.readyState === 1;
@@ -22,6 +24,10 @@ function slugify(text: string): string {
 
 export const adminProductService = {
   async listAll(query: ProductListQuery & { includeArchived?: boolean; includeDeleted?: boolean }) {
+    if (isSupabaseConfigured()) {
+      return supabaseCatalogService.listAdminProducts(query);
+    }
+
     if (!isDbConnected()) {
       return {
         products: SEED_PRODUCTS.map((p) => ({ ...p, id: p.id || p.serialNumber })),
@@ -72,6 +78,23 @@ export const adminProductService = {
     if (!data.name) throw new BadRequestError('Product name is required.', 'NAME_REQUIRED');
     if (typeof data.price !== 'number' || data.price < 0) {
       throw new BadRequestError('Valid product price in paise is required.', 'INVALID_PRICE');
+    }
+
+    if (isSupabaseConfigured()) {
+      const created = await supabaseCatalogService.createProduct(data);
+      if (isDbConnected()) {
+        try {
+          await Product.create({
+            ...data,
+            serialNumber: created.serialNumber,
+            slug: created.slug,
+          });
+          await settingsRepository.bumpVersion();
+        } catch {
+          // Dual-write best-effort
+        }
+      }
+      return created;
     }
 
     if (!isDbConnected()) {
@@ -127,6 +150,28 @@ export const adminProductService = {
   },
 
   async update(id: string, updates: Partial<ProductType>) {
+    if (isSupabaseConfigured()) {
+      const updated = await supabaseCatalogService.updateProduct(id, updates);
+      if (isDbConnected()) {
+        try {
+          const query = mongoose.isValidObjectId(id) ? { _id: id } : { serialNumber: id.toUpperCase() };
+          const product = await Product.findOne(query);
+          if (product) {
+            Object.assign(product, updates);
+            if (updates.stock !== undefined) {
+              if (updates.stock === 0) product.status = 'SOLD_OUT';
+              else if (product.status === 'SOLD_OUT' && updates.stock > 0) product.status = 'ACTIVE';
+            }
+            await product.save();
+            await settingsRepository.bumpVersion();
+          }
+        } catch {
+          // Dual-write best-effort
+        }
+      }
+      return updated;
+    }
+
     if (!isDbConnected()) {
       return { id, ...updates };
     }
@@ -147,6 +192,23 @@ export const adminProductService = {
   },
 
   async duplicate(id: string) {
+    if (isSupabaseConfigured()) {
+      const duplicated = await supabaseCatalogService.duplicateProduct(id);
+      if (isDbConnected()) {
+        try {
+          await Product.create({
+            ...duplicated,
+            _id: undefined,
+            id: undefined,
+          });
+          await settingsRepository.bumpVersion();
+        } catch {
+          // Dual-write best-effort
+        }
+      }
+      return duplicated;
+    }
+
     if (!isDbConnected()) {
       const source = SEED_PRODUCTS.find((p) => p.serialNumber === id || p.id === id);
       return { id: `cu-copy-${Date.now()}`, name: `${source?.name || 'Product'} (Copy)`, status: 'DRAFT' };
@@ -180,6 +242,27 @@ export const adminProductService = {
   },
 
   async bulkAction(action: 'publish' | 'unpublish' | 'archive' | 'changeCategory' | 'delete', ids: string[], payload?: { category?: string }) {
+    if (isSupabaseConfigured()) {
+      const res = await supabaseCatalogService.bulkAction(action, ids, payload);
+      if (isDbConnected()) {
+        try {
+          const objectIds = ids.filter((id) => mongoose.isValidObjectId(id)).map((id) => new mongoose.Types.ObjectId(id));
+          const query = { $or: [{ _id: { $in: objectIds } }, { serialNumber: { $in: ids } }] };
+          let update: Record<string, unknown> = {};
+          if (action === 'publish') update = { status: 'PUBLISHED' };
+          else if (action === 'unpublish') update = { status: 'DRAFT' };
+          else if (action === 'archive') update = { status: 'ARCHIVED' };
+          else if (action === 'changeCategory' && payload?.category) update = { category: payload.category };
+          else if (action === 'delete') update = { deletedAt: new Date(), status: 'ARCHIVED' };
+          await Product.updateMany(query, { $set: update });
+          await settingsRepository.bumpVersion();
+        } catch {
+          // Dual-write best-effort
+        }
+      }
+      return res;
+    }
+
     if (!isDbConnected()) {
       return { modifiedCount: ids.length };
     }
@@ -200,6 +283,18 @@ export const adminProductService = {
   },
 
   async softDelete(id: string) {
+    if (isSupabaseConfigured()) {
+      const res = await supabaseCatalogService.softDeleteProduct(id);
+      if (isDbConnected()) {
+        try {
+          const query = mongoose.isValidObjectId(id) ? { _id: id } : { serialNumber: id.toUpperCase() };
+          await Product.findOneAndUpdate(query, { $set: { deletedAt: new Date(), status: 'ARCHIVED' } });
+          await settingsRepository.bumpVersion();
+        } catch {}
+      }
+      return res;
+    }
+
     if (!isDbConnected()) return { message: `Product ${id} deleted` };
 
     const query = mongoose.isValidObjectId(id) ? { _id: id } : { serialNumber: id.toUpperCase() };
@@ -215,6 +310,18 @@ export const adminProductService = {
   },
 
   async restore(id: string) {
+    if (isSupabaseConfigured()) {
+      const res = await supabaseCatalogService.restoreProduct(id);
+      if (isDbConnected()) {
+        try {
+          const query = mongoose.isValidObjectId(id) ? { _id: id } : { serialNumber: id.toUpperCase() };
+          await Product.findOneAndUpdate(query, { $set: { deletedAt: null, status: 'PUBLISHED' } });
+          await settingsRepository.bumpVersion();
+        } catch {}
+      }
+      return res;
+    }
+
     if (!isDbConnected()) return { message: `Product ${id} restored` };
 
     const query = mongoose.isValidObjectId(id) ? { _id: id } : { serialNumber: id.toUpperCase() };
@@ -230,6 +337,18 @@ export const adminProductService = {
   },
 
   async permanentDelete(id: string) {
+    if (isSupabaseConfigured()) {
+      const res = await supabaseCatalogService.permanentDeleteProduct(id);
+      if (isDbConnected()) {
+        try {
+          const query = mongoose.isValidObjectId(id) ? { _id: id } : { serialNumber: id.toUpperCase() };
+          await Product.deleteOne(query);
+          await settingsRepository.bumpVersion();
+        } catch {}
+      }
+      return res;
+    }
+
     if (!isDbConnected()) return { message: `Product ${id} deleted permanently` };
 
     const query = mongoose.isValidObjectId(id) ? { _id: id } : { serialNumber: id.toUpperCase() };

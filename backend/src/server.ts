@@ -7,7 +7,15 @@ import { logger } from './config/logger.js';
 let server: Server | null = null;
 let reconnectTimer: NodeJS.Timeout | null = null;
 
-function scheduleDevReconnect(): void {
+export function resetServerStateForTesting(): void {
+  if (reconnectTimer) {
+    clearInterval(reconnectTimer);
+    reconnectTimer = null;
+  }
+  server = null;
+}
+
+function scheduleReconnect(): void {
   if (reconnectTimer) return;
 
   reconnectTimer = setInterval(async () => {
@@ -27,23 +35,25 @@ function scheduleDevReconnect(): void {
 
 export const app = createApp();
 
-async function bootstrap(): Promise<void> {
+export async function bootstrap(): Promise<void> {
   if (env.MONGODB_URI) {
     try {
       await connectDatabase();
     } catch (err) {
-      if (env.NODE_ENV !== 'development') {
+      // In target Supabase-only architecture, MongoDB connection failure must NOT terminate
+      // the backend in production. Only an explicit legacy MongoDB checkout configuration fails startup.
+      if (env.CHECKOUT_PROVIDER === 'mongodb' && env.NODE_ENV !== 'development') {
         throw err;
       }
 
       logger.warn(
         { err: err instanceof Error ? err.message : err },
-        'MongoDB is not reachable. Starting CircleUp API in degraded dev mode — set a MongoDB Atlas URI or start local mongod in backend/.env.',
+        'MongoDB is not reachable. Starting CircleUp API with Supabase checkout active and MongoDB in degraded mode.',
       );
-      scheduleDevReconnect();
+      scheduleReconnect();
     }
   } else {
-    logger.info('MONGODB_URI not configured; running CircleUp API in degraded catalog mode.');
+    logger.info('MONGODB_URI not configured; running CircleUp API with Supabase checkout active.');
   }
 
   server = app.listen(env.PORT, () => {
@@ -69,7 +79,7 @@ async function shutdown(signal: string): Promise<void> {
   process.exit(0);
 }
 
-if (!process.env.VERCEL) {
+if (!process.env.VERCEL && process.env.NODE_ENV !== 'test') {
   process.on('SIGTERM', () => {
     void shutdown('SIGTERM');
   });

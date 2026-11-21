@@ -4,6 +4,8 @@ import { SEED_PRODUCTS } from '../../data/seedProducts.js';
 import { BadRequestError, NotFoundError } from '../../errors/AppError.js';
 import { buildPaginationMeta, parsePagination } from '../../utils/pagination.js';
 import { extractCategoryCodeFromSerial, type IProductItem, type ProductListQuery } from '@circleup/shared';
+import { isSupabaseConfigured } from '../../services/supabase.service.js';
+import { supabaseCatalogService } from '../../services/supabaseCatalog.service.js';
 
 function isDatabaseConnected(): boolean {
   return mongoose.connection.readyState === 1;
@@ -19,6 +21,10 @@ function slugify(name: string): string {
 
 export const productService = {
   async listProducts(query: ProductListQuery) {
+    if (isSupabaseConfigured()) {
+      return supabaseCatalogService.listProducts(query);
+    }
+
     const { page, limit, skip } = parsePagination(query as { page?: unknown; limit?: unknown });
     const {
       category,
@@ -148,6 +154,10 @@ export const productService = {
   },
 
   async getProductByIdentifier(identifier: string) {
+    if (isSupabaseConfigured()) {
+      return supabaseCatalogService.getProductByIdentifier(identifier);
+    }
+
     const trimmed = identifier.trim();
 
     if (isDatabaseConnected()) {
@@ -186,6 +196,10 @@ export const productService = {
   },
 
   async getRelatedProducts(identifier: string, limit = 4) {
+    if (isSupabaseConfigured()) {
+      return supabaseCatalogService.getRelatedProducts(identifier, limit);
+    }
+
     const target = await this.getProductByIdentifier(identifier);
     if (isDatabaseConnected()) {
       const targetId = (target as Record<string, unknown>)._id || target.id;
@@ -213,6 +227,16 @@ export const productService = {
   },
 
   async createProduct(payload: Partial<IProductItem>) {
+    if (isSupabaseConfigured()) {
+      const created = await supabaseCatalogService.createProduct(payload);
+      if (isDatabaseConnected()) {
+        try {
+          await Product.create({ ...payload, serialNumber: created.serialNumber, slug: created.slug });
+        } catch {}
+      }
+      return created;
+    }
+
     if (!isDatabaseConnected()) {
       throw new BadRequestError('MongoDB is currently disconnected. Please configure MONGODB_URI in backend/.env to write new products.', 'DATABASE_DISCONNECTED');
     }
@@ -282,6 +306,16 @@ export const productService = {
   },
 
   async updateProduct(serialNumber: string, updates: Partial<IProductItem>) {
+    if (isSupabaseConfigured()) {
+      const updated = await supabaseCatalogService.updateProduct(serialNumber, updates);
+      if (isDatabaseConnected()) {
+        try {
+          await Product.findOneAndUpdate({ serialNumber: serialNumber.trim().toUpperCase() }, updates);
+        } catch {}
+      }
+      return updated;
+    }
+
     if (!isDatabaseConnected()) {
       throw new BadRequestError('MongoDB is currently disconnected.', 'DATABASE_DISCONNECTED');
     }
