@@ -16,6 +16,7 @@ const DEFAULT_SETTINGS = {
   contactEmail: 'care@circleuponline.com',
   contactPhone: '+91 98765 43210',
   whatsappNumber: '',
+  isWhatsappVerified: false,
   contentVersion: 1,
 };
 

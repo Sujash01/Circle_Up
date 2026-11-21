@@ -3,6 +3,8 @@ import { sendSuccess } from '../utils/apiResponse.js';
 import { Product } from '../models/Product.js';
 import { SEED_PRODUCTS } from '../data/seedProducts.js';
 import mongoose from 'mongoose';
+import { isSupabaseConfigured } from '../services/supabase.service.js';
+import { supabaseCatalogService } from '../services/supabaseCatalog.service.js';
 
 const DEFAULT_CATEGORIES = [
   { slug: 'womens-one-piece', name: "Women's One Piece", subcategories: ['Co-ords', 'Dresses', 'Jumpsuits'] },
@@ -26,7 +28,13 @@ export const categoryController = {
         itemCount: 0,
       }));
 
-      if (isDbConnected) {
+      if (isSupabaseConfigured()) {
+        const countMap = await supabaseCatalogService.getCategoryCounts();
+        categoriesWithCounts = categoriesWithCounts.map((c) => ({
+          ...c,
+          itemCount: countMap.get(c.slug) || 0,
+        }));
+      } else if (isDbConnected) {
         const counts = await Product.aggregate([
           { $match: { status: { $in: ['ACTIVE', 'PUBLISHED'] }, deletedAt: null } },
           { $group: { _id: '$category', count: { $sum: 1 } } },

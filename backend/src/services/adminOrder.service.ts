@@ -6,6 +6,8 @@ import { parsePagination, buildPaginationMeta } from '../utils/pagination.js';
 import { runInTransaction } from '../utils/transaction.js';
 import { auditService } from './audit.service.js';
 import type { AdminSessionData } from './adminAuth.service.js';
+import { isSupabaseConfigured } from './supabase.service.js';
+import { supabaseCatalogService } from './supabaseCatalog.service.js';
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   PENDING: ['CONFIRMED', 'CANCELLED'],
@@ -83,13 +85,18 @@ export const adminOrderService = {
     if (newStatus === 'CANCELLED') {
       for (const item of order.items) {
         if (item.serialNumber) {
-          await Product.findOneAndUpdate(
-            { serialNumber: item.serialNumber.toUpperCase() },
-            {
-              $inc: { stock: item.quantity || 1 },
-              $set: { status: 'ACTIVE' },
-            },
-          );
+          if (isSupabaseConfigured()) {
+            await supabaseCatalogService.restoreStock(item.serialNumber, item.quantity || 1).catch(() => {});
+          }
+          if (mongoose.connection.readyState === 1) {
+            await Product.findOneAndUpdate(
+              { serialNumber: item.serialNumber.toUpperCase() },
+              {
+                $inc: { stock: item.quantity || 1 },
+                $set: { status: 'ACTIVE' },
+              },
+            );
+          }
         }
       }
     }

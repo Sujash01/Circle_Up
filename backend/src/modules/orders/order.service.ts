@@ -14,15 +14,34 @@ import { ConflictError, UnprocessableEntityError } from '../../errors/AppError.j
 import { env } from '../../config/env.js';
 import { verifyCheckoutIndexes } from '../../utils/checkoutIndexes.js';
 import { getConfiguredWhatsappNumber, settingsRepository } from '../../repositories/settings.repository.js';
+import {
+  isSupabaseCheckoutConfigured,
+  executeStorefrontCheckoutRpc,
+} from '../../services/supabase.service.js';
 
 function isDatabaseConnected(): boolean {
   return mongoose.connection.readyState === 1;
 }
 
-function generateOrderNumber(): string {
-  const dateStr = new Date().toISOString().slice(2, 10).replace(/-/g, '');
-  const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-  return `ORD-${dateStr}-${randomSuffix}`;
+export function getKolkataDateString(now: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Kolkata',
+    year: '2-digit',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+
+  const year = parts.find((p) => p.type === 'year')?.value ?? '00';
+  const month = parts.find((p) => p.type === 'month')?.value ?? '00';
+  const day = parts.find((p) => p.type === 'day')?.value ?? '00';
+  return `${year}${month}${day}`;
+}
+
+export function generateOrderNumber(date: Date = new Date()): string {
+  const dateStr = getKolkataDateString(date);
+  // Complete unhyphenated UUID v4 (32 hex characters) providing 122 bits of cryptographic entropy
+  const cryptoSuffix = crypto.randomUUID().replace(/-/g, '').toUpperCase();
+  return `ORD-${dateStr}-${cryptoSuffix}`;
 }
 
 function generateGuestAccessToken(): string {
@@ -30,7 +49,8 @@ function generateGuestAccessToken(): string {
 }
 
 function deriveGuestAccessToken(orderNumber: string): string {
-  return crypto.createHmac('sha256', env.SESSION_SECRET).update(`guest-order:${orderNumber}`).digest('hex');
+  const secret = env.GUEST_ORDER_TOKEN_SECRET || env.SESSION_SECRET;
+  return crypto.createHmac('sha256', secret).update(`circleup:guest-order:${orderNumber}`).digest('hex');
 }
 
 export function hashGuestToken(token: string): string {
@@ -38,6 +58,7 @@ export function hashGuestToken(token: string): string {
 }
 
 export const orderService = {
+  generateOrderNumber,
   verifyGuestAccessToken(
     providedToken: string,
     storedTokenOrHash?: string | null,
@@ -136,15 +157,11 @@ export const orderService = {
       );
     }
 
-    if (!isDatabaseConnected()) {
-      throw new ServiceUnavailableError('Checkout is temporarily unavailable because order storage is offline.', 'DATABASE_UNAVAILABLE');
-    }
-
     if (paymentMethod === 'WHATSAPP_UPI') {
       const settings = await settingsRepository.getSettings();
-      if (!getConfiguredWhatsappNumber(settings.whatsappNumber)) {
+      if (!settings.isWhatsappVerified || !getConfiguredWhatsappNumber(settings.whatsappNumber)) {
         throw new ServiceUnavailableError(
-          'WhatsApp / UPI payment is temporarily unavailable because store contact details are not configured.',
+          'WhatsApp / UPI payment is temporarily unavailable because store contact details have not been verified.',
           'PAYMENT_METHOD_UNAVAILABLE',
         );
       }
@@ -162,8 +179,95 @@ export const orderService = {
       throw new BadRequestError('Order must contain at least one item.', 'EMPTY_ORDER_ITEMS');
     }
 
+    // Explicit checkout provider selection:
+    // Supabase is the canonical target architecture and default provider.
+    // The legacy MongoDB checkout provider is only available in dev/test when explicitly opted into via CHECKOUT_PROVIDER=mongodb.
+    // In production, Supabase is strictly mandatory and MongoDB fallback is blocked.
+    const isLegacyMongoConfigured =
+      env.NODE_ENV !== 'production' && env.CHECKOUT_PROVIDER === 'mongodb';
+
+    if (isLegacyMongoConfigured) {
+      return this.createOrderMongo(payload);
+    }
+
+    return this.createOrderSupabase(payload);
+  },
+
+  async createOrderSupabase(payload: CreateOrderPayload & { idempotencyKey: string }) {
+    const { customer, shippingAddress, items, promoCode, paymentMethod, notes, customerId, idempotencyKey } = payload;
+
+    // 1. Fail closed if monetary gate is unverified in production
+    if (env.NODE_ENV === 'production' && !env.MONETARY_RECONCILIATION_VERIFIED) {
+      throw new ServiceUnavailableError(
+        'Storefront checkout via Supabase is blocked in production: product catalog monetary units (paise vs rupees) have not been verified. Set MONETARY_RECONCILIATION_VERIFIED=true only after verifying database prices.',
+        'MONETARY_RECONCILIATION_REQUIRED',
+      );
+    }
+
+    // 2. Fail closed if privileged Supabase credentials are missing or unconfigured
+    if (!isSupabaseCheckoutConfigured()) {
+      throw new ServiceUnavailableError(
+        'Privileged Supabase server configuration is missing. SUPABASE_SERVICE_ROLE_KEY is required for storefront checkout.',
+        'DATABASE_UNAVAILABLE',
+      );
+    }
+
     const keyHash = createHash('sha256').update(idempotencyKey).digest('hex');
     const fingerprint = createHash('sha256').update(JSON.stringify({ customer, shippingAddress, items, promoCode, paymentMethod, notes, customerId })).digest('hex');
+
+    const orderNumber = generateOrderNumber();
+    const rawGuestToken = customerId ? undefined : deriveGuestAccessToken(orderNumber);
+    const guestAccessTokenHash = rawGuestToken ? hashGuestToken(rawGuestToken) : null;
+    const guestAccessExpiresAt = customerId
+      ? null
+      : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    // 3. Authoritative Supabase atomic RPC execution path
+    // Zero catch-and-fallback to MongoDB: all RPC errors or database failures throw directly
+    const rpcResult = await executeStorefrontCheckoutRpc({
+      p_key_hash: keyHash,
+      p_fingerprint: fingerprint,
+      p_customer_id: customerId || null,
+      p_customer: {
+        name: customer.name.trim(),
+        email: customer.email.trim().toLowerCase(),
+        phone: customer.phone.trim(),
+      },
+      p_shipping_address: shippingAddress,
+      p_items: items.map((it) => ({
+        serialNumber: it.serialNumber.trim().toUpperCase(),
+        quantity: it.quantity,
+        size: it.size,
+      })),
+      p_payment_method: paymentMethod || 'WHATSAPP_UPI',
+      p_promo_code: promoCode ? promoCode.trim().toUpperCase() : null,
+      p_notes: notes ? notes.trim() : null,
+      p_guest_access_token_hash: guestAccessTokenHash,
+      p_guest_access_expires_at: guestAccessExpiresAt,
+      p_order_number: orderNumber,
+    });
+
+    // Ephemeral guest token attached strictly in memory (never stored in response_payload or DB)
+    const ephemeralGuestToken = rpcResult.customerId
+      ? undefined
+      : deriveGuestAccessToken(rpcResult.orderNumber);
+
+    return {
+      ...rpcResult,
+      guestAccessToken: ephemeralGuestToken,
+    };
+  },
+
+  async createOrderMongo(payload: CreateOrderPayload & { idempotencyKey: string }) {
+    const { customer, shippingAddress, items, promoCode, paymentMethod, notes, customerId, idempotencyKey } = payload;
+
+    if (!isDatabaseConnected()) {
+      throw new ServiceUnavailableError('Checkout is temporarily unavailable because order storage is offline.', 'DATABASE_UNAVAILABLE');
+    }
+
+    const keyHash = createHash('sha256').update(idempotencyKey).digest('hex');
+    const fingerprint = createHash('sha256').update(JSON.stringify({ customer, shippingAddress, items, promoCode, paymentMethod, notes, customerId })).digest('hex');
+
     // Fail closed unless the controlled deployment migration installed both required indexes.
     await verifyCheckoutIndexes();
     const existing = await CheckoutIdempotency.findOne({ keyHash, expiresAt: mongoose.trusted({ $gt: new Date() }) }).lean();

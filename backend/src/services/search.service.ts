@@ -2,6 +2,8 @@ import { Product } from '../models/Product.js';
 import { SEED_PRODUCTS } from '../data/seedProducts.js';
 import { BadRequestError } from '../errors/AppError.js';
 import mongoose from 'mongoose';
+import { isSupabaseConfigured } from './supabase.service.js';
+import { supabaseCatalogService } from './supabaseCatalog.service.js';
 
 export interface SearchMatch {
   id: string;
@@ -43,7 +45,9 @@ export const searchService = {
       subcategory?: string;
     }> = [];
 
-    if (isDbConnected) {
+    if (isSupabaseConfigured()) {
+      items = await supabaseCatalogService.searchCatalogItems();
+    } else if (isDbConnected) {
       const docs = await Product.find({
         status: { $in: ['ACTIVE', 'PUBLISHED'] },
         deletedAt: null,

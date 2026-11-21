@@ -11,6 +11,22 @@ const backendEnvPath = path.resolve(__dirname, '../../.env');
 dotenv.config({ path: backendEnvPath });
 dotenv.config();
 
+export const strictBooleanEnvSchema = z
+  .union([z.boolean(), z.string()])
+  .optional()
+  .transform((val, ctx) => {
+    if (typeof val === 'boolean') return val;
+    if (val === undefined || val === null || val.trim() === '') return false;
+    const normalized = val.trim().toLowerCase();
+    if (normalized === 'true') return true;
+    if (normalized === 'false') return false;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `Invalid boolean environment variable: expected "true" or "false", received "${val}"`,
+    });
+    return false;
+  });
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'staging', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(5001),
@@ -20,10 +36,21 @@ const envSchema = z.object({
   JWT_ACCESS_TTL: z.string().default('15m'),
   JWT_ADMIN_ACCESS_TTL: z.string().default('10m'),
   SESSION_SECRET: z.string().default('circleup-super-secret-admin-session-signing-key-32chars'),
+  GUEST_ORDER_TOKEN_SECRET: z.string().optional(),
   SUPABASE_JWT_SECRET: z.string().optional(),
   SUPABASE_URL: z.string().optional(),
   SUPABASE_ANON_KEY: z.string().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
+  // Explicit Checkout Provider Selection:
+  // Supabase is the canonical target architecture and default provider.
+  // The legacy MongoDB checkout provider is only available in dev/test for migration compatibility.
+  CHECKOUT_PROVIDER: z.enum(['supabase', 'mongodb']).default('supabase'),
+  // Monetary-Unit Safety Gate:
+  // Canonical financial units across CircleUp are non-negative integer paise (1 INR = 100 paise).
+  // In production, Supabase checkout cannot be activated until the production database
+  // products table has been audited and verified to use paise (e.g. 400000 for ₹4,000).
+  // Strictly parsed boolean: "true" -> true, "false" -> false, missing/empty -> false.
+  MONETARY_RECONCILIATION_VERIFIED: strictBooleanEnvSchema,
   STORAGE_CDN_URL: z.string().optional(),
   COOKIE_DOMAIN: z.string().optional(),
   CORS_ALLOWED_ORIGINS: z
@@ -62,6 +89,31 @@ const envSchema = z.object({
         code: z.ZodIssueCode.custom,
         path: ['SESSION_SECRET'],
         message: 'SESSION_SECRET must be at least 32 characters in production.',
+      });
+    }
+
+    if (data.GUEST_ORDER_TOKEN_SECRET) {
+      const defaultGuestSecret = 'circleup-guest-order-token-secret-at-least-32-chars';
+      if (data.GUEST_ORDER_TOKEN_SECRET === defaultGuestSecret) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['GUEST_ORDER_TOKEN_SECRET'],
+          message: 'GUEST_ORDER_TOKEN_SECRET must be explicitly set to a unique, non-default secret in production.',
+        });
+      } else if (data.GUEST_ORDER_TOKEN_SECRET.length < 32) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['GUEST_ORDER_TOKEN_SECRET'],
+          message: 'GUEST_ORDER_TOKEN_SECRET must be at least 32 characters in production.',
+        });
+      }
+    }
+
+    if (data.CHECKOUT_PROVIDER === 'mongodb') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['CHECKOUT_PROVIDER'],
+        message: 'Legacy MongoDB checkout provider cannot be enabled in production. Production must use Supabase.',
       });
     }
   }

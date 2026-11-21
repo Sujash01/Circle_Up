@@ -3,6 +3,9 @@ import { Product, type IProductDocument } from '../models/Product.js';
 import { SEED_PRODUCTS } from '../data/seedProducts.js';
 import type { Product as ProductType, ProductListQuery } from '@circleup/shared';
 import mongoose from 'mongoose';
+import { isSupabaseConfigured } from '../services/supabase.service.js';
+import { supabaseCatalogService } from '../services/supabaseCatalog.service.js';
+import { NotFoundError } from '../errors/AppError.js';
 
 type SeedProduct = ProductType & { chestPick?: boolean; status?: string };
 
@@ -15,6 +18,18 @@ export const productRepository = {
     filter: ProductListQuery,
     pagination: { page: number; limit: number; skip: number },
   ): Promise<{ products: IProductDocument[]; total: number }> {
+    if (isSupabaseConfigured()) {
+      const res = await supabaseCatalogService.listProducts({
+        ...filter,
+        page: pagination.page,
+        limit: pagination.limit,
+      });
+      return {
+        products: res.products as unknown as IProductDocument[],
+        total: res.total,
+      };
+    }
+
     if (!isDbConnected()) {
       let filtered = (SEED_PRODUCTS as unknown as SeedProduct[]).filter(
         (p) => p.status !== 'DRAFT' && p.status !== 'ARCHIVED',
@@ -76,6 +91,16 @@ export const productRepository = {
   },
 
   async findBySlugOrId(identifier: string): Promise<IProductDocument | null> {
+    if (isSupabaseConfigured()) {
+      try {
+        const prod = await supabaseCatalogService.getProductByIdentifier(identifier);
+        return prod as unknown as IProductDocument;
+      } catch (err) {
+        if (err instanceof NotFoundError) return null;
+        throw err;
+      }
+    }
+
     if (!isDbConnected()) {
       const match = SEED_PRODUCTS.find(
         (p) =>
@@ -99,6 +124,11 @@ export const productRepository = {
   },
 
   async findRelated(category: string, excludeId?: string, limit = 4): Promise<IProductDocument[]> {
+    if (isSupabaseConfigured()) {
+      const items = await supabaseCatalogService.getRelatedProducts(excludeId || '', limit);
+      return items as unknown as IProductDocument[];
+    }
+
     if (!isDbConnected()) {
       return (SEED_PRODUCTS as unknown as Array<Record<string, unknown>>).filter(
         (p) => p.category === category && p.id !== excludeId && p.status !== 'DRAFT',
@@ -119,6 +149,11 @@ export const productRepository = {
   },
 
   async findChestPicks(): Promise<IProductDocument[]> {
+    if (isSupabaseConfigured()) {
+      const picks = await supabaseCatalogService.findChestPicks();
+      return picks as unknown as IProductDocument[];
+    }
+
     if (!isDbConnected()) {
       const picks = (SEED_PRODUCTS as unknown as Array<Record<string, unknown>>).filter((p) => Boolean(p.chestPick));
       return (picks.length >= 4 ? picks : SEED_PRODUCTS.slice(0, 6)) as unknown as IProductDocument[];
@@ -149,6 +184,11 @@ export const productRepository = {
   },
 
   async findCollectionRow(category: string, limit = 4): Promise<IProductDocument[]> {
+    if (isSupabaseConfigured()) {
+      const docs = await supabaseCatalogService.findCollectionRow(category, limit);
+      return docs as unknown as IProductDocument[];
+    }
+
     if (!isDbConnected()) {
       return (SEED_PRODUCTS as unknown as Array<Record<string, unknown>>).filter(
         (p) => p.category === category || (Array.isArray(p.tags) && p.tags.includes(category)),

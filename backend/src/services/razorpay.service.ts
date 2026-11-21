@@ -50,7 +50,7 @@ export async function createRazorpayTestOrder(input: {
   if (!credentials) {
     throw new ServiceUnavailableError('Razorpay test credentials are not configured.', 'PAYMENT_PROVIDER_UNAVAILABLE');
   }
-  if (!Number.isSafeInteger(input.amountPaise) || input.amountPaise <= 0 || !/^ORD-[A-Z0-9-]{6,32}$/.test(input.internalOrderNumber)) {
+  if (!Number.isSafeInteger(input.amountPaise) || input.amountPaise <= 0 || !/^ORD-[A-Z0-9-]{6,64}$/.test(input.internalOrderNumber)) {
     throw new UnprocessableEntityError('Server-calculated payment amount or order reference is invalid.', 'INVALID_PAYMENT_ORDER');
   }
 
