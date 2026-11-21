@@ -146,7 +146,7 @@ export const orderService = {
   },
 
   async createOrder(payload: CreateOrderPayload & { idempotencyKey: string }) {
-    const { customer, shippingAddress, items, promoCode, paymentMethod, notes, customerId, idempotencyKey } = payload;
+    const { customer, shippingAddress, items, paymentMethod } = payload;
 
     // No Razorpay initiation or verification flow is configured in this application yet.
     // Reject online payment before any order, coupon, or inventory mutation can occur.

@@ -233,7 +233,9 @@ export const productService = {
       if (isDatabaseConnected()) {
         try {
           await Product.create({ ...payload, serialNumber: created.serialNumber, slug: created.slug });
-        } catch {}
+        } catch {
+          /* ignore */
+        }
       }
       return created;
     }
@@ -312,7 +314,9 @@ export const productService = {
       if (isDatabaseConnected()) {
         try {
           await Product.findOneAndUpdate({ serialNumber: serialNumber.trim().toUpperCase() }, updates);
-        } catch {}
+        } catch {
+          /* ignore */
+        }
       }
       return updated;
     }
@@ -347,8 +351,8 @@ export const productService = {
         typeof updates.measurements === 'string'
           ? updates.measurements
           : Object.entries(updates.measurements || {})
-              .map(([k, v]) => `${k}: ${v}`)
-              .join(' · ');
+            .map(([k, v]) => `${k}: ${v}`)
+            .join(' · ');
     }
     if (updates.makerNote !== undefined) product.makerNote = updates.makerNote;
     if (updates.tags) product.tags = updates.tags;

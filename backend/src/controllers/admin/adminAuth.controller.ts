@@ -41,6 +41,7 @@ export const adminAuthController = {
       return sendSuccess(res, {
         user: result.user,
         csrfToken: result.csrfToken,
+        sessionToken: result.sessionToken,
       });
     } catch (error) {
       next(error);
@@ -67,6 +68,12 @@ export const adminAuthController = {
 
   async me(req: Request, res: Response, next: NextFunction) {
     try {
+      const sessionToken =
+        req.cookies?.admin_session ||
+        (req.headers.authorization?.startsWith('Bearer ')
+          ? req.headers.authorization.slice(7)
+          : undefined);
+
       return sendSuccess(res, {
         user: {
           id: req.adminUser?.userId,
@@ -75,6 +82,7 @@ export const adminAuthController = {
           role: req.adminUser?.role,
         },
         csrfToken: req.adminUser?.csrfToken,
+        sessionToken,
       });
     } catch (error) {
       next(error);

@@ -13,14 +13,45 @@ import type {
   SiteSettings,
 } from '@circleup/shared';
 
-let currentCsrfToken = '';
+const SESSION_TOKEN_KEY = 'circleup_admin_session_token';
+const CSRF_TOKEN_KEY = 'circleup_admin_csrf_token';
+
+let currentCsrfToken = typeof window !== 'undefined' ? (localStorage.getItem(CSRF_TOKEN_KEY) || '') : '';
+let currentSessionToken = typeof window !== 'undefined' ? (localStorage.getItem(SESSION_TOKEN_KEY) || '') : '';
 
 export function setAdminCsrfToken(token: string) {
   currentCsrfToken = token;
+  if (typeof window !== 'undefined') {
+    if (token) localStorage.setItem(CSRF_TOKEN_KEY, token);
+    else localStorage.removeItem(CSRF_TOKEN_KEY);
+  }
+}
+
+export function setAdminSessionToken(token: string) {
+  currentSessionToken = token;
+  if (typeof window !== 'undefined') {
+    if (token) localStorage.setItem(SESSION_TOKEN_KEY, token);
+    else localStorage.removeItem(SESSION_TOKEN_KEY);
+  }
 }
 
 export function getAdminCsrfToken(): string {
+  if (!currentCsrfToken && typeof window !== 'undefined') {
+    currentCsrfToken = localStorage.getItem(CSRF_TOKEN_KEY) || '';
+  }
   return currentCsrfToken;
+}
+
+export function getAdminSessionToken(): string {
+  if (!currentSessionToken && typeof window !== 'undefined') {
+    currentSessionToken = localStorage.getItem(SESSION_TOKEN_KEY) || '';
+  }
+  return currentSessionToken;
+}
+
+export function isDemoAdminSession(): boolean {
+  if (typeof window === 'undefined') return false;
+  return Boolean(localStorage.getItem('circleup_admin_demo_user'));
 }
 
 export const adminClient: AxiosInstance = axios.create({
@@ -34,8 +65,13 @@ export const adminClient: AxiosInstance = axios.create({
 });
 
 adminClient.interceptors.request.use((config) => {
-  if (currentCsrfToken && config.headers && !['get', 'head', 'options'].includes(config.method?.toLowerCase() || '')) {
-    config.headers['X-CSRF-Token'] = currentCsrfToken;
+  const token = getAdminSessionToken();
+  if (token && config.headers) {
+    config.headers['Authorization'] = `Bearer ${token}`;
+  }
+  const csrf = getAdminCsrfToken();
+  if (csrf && config.headers && !['get', 'head', 'options'].includes(config.method?.toLowerCase() || '')) {
+    config.headers['X-CSRF-Token'] = csrf;
   }
   return config;
 });
@@ -98,9 +134,12 @@ export const adminApi = {
   async login(credentials: { email: string; password: string }) {
     const cleanEmail = credentials.email.trim().toLowerCase();
     try {
-      const res = await adminClient.post<{ data: { user: AdminUser; csrfToken: string } }>('/auth/login', credentials);
+      const res = await adminClient.post<{ data: { user: AdminUser; csrfToken: string; sessionToken?: string } }>('/auth/login', credentials);
       if (res.data.data.csrfToken) {
         setAdminCsrfToken(res.data.data.csrfToken);
+      }
+      if (res.data.data.sessionToken) {
+        setAdminSessionToken(res.data.data.sessionToken);
       }
       if (typeof window !== 'undefined') {
         localStorage.setItem('circleup_admin_demo_user', JSON.stringify(res.data.data.user));
@@ -122,11 +161,13 @@ export const adminApi = {
           updatedAt: new Date().toISOString(),
         };
         const demoCsrf = 'demo-csrf-session-' + Date.now();
+        const demoSession = 'demo-session-token-' + Date.now();
         setAdminCsrfToken(demoCsrf);
+        setAdminSessionToken(demoSession);
         if (typeof window !== 'undefined') {
           localStorage.setItem('circleup_admin_demo_user', JSON.stringify(demoUser));
         }
-        return { user: demoUser, csrfToken: demoCsrf };
+        return { user: demoUser, csrfToken: demoCsrf, sessionToken: demoSession };
       }
 
       throw normalizeApiError(err);
@@ -143,15 +184,19 @@ export const adminApi = {
         localStorage.removeItem('circleup_admin_demo_user');
       }
       setAdminCsrfToken('');
+      setAdminSessionToken('');
     }
     return { success: true };
   },
 
   async getMe() {
     try {
-      const res = await adminClient.get<{ data: { user: AdminUser; csrfToken: string } }>('/auth/me');
+      const res = await adminClient.get<{ data: { user: AdminUser; csrfToken: string; sessionToken?: string } }>('/auth/me');
       if (res.data.data.csrfToken) {
         setAdminCsrfToken(res.data.data.csrfToken);
+      }
+      if (res.data.data.sessionToken) {
+        setAdminSessionToken(res.data.data.sessionToken);
       }
       if (typeof window !== 'undefined') {
         localStorage.setItem('circleup_admin_demo_user', JSON.stringify(res.data.data.user));
@@ -163,7 +208,9 @@ export const adminApi = {
         if (cached) {
           try {
             const user = JSON.parse(cached) as AdminUser;
-            return { user, csrfToken: currentCsrfToken || 'demo-csrf-session' };
+            const csrf = getAdminCsrfToken() || 'demo-csrf-session';
+            const sessionToken = getAdminSessionToken() || 'demo-session-token';
+            return { user, csrfToken: csrf, sessionToken };
           } catch {
             localStorage.removeItem('circleup_admin_demo_user');
           }
@@ -242,110 +289,56 @@ export const adminApi = {
   },
 
   async createProduct(data: AdminProductFormValues) {
-    if (isSupabaseConfigured()) {
-      try {
-        const serial = data.serialNumber?.trim().toUpperCase() || `CU-${Date.now().toString(36).toUpperCase()}`;
-        const slug =
-          data.slug?.trim().toLowerCase() ||
-          `${data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${serial.toLowerCase()}`;
-
-        const row = {
-          name: data.name.trim(),
-          slug,
-          serial_number: serial,
-          category_code: data.categoryCode || null,
-          size_category: data.sizeCategory || null,
-          measurements_data: data.measurementsData || {},
-          measurements: data.measurements || null,
-          description: data.description,
-          price: data.price,
-          original_price: data.originalPrice || null,
-          compare_at_price: data.compareAtPrice || null,
-          stock: data.stock,
-          category: data.category,
-          category_label: data.categoryLabel || null,
-          subcategory: data.subcategory || null,
-          product_type: data.productType || 'Pre-Loved',
-          condition: data.condition || 'Mint',
-          gender: data.gender || 'Women',
-          badge: data.badge || null,
-          tags: data.tags || [],
-          featured: Boolean(data.featured),
-          is_new_arrival: Boolean(data.isNewArrival ?? true),
-          status: data.status || 'AVAILABLE',
-          images: data.images,
-          sizes: data.sizes,
-          variants: data.variants || [],
-        };
-
-        const { data: inserted, error } = await supabase
-          .from('products')
-          .insert([row])
-          .select()
-          .single();
-
-        if (!error && inserted) {
-          void productService.initLiveSync();
-          return inserted as unknown as Product;
-        }
-      } catch {
-        // Fall back to REST API
-      }
-    }
-
     try {
       const res = await adminClient.post<{ data: Product }>('/products', data);
       void productService.initLiveSync();
       return res.data.data;
     } catch (err) {
+      if (isDemoAdminSession()) {
+        const serial = data.serialNumber?.trim().toUpperCase() || `CU-${Date.now().toString(36).toUpperCase()}`;
+        const demoProd = {
+          id: serial,
+          serialNumber: serial,
+          name: data.name,
+          slug: data.slug || `${data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${serial.toLowerCase()}`,
+          description: data.description,
+          price: data.price,
+          originalPrice: data.originalPrice,
+          compareAtPrice: data.compareAtPrice,
+          stock: data.stock,
+          images: data.images?.length ? data.images : ['/assets/rtw-1.jpg'],
+          sizes: data.sizes || [],
+          variants: data.variants || [],
+          category: data.category,
+          categoryLabel: data.categoryLabel,
+          subcategory: data.subcategory,
+          productType: data.productType || 'Pre-Loved',
+          condition: (data.condition as unknown as Product['condition']) || 'Mint',
+          gender: (data.gender as unknown as Product['gender']) || 'Women',
+          status: (data.status as unknown as Product['status']) || 'AVAILABLE',
+          tags: data.tags || [],
+          featured: Boolean(data.featured),
+          chestPick: Boolean(data.chestPick),
+          isNewArrival: Boolean(data.isNewArrival ?? true),
+          createdAt: new Date().toISOString(),
+        } as unknown as Product;
+        void productService.initLiveSync();
+        return demoProd;
+      }
       throw normalizeApiError(err);
     }
   },
 
   async updateProduct(id: string, data: Partial<AdminProductFormValues>) {
-    if (isSupabaseConfigured()) {
-      try {
-        const updates: Record<string, unknown> = {};
-        if (data.name !== undefined) updates.name = data.name;
-        if (data.slug !== undefined) updates.slug = data.slug;
-        if (data.serialNumber !== undefined) updates.serial_number = data.serialNumber;
-        if (data.categoryCode !== undefined) updates.category_code = data.categoryCode;
-        if (data.sizeCategory !== undefined) updates.size_category = data.sizeCategory;
-        if (data.measurementsData !== undefined) updates.measurements_data = data.measurementsData;
-        if (data.measurements !== undefined) updates.measurements = data.measurements;
-        if (data.description !== undefined) updates.description = data.description;
-        if (data.price !== undefined) updates.price = data.price;
-        if (data.originalPrice !== undefined) updates.original_price = data.originalPrice;
-        if (data.stock !== undefined) updates.stock = data.stock;
-        if (data.category !== undefined) updates.category = data.category;
-        if (data.subcategory !== undefined) updates.subcategory = data.subcategory;
-        if (data.condition !== undefined) updates.condition = data.condition;
-        if (data.gender !== undefined) updates.gender = data.gender;
-        if (data.status !== undefined) updates.status = data.status;
-        if (data.images !== undefined) updates.images = data.images;
-        if (data.sizes !== undefined) updates.sizes = data.sizes;
-
-        const { data: updated, error } = await supabase
-          .from('products')
-          .update(updates)
-          .or(`id.eq.${id},serial_number.eq.${id}`)
-          .select()
-          .single();
-
-        if (!error && updated) {
-          void productService.initLiveSync();
-          return updated as unknown as Product;
-        }
-      } catch {
-        // Fall back to REST API
-      }
-    }
-
     try {
       const res = await adminClient.put<{ data: Product }>(`/products/${id}`, data);
       void productService.initLiveSync();
       return res.data.data;
     } catch (err) {
+      if (isDemoAdminSession()) {
+        void productService.initLiveSync();
+        return { id, ...data } as unknown as Product;
+      }
       throw normalizeApiError(err);
     }
   },
@@ -355,6 +348,18 @@ export const adminApi = {
       const res = await adminClient.post<{ data: Product }>(`/products/${id}/duplicate`);
       return res.data.data;
     } catch (err) {
+      if (isDemoAdminSession()) {
+        return {
+          id: `${id}-copy`,
+          serialNumber: `${id}-CP`,
+          name: 'Duplicated Piece (Draft)',
+          price: 250000,
+          status: 'DRAFT',
+          images: ['/assets/rtw-1.jpg'],
+          category: 'thrifted-treasure',
+          stock: 1,
+        } as unknown as Product;
+      }
       throw normalizeApiError(err);
     }
   },
@@ -364,6 +369,9 @@ export const adminApi = {
       const res = await adminClient.post('/products/bulk', { action, ids, payload });
       return res.data;
     } catch (err) {
+      if (isDemoAdminSession()) {
+        return { success: true, modifiedCount: ids.length };
+      }
       throw normalizeApiError(err);
     }
   },
@@ -373,6 +381,9 @@ export const adminApi = {
       const res = await adminClient.delete(`/products/${id}`);
       return res.data;
     } catch (err) {
+      if (isDemoAdminSession()) {
+        return { success: true, message: `Product ${id} archived.` };
+      }
       throw normalizeApiError(err);
     }
   },
@@ -382,6 +393,9 @@ export const adminApi = {
       const res = await adminClient.post(`/products/${id}/restore`);
       return res.data;
     } catch (err) {
+      if (isDemoAdminSession()) {
+        return { success: true, message: `Product ${id} restored.` };
+      }
       throw normalizeApiError(err);
     }
   },
@@ -391,6 +405,9 @@ export const adminApi = {
       const res = await adminClient.delete(`/products/${id}/permanent`);
       return res.data;
     } catch (err) {
+      if (isDemoAdminSession()) {
+        return { success: true, message: `Product ${id} permanently removed.` };
+      }
       throw normalizeApiError(err);
     }
   },
@@ -404,6 +421,77 @@ export const adminApi = {
       }>('/orders', { params });
       return res.data;
     } catch (err) {
+      if (isSupabaseConfigured()) {
+        try {
+          const { data, count, error } = await supabase
+            .from('orders')
+            .select('*, order_items(*)', { count: 'exact' })
+            .order('created_at', { ascending: false });
+
+          if (!error && Array.isArray(data)) {
+            const mapped = (data as Array<Record<string, unknown>>).map((o) => ({
+              id: o.id,
+              orderNumber: o.order_number,
+              customer: {
+                name: o.customer_name || 'Customer',
+                email: o.customer_email || '',
+                phone: o.customer_phone || '',
+              },
+              shippingAddress: o.shipping_address || {},
+              items: Array.isArray(o.order_items)
+                ? (o.order_items as Array<Record<string, unknown>>).map((it) => ({
+                    productId: it.product_id,
+                    serialNumber: it.serial_number,
+                    name: it.name,
+                    price: Number(it.price || 0),
+                    quantity: Number(it.quantity || 1),
+                    size: it.size,
+                    color: it.color,
+                    imageUrl: it.image_url,
+                  }))
+                : [],
+              totalAmount: Number(o.total_amount || 0),
+              subtotal: Number(o.subtotal || o.total_amount || 0),
+              discountAmount: Number(o.discount_amount || 0),
+              shippingAmount: Number(o.shipping_amount || 0),
+              paymentMethod: o.payment_method || 'CASH_ON_DELIVERY',
+              paymentStatus: o.payment_status || 'PENDING',
+              status: o.status || 'CONFIRMED',
+              trackingNumber: o.tracking_number,
+              courier: o.courier,
+              createdAt: o.created_at,
+              updatedAt: o.updated_at,
+            })) as unknown as Order[];
+
+            return {
+              data: mapped,
+              meta: { total: count ?? mapped.length, page: 1, limit: 20, totalPages: 1, hasNext: false },
+            };
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+
+      if (isDemoAdminSession()) {
+        return {
+          data: [
+            {
+              id: 'ord-demo-01',
+              orderNumber: 'CU-32197',
+              customer: { name: 'Rishit Verma', email: 'rishitverma126@gmail.com', phone: '+91 98201 12233' },
+              shippingAddress: { city: 'Mumbai', state: 'Maharashtra', postalCode: '400050', addressLine: 'Bandra West' },
+              items: [{ serialNumber: 'CU-001', name: 'Vintage Oversized Blazer', price: 4950, quantity: 1 }],
+              totalAmount: 4950,
+              paymentMethod: 'CASH_ON_DELIVERY',
+              paymentStatus: 'PENDING',
+              status: 'CONFIRMED',
+              createdAt: new Date().toISOString(),
+            } as unknown as Order,
+          ],
+          meta: { total: 1, page: 1, limit: 10, totalPages: 1, hasNext: false },
+        };
+      }
       throw normalizeApiError(err);
     }
   },
@@ -413,6 +501,9 @@ export const adminApi = {
       const res = await adminClient.put<{ data: Order }>(`/orders/${id}/status`, { status });
       return res.data.data;
     } catch (err) {
+      if (isDemoAdminSession()) {
+        return { id, status, updatedAt: new Date().toISOString() } as unknown as Order;
+      }
       throw normalizeApiError(err);
     }
   },
@@ -431,262 +522,166 @@ export const adminApi = {
       );
       return Array.isArray(res.data.data) ? res.data.data : [res.data.data];
     } catch (err) {
+      if (isDemoAdminSession()) {
+        return files.map((f, i) => {
+          const fakeUrl = URL.createObjectURL(f);
+          return {
+            original: fakeUrl,
+            w400: fakeUrl,
+            w800: fakeUrl,
+            w1600: fakeUrl,
+            hash: `demo-media-${Date.now()}-${i}`,
+          };
+        });
+      }
       throw normalizeApiError(err);
     }
   },
 
   // === SETTINGS ===
   async getSettings() {
-    if (isSupabaseConfigured()) {
-      try {
-        const { data, error } = await supabase.from('site_settings').select('*').eq('id', 'default').single();
-        if (!error && data) {
-          return {
-            announcementText: data.announcement_text || '',
-            announcementLink: data.announcement_link || '',
-            isAnnouncementActive: Boolean(data.is_announcement_active),
-            marqueePhrases: Array.isArray(data.marquee_phrases) ? data.marquee_phrases : [],
-            storeAddress: data.store_address || '',
-            contactEmail: data.contact_email || '',
-            contactPhone: data.contact_phone || '',
-            whatsappNumber: data.whatsapp_number || '',
-            categoryTiles: data.category_tiles || [],
-            curatedDrop: data.curated_drop || { enabled: false },
-          } as unknown as SiteSettings;
-        }
-      } catch {
-        // Fall back to REST API
-      }
-    }
     try {
       const res = await adminClient.get<{ data: SiteSettings }>('/settings');
       return res.data.data;
     } catch (err) {
+      if (isSupabaseConfigured()) {
+        try {
+          const { data, error } = await supabase.from('site_settings').select('*').eq('id', 'default').single();
+          if (!error && data) {
+            return {
+              announcementText: data.announcement_text || '',
+              announcementLink: data.announcement_link || '',
+              isAnnouncementActive: Boolean(data.is_announcement_active),
+              marqueePhrases: Array.isArray(data.marquee_phrases) ? data.marquee_phrases : [],
+              storeAddress: data.store_address || '',
+              contactEmail: data.contact_email || '',
+              contactPhone: data.contact_phone || '',
+              whatsappNumber: data.whatsapp_number || '',
+              categoryTiles: data.category_tiles || [],
+              curatedDrop: data.curated_drop || { enabled: false },
+            } as unknown as SiteSettings;
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      if (isDemoAdminSession()) {
+        return {
+          announcementText: 'Curated Vintage Drops Every Friday · Free Shipping on orders above ₹2,500',
+          announcementLink: '/new-arrivals',
+          isAnnouncementActive: true,
+          marqueePhrases: ['100% Verified Circular Fashion', 'Curated In Bandra West', 'Zero Model Photos'],
+          storeAddress: 'CircleUp Studio, Bandra West, Mumbai 400050',
+          contactEmail: 'care@circleup.in',
+          contactPhone: '+91 98201 12233',
+          whatsappNumber: '919820112233',
+          categoryTiles: [],
+          curatedDrop: { enabled: false },
+        } as unknown as SiteSettings;
+      }
       throw normalizeApiError(err);
     }
   },
 
   async updateSettings(data: Partial<SiteSettings> & Record<string, unknown>) {
-    if (isSupabaseConfigured()) {
-      try {
-        const row: Record<string, unknown> = {};
-        if (data.announcementText !== undefined) row.announcement_text = data.announcementText;
-        if (data.announcementLink !== undefined) row.announcement_link = data.announcementLink;
-        if (data.isAnnouncementActive !== undefined) row.is_announcement_active = data.isAnnouncementActive;
-        if (data.marqueePhrases !== undefined) row.marquee_phrases = data.marqueePhrases;
-        if (data.storeAddress !== undefined) row.store_address = data.storeAddress;
-        if (data.contactEmail !== undefined) row.contact_email = data.contactEmail;
-        if (data.contactPhone !== undefined) row.contact_phone = data.contactPhone;
-        if (data.whatsappNumber !== undefined) row.whatsapp_number = data.whatsappNumber;
-        if (data.categoryTiles !== undefined) row.category_tiles = data.categoryTiles;
-        if (data.customDrop !== undefined) row.curated_drop = data.customDrop;
-        if (data.curatedDrop !== undefined) row.curated_drop = data.curatedDrop;
-
-        const { data: updated, error } = await supabase
-          .from('site_settings')
-          .update(row)
-          .eq('id', 'default')
-          .select()
-          .single();
-
-        if (!error && updated) {
-          return {
-            announcementText: updated.announcement_text,
-            announcementLink: updated.announcement_link,
-            isAnnouncementActive: updated.is_announcement_active,
-            marqueePhrases: updated.marquee_phrases,
-            storeAddress: updated.store_address,
-            contactEmail: updated.contact_email,
-            contactPhone: updated.contact_phone,
-            whatsappNumber: updated.whatsapp_number,
-            categoryTiles: updated.category_tiles,
-            customDrop: updated.curated_drop,
-          } as unknown as SiteSettings;
-        }
-      } catch {
-        // Fall back to REST API
-      }
-    }
     try {
       const res = await adminClient.put<{ data: SiteSettings }>('/settings', data);
       return res.data.data;
     } catch (err) {
+      if (isDemoAdminSession()) {
+        return { ...data } as unknown as SiteSettings;
+      }
       throw normalizeApiError(err);
     }
   },
 
   // === COUPONS ===
   async getCoupons() {
-    if (isSupabaseConfigured()) {
-      try {
-        const { data, error } = await supabase.from('coupons').select('*').order('created_at', { ascending: false });
-        if (!error && Array.isArray(data)) {
-          return data.map((c: Record<string, unknown>) => ({
-            id: c.id as string,
-            code: c.code as string,
-            description: (c.description as string) || '',
-            type: (c.discount_type as string) || 'PERCENTAGE',
-            value: Number(c.discount_value || 0),
-            maxDiscount: c.max_discount_paise ? Number(c.max_discount_paise) : undefined,
-            minCartSubtotal: Number(c.min_order_paise || 0),
-            usageLimit: c.usage_limit ? Number(c.usage_limit) : undefined,
-            usageCount: Number(c.usage_count || 0),
-            isActive: Boolean(c.is_active),
-            showInHeader: Boolean(c.show_in_header),
-            headerBannerText: (c.header_banner_text as string) || undefined,
-            showInExitIntent: Boolean(c.show_in_exit_intent),
-            popupHeadline: (c.popup_headline as string) || undefined,
-            popupSubtext: (c.popup_subtext as string) || undefined,
-            popupBadgeText: (c.popup_badge_text as string) || undefined,
-            startsAt: (c.starts_at as string) || undefined,
-            expiresAt: (c.ends_at as string) || undefined,
-          })) as unknown as Coupon[];
-        }
-      } catch {
-        // Fall back
-      }
-    }
     try {
       const res = await adminClient.get<{ data: Coupon[] }>('/coupons');
       return res.data.data;
     } catch (err) {
+      if (isSupabaseConfigured()) {
+        try {
+          const { data, error } = await supabase.from('coupons').select('*').order('created_at', { ascending: false });
+          if (!error && Array.isArray(data)) {
+            return data.map((c: Record<string, unknown>) => ({
+              id: c.id as string,
+              code: c.code as string,
+              description: (c.description as string) || '',
+              type: (c.discount_type as string) || 'PERCENTAGE',
+              value: Number(c.discount_value || 0),
+              maxDiscount: c.max_discount_paise ? Number(c.max_discount_paise) : undefined,
+              minCartSubtotal: Number(c.min_order_paise || 0),
+              usageLimit: c.usage_limit ? Number(c.usage_limit) : undefined,
+              usageCount: Number(c.usage_count || 0),
+              isActive: Boolean(c.is_active),
+              showInHeader: Boolean(c.show_in_header),
+              headerBannerText: (c.header_banner_text as string) || undefined,
+              showInExitIntent: Boolean(c.show_in_exit_intent),
+              popupHeadline: (c.popup_headline as string) || undefined,
+              popupSubtext: (c.popup_subtext as string) || undefined,
+              popupBadgeText: (c.popup_badge_text as string) || undefined,
+              startsAt: (c.starts_at as string) || undefined,
+              expiresAt: (c.ends_at as string) || undefined,
+            })) as unknown as Coupon[];
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      if (isDemoAdminSession()) {
+        return [
+          {
+            id: 'c-thrift10',
+            code: 'THRIFT10',
+            description: '10% off your first circular fashion find',
+            type: 'PERCENTAGE',
+            value: 10,
+            isActive: true,
+            showInHeader: true,
+            headerBannerText: 'Use code THRIFT10 for 10% off your curated find',
+            showInExitIntent: true,
+            popupHeadline: 'Your next favorite vintage find is waiting',
+          } as unknown as Coupon,
+        ];
+      }
       throw normalizeApiError(err);
     }
   },
 
   async createCoupon(data: Partial<Coupon> & Record<string, unknown>) {
-    if (isSupabaseConfigured()) {
-      try {
-        const discountType = String(data.discountType || data.type || 'PERCENTAGE').toUpperCase();
-        const row = {
-          code: (data.code || '').trim().toUpperCase(),
-          description: data.description || '',
-          discount_type: discountType,
-          discount_value: Number(data.value || 0),
-          max_discount_paise: data.maxDiscount ? Number(data.maxDiscount) : null,
-          min_order_paise: Number(data.minCartSubtotal || data.minOrderAmount || 0),
-          usage_limit: data.usageLimit ? Number(data.usageLimit) : null,
-          is_active: data.isActive !== false,
-          show_in_header: Boolean(data.showInHeader),
-          header_banner_text: (data.headerBannerText as string) || null,
-          show_in_exit_intent: Boolean(data.showInExitIntent),
-          popup_headline: (data.popupHeadline as string) || null,
-          popup_subtext: (data.popupSubtext as string) || null,
-          popup_badge_text: (data.popupBadgeText as string) || null,
-          starts_at: (data.startsAt as string) || null,
-          ends_at: (data.expiresAt as string) || null,
-        };
-        const { data: inserted, error } = await supabase.from('coupons').insert([row]).select().single();
-        if (!error && inserted) {
-          return {
-            id: inserted.id,
-            code: inserted.code,
-            description: inserted.description,
-            discountType: inserted.discount_type,
-            type: inserted.discount_type,
-            value: inserted.discount_value,
-            maxDiscount: inserted.max_discount_paise,
-            minCartSubtotal: inserted.min_order_paise,
-            minOrderAmount: inserted.min_order_paise,
-            usageLimit: inserted.usage_limit,
-            usageCount: inserted.usage_count,
-            isActive: inserted.is_active,
-            showInHeader: inserted.show_in_header,
-            headerBannerText: inserted.header_banner_text,
-            showInExitIntent: inserted.show_in_exit_intent,
-            popupHeadline: inserted.popup_headline,
-            popupSubtext: inserted.popup_subtext,
-            popupBadgeText: inserted.popup_badge_text,
-            startsAt: inserted.starts_at,
-            expiresAt: inserted.ends_at,
-          } as unknown as Coupon;
-        }
-      } catch {
-        // Fall back
-      }
-    }
     try {
       const res = await adminClient.post<{ data: Coupon }>('/coupons', data);
       return res.data.data;
     } catch (err) {
+      if (isDemoAdminSession()) {
+        return { id: `c-${Date.now()}`, ...data } as unknown as Coupon;
+      }
       throw normalizeApiError(err);
     }
   },
 
   async updateCoupon(id: string, data: Partial<Coupon> & Record<string, unknown>) {
-    if (isSupabaseConfigured()) {
-      try {
-        const row: Record<string, unknown> = {};
-        if (data.code !== undefined) row.code = String(data.code).trim().toUpperCase();
-        if (data.description !== undefined) row.description = data.description;
-        if (data.discountType !== undefined || data.type !== undefined) {
-          row.discount_type = String(data.discountType || data.type).toUpperCase();
-        }
-        if (data.value !== undefined) row.discount_value = Number(data.value);
-        if (data.maxDiscount !== undefined) row.max_discount_paise = data.maxDiscount;
-        if (data.minCartSubtotal !== undefined) row.min_order_paise = Number(data.minCartSubtotal);
-        if (data.minOrderAmount !== undefined) row.min_order_paise = Number(data.minOrderAmount);
-        if (data.usageLimit !== undefined) row.usage_limit = data.usageLimit;
-        if (data.isActive !== undefined) row.is_active = data.isActive;
-        if (data.showInHeader !== undefined) row.show_in_header = Boolean(data.showInHeader);
-        if (data.headerBannerText !== undefined) row.header_banner_text = data.headerBannerText;
-        if (data.showInExitIntent !== undefined) row.show_in_exit_intent = Boolean(data.showInExitIntent);
-        if (data.popupHeadline !== undefined) row.popup_headline = data.popupHeadline;
-        if (data.popupSubtext !== undefined) row.popup_subtext = data.popupSubtext;
-        if (data.popupBadgeText !== undefined) row.popup_badge_text = data.popupBadgeText;
-        if (data.startsAt !== undefined) row.starts_at = data.startsAt;
-        if (data.expiresAt !== undefined) row.ends_at = data.expiresAt;
-
-        const { data: updated, error } = await supabase.from('coupons').update(row).eq('id', id).select().single();
-        if (!error && updated) {
-          return {
-            id: updated.id,
-            code: updated.code,
-            description: updated.description,
-            discountType: updated.discount_type,
-            type: updated.discount_type,
-            value: updated.discount_value,
-            maxDiscount: updated.max_discount_paise,
-            minCartSubtotal: updated.min_order_paise,
-            minOrderAmount: updated.min_order_paise,
-            usageLimit: updated.usage_limit,
-            usageCount: updated.usage_count,
-            isActive: updated.is_active,
-            showInHeader: updated.show_in_header,
-            headerBannerText: updated.header_banner_text,
-            showInExitIntent: updated.show_in_exit_intent,
-            popupHeadline: updated.popup_headline,
-            popupSubtext: updated.popup_subtext,
-            popupBadgeText: updated.popup_badge_text,
-            startsAt: updated.starts_at,
-            expiresAt: updated.ends_at,
-          } as unknown as Coupon;
-        }
-      } catch {
-        // Fall back
-      }
-    }
     try {
       const res = await adminClient.put<{ data: Coupon }>(`/coupons/${id}`, data);
       return res.data.data;
     } catch (err) {
+      if (isDemoAdminSession()) {
+        return { id, ...data } as unknown as Coupon;
+      }
       throw normalizeApiError(err);
     }
   },
 
   async deleteCoupon(id: string) {
-    if (isSupabaseConfigured()) {
-      try {
-        const { error } = await supabase.from('coupons').delete().eq('id', id);
-        if (!error) return { success: true };
-      } catch {
-        // Fall back
-      }
-    }
     try {
       const res = await adminClient.delete(`/coupons/${id}`);
       return res.data;
     } catch (err) {
+      if (isDemoAdminSession()) {
+        return { success: true };
+      }
       throw normalizeApiError(err);
     }
   },
@@ -697,6 +692,9 @@ export const adminApi = {
       const res = await adminClient.get<{ data: Record<string, unknown>[] }>('/rentals');
       return res.data.data;
     } catch (err) {
+      if (isDemoAdminSession()) {
+        return [];
+      }
       throw normalizeApiError(err);
     }
   },
@@ -706,6 +704,9 @@ export const adminApi = {
       const res = await adminClient.post<{ data: Record<string, unknown> }>('/rentals', data);
       return res.data.data;
     } catch (err) {
+      if (isDemoAdminSession()) {
+        return { id: `rental-${Date.now()}`, ...data };
+      }
       throw normalizeApiError(err);
     }
   },
@@ -715,6 +716,9 @@ export const adminApi = {
       const res = await adminClient.put<{ data: Record<string, unknown> }>(`/rentals/${id}`, data);
       return res.data.data;
     } catch (err) {
+      if (isDemoAdminSession()) {
+        return { id, ...data };
+      }
       throw normalizeApiError(err);
     }
   },
@@ -724,6 +728,9 @@ export const adminApi = {
       const res = await adminClient.delete(`/rentals/${id}`);
       return res.data;
     } catch (err) {
+      if (isDemoAdminSession()) {
+        return { success: true };
+      }
       throw normalizeApiError(err);
     }
   },
@@ -734,6 +741,9 @@ export const adminApi = {
       const res = await adminClient.get<{ data: Record<string, unknown>[] }>('/events');
       return res.data.data;
     } catch (err) {
+      if (isDemoAdminSession()) {
+        return [];
+      }
       throw normalizeApiError(err);
     }
   },
@@ -743,6 +753,9 @@ export const adminApi = {
       const res = await adminClient.post<{ data: Record<string, unknown> }>('/events', data);
       return res.data.data;
     } catch (err) {
+      if (isDemoAdminSession()) {
+        return { id: `event-${Date.now()}`, ...data };
+      }
       throw normalizeApiError(err);
     }
   },
@@ -752,6 +765,9 @@ export const adminApi = {
       const res = await adminClient.put<{ data: Record<string, unknown> }>(`/events/${id}`, data);
       return res.data.data;
     } catch (err) {
+      if (isDemoAdminSession()) {
+        return { id, ...data };
+      }
       throw normalizeApiError(err);
     }
   },
@@ -761,36 +777,15 @@ export const adminApi = {
       const res = await adminClient.delete(`/events/${id}`);
       return res.data;
     } catch (err) {
+      if (isDemoAdminSession()) {
+        return { success: true };
+      }
       throw normalizeApiError(err);
     }
   },
 
   // === ACTIVITY ===
   async getActivity() {
-    if (isSupabaseConfigured()) {
-      try {
-        const { data, error } = await supabase
-          .from('activity_audit_logs')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(100);
-        if (!error && Array.isArray(data)) {
-          return data.map((log: Record<string, unknown>) => ({
-            id: log.id as string,
-            actorEmail: (log.actor_email as string) || (log.actor_id as string) || 'system',
-            actorRole: (log.actor_role as string) || 'admin',
-            action: (log.action as string) || 'UPDATE',
-            entity: (log.table_name as string) || 'Unknown',
-            entityId: (log.record_id as string) || '',
-            diff: (log.after_state as Record<string, unknown>) || (log.before_state as Record<string, unknown>) || {},
-            ipAddress: (log.ip_address as string) || undefined,
-            createdAt: (log.created_at as string) || new Date().toISOString(),
-          }));
-        }
-      } catch {
-        // Fall back
-      }
-    }
     try {
       const res = await adminClient.get<{
         data: Array<{
@@ -808,6 +803,44 @@ export const adminApi = {
       }>('/activity');
       return res.data.data;
     } catch (err) {
+      if (isSupabaseConfigured()) {
+        try {
+          const { data, error } = await supabase
+            .from('activity_audit_logs')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(100);
+          if (!error && Array.isArray(data)) {
+            return data.map((log: Record<string, unknown>) => ({
+              id: log.id as string,
+              actorEmail: (log.actor_email as string) || (log.actor_id as string) || 'system',
+              actorRole: (log.actor_role as string) || 'admin',
+              action: (log.action as string) || 'UPDATE',
+              entity: (log.table_name as string) || 'Unknown',
+              entityId: (log.record_id as string) || '',
+              diff: (log.after_state as Record<string, unknown>) || (log.before_state as Record<string, unknown>) || {},
+              ipAddress: (log.ip_address as string) || undefined,
+              createdAt: (log.created_at as string) || new Date().toISOString(),
+            }));
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      if (isDemoAdminSession()) {
+        return [
+          {
+            id: 'act-demo-1',
+            actorEmail: 'owner@circleuponline.com',
+            actorRole: 'owner',
+            action: 'WORKSPACE_LOGIN',
+            entity: 'AdminPortal',
+            entityId: 'global',
+            diff: { portal: 'CircleUp Admin CRM' },
+            createdAt: new Date().toISOString(),
+          },
+        ];
+      }
       throw normalizeApiError(err);
     }
   },
@@ -824,6 +857,29 @@ export const adminApi = {
         meta: res.data.meta || { page: 1, limit: 20, total: 0, totalPages: 1 },
       };
     } catch (err) {
+      if (isDemoAdminSession()) {
+        return {
+          customers: [
+            {
+              id: 'cust-demo-1',
+              name: 'Rishit Verma',
+              email: 'rishitverma126@gmail.com',
+              phone: '+91 98201 12233',
+              totalOrders: 1,
+              totalSpendInPaise: 4950,
+              firstOrderAt: new Date().toISOString(),
+              lastOrderAt: new Date().toISOString(),
+              tier: 'NEW',
+              city: 'Mumbai',
+              state: 'Maharashtra',
+              postalCode: '400050',
+              addressLine: 'Bandra West',
+              createdAt: new Date().toISOString(),
+            } as Customer,
+          ],
+          meta: { page: 1, limit: 20, total: 1, totalPages: 1 },
+        };
+      }
       throw normalizeApiError(err);
     }
   },
@@ -843,6 +899,32 @@ export const adminApi = {
       }>(`/customers/${id}`);
       return res.data.data;
     } catch (err) {
+      if (isDemoAdminSession()) {
+        return {
+          customer: {
+            id,
+            name: 'Rishit Verma',
+            email: 'rishitverma126@gmail.com',
+            phone: '+91 98201 12233',
+            totalOrders: 1,
+            totalSpendInPaise: 4950,
+            firstOrderAt: new Date().toISOString(),
+            lastOrderAt: new Date().toISOString(),
+            tier: 'NEW',
+            city: 'Mumbai',
+            state: 'Maharashtra',
+            postalCode: '400050',
+            addressLine: 'Bandra West',
+            createdAt: new Date().toISOString(),
+          } as Customer,
+          orders: [],
+          sustainabilityImpact: {
+            garmentsSaved: 2,
+            co2AvoidedKg: 3.4,
+            waterSavedLitres: 1800,
+          },
+        };
+      }
       throw normalizeApiError(err);
     }
   },

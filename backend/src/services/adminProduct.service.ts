@@ -290,7 +290,9 @@ export const adminProductService = {
           const query = mongoose.isValidObjectId(id) ? { _id: id } : { serialNumber: id.toUpperCase() };
           await Product.findOneAndUpdate(query, { $set: { deletedAt: new Date(), status: 'ARCHIVED' } });
           await settingsRepository.bumpVersion();
-        } catch {}
+        } catch {
+          /* ignore */
+        }
       }
       return res;
     }
@@ -317,7 +319,9 @@ export const adminProductService = {
           const query = mongoose.isValidObjectId(id) ? { _id: id } : { serialNumber: id.toUpperCase() };
           await Product.findOneAndUpdate(query, { $set: { deletedAt: null, status: 'PUBLISHED' } });
           await settingsRepository.bumpVersion();
-        } catch {}
+        } catch {
+          /* ignore */
+        }
       }
       return res;
     }
@@ -344,7 +348,9 @@ export const adminProductService = {
           const query = mongoose.isValidObjectId(id) ? { _id: id } : { serialNumber: id.toUpperCase() };
           await Product.deleteOne(query);
           await settingsRepository.bumpVersion();
-        } catch {}
+        } catch {
+          /* ignore */
+        }
       }
       return res;
     }

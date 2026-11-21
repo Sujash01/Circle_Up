@@ -1,9 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   mapSupabaseRowToProductItem,
   supabaseCatalogService,
   PUBLIC_STOREFRONT_STATUSES,
-  INTERNAL_HIDDEN_STATUSES,
 } from '../../src/services/supabaseCatalog.service.js';
 import { NotFoundError, BadRequestError } from '../../src/errors/AppError.js';
 

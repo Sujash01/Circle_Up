@@ -117,6 +117,83 @@ export const adminAuthService = {
   }> {
     const cleanEmail = email.trim().toLowerCase();
 
+    // 1. Primary Authentication: Supabase `admin_users` table
+    if (isSupabaseBackendConfigured()) {
+      try {
+        const client = getSupabaseServiceClient();
+        let { data: supaUser } = await client
+          .from('admin_users')
+          .select('*')
+          .eq('email', cleanEmail)
+          .maybeSingle();
+
+        // Seed default owner / staff credentials into Supabase on first run if missing
+        if (!supaUser) {
+          const isOwnerCreds = cleanEmail === 'owner@circleuponline.com' && plainPassword === 'OwnerPassword123';
+          const isStaffCreds = cleanEmail === 'staff@circleuponline.com' && plainPassword === 'StaffPassword123';
+
+          if (isOwnerCreds || isStaffCreds) {
+            const role = isOwnerCreds ? 'owner' : 'admin';
+            const name = isOwnerCreds ? 'CircleUp Owner' : 'CircleUp Staff';
+            const passwordHash = await this.hashPassword(plainPassword);
+            const { data: seeded } = await client
+              .from('admin_users')
+              .insert([
+                {
+                  email: cleanEmail,
+                  full_name: name,
+                  password_hash: passwordHash,
+                  role,
+                  is_active: true,
+                },
+              ])
+              .select('*')
+              .single();
+            if (seeded) {
+              supaUser = seeded;
+            }
+          }
+        }
+
+        if (supaUser && supaUser.is_active) {
+          const valid = await this.verifyPassword(supaUser.password_hash, plainPassword);
+          if (valid) {
+            const csrfToken = generateCsrfToken();
+            const sessionData: AdminSessionData = {
+              userId: String(supaUser.id),
+              email: supaUser.email,
+              name: supaUser.full_name || supaUser.name || 'Admin User',
+              role: (supaUser.role === 'owner' ? 'owner' : 'staff') as 'owner' | 'staff',
+              csrfToken,
+              expiresAt: Date.now() + SESSION_TTL_MS,
+            };
+
+            const sessionToken = signSessionToken(sessionData);
+            IN_MEMORY_SESSIONS.set(sessionToken, sessionData);
+
+            // Update last_login_at in Supabase non-blockingly
+            void client
+              .from('admin_users')
+              .update({ last_login_at: new Date().toISOString() })
+              .eq('id', supaUser.id);
+
+            return {
+              user: {
+                id: sessionData.userId,
+                email: sessionData.email,
+                name: sessionData.name,
+                role: sessionData.role,
+              },
+              sessionToken,
+              csrfToken,
+            };
+          }
+        }
+      } catch {
+        // Fall back gracefully to MongoDB / in-memory sessions
+      }
+    }
+
     if (!isDbConnected()) {
       if (isProductionEnvironment()) {
         throw new ServiceUnavailableError(

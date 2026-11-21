@@ -48,14 +48,14 @@ export function createApp(): Express {
   app.use(sanitizeRequest);
   app.use('/api', globalRateLimiter);
 
-  // Lazy MongoDB connection for serverless runtimes (falls back cleanly to degraded mode)
+  // Lazy MongoDB connection for serverless runtimes (falls back cleanly to degraded mode non-blockingly)
   let lastMongoConnectAttempt = 0;
-  app.use(async (_req, _res, next) => {
+  app.use((_req, _res, next) => {
     if (env.NODE_ENV !== 'test' && env.MONGODB_URI && mongoose.connection.readyState === 0) {
       const now = Date.now();
       if (now - lastMongoConnectAttempt > 30000) {
         lastMongoConnectAttempt = now;
-        await connectDatabase().catch(() => {});
+        void connectDatabase().catch(() => {});
       }
     }
     next();

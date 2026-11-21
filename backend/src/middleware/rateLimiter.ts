@@ -30,7 +30,7 @@ export const customerAuthRateLimiter = createRateLimiter(
 
 export const adminAuthRateLimiter = createRateLimiter(
   FIFTEEN_MINUTES_MS,
-  5,
+  process.env.NODE_ENV === 'production' ? 5 : 100,
   'Too many admin login attempts, please wait 15 minutes',
 );
 

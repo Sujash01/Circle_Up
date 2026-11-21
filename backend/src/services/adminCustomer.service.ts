@@ -3,6 +3,7 @@ import { Order } from '../models/Order.js';
 import { NotFoundError } from '../errors/AppError.js';
 import { parsePagination, buildPaginationMeta } from '../utils/pagination.js';
 import type { Customer, CustomerTier } from '@circleup/shared';
+import { isSupabaseConfigured, getSupabaseAdminClient } from './supabase.service.js';
 
 const MOCK_CUSTOMERS: Customer[] = [
   {
@@ -81,7 +82,97 @@ export const adminCustomerService = {
 
     let customers: Customer[] = [];
 
-    if (mongoose.connection.readyState === 1) {
+    // 1. Supabase Customers / Orders aggregation
+    if (isSupabaseConfigured()) {
+      try {
+        const client = getSupabaseAdminClient();
+        const { data: supaOrders } = await client
+          .from('orders')
+          .select('*, order_items(*)')
+          .order('created_at', { ascending: false });
+
+        if (Array.isArray(supaOrders) && supaOrders.length > 0) {
+          const grouped = new Map<string, {
+            ordersCount: number;
+            totalSpend: number;
+            name: string;
+            email: string;
+            phone: string;
+            firstDate: Date;
+            lastDate: Date;
+            address?: {
+              addressLine?: string;
+              city?: string;
+              state?: string;
+              postalCode?: string;
+            };
+          }>();
+
+          for (const ord of supaOrders) {
+            const email = (ord.customer_email || '').toLowerCase().trim();
+            if (!email) continue;
+
+            const existing = grouped.get(email);
+            const orderDate = new Date(ord.created_at);
+            const amount = Number(ord.total_amount || 0);
+
+            if (!existing) {
+              grouped.set(email, {
+                ordersCount: 1,
+                totalSpend: amount,
+                name: ord.customer_name || 'Customer',
+                email,
+                phone: ord.customer_phone || '',
+                firstDate: orderDate,
+                lastDate: orderDate,
+                address: ord.shipping_address,
+              });
+            } else {
+              existing.ordersCount += 1;
+              existing.totalSpend += amount;
+              if (orderDate < existing.firstDate) existing.firstDate = orderDate;
+              if (orderDate > existing.lastDate) {
+                existing.lastDate = orderDate;
+                if (ord.shipping_address) existing.address = ord.shipping_address;
+                if (ord.customer_name) existing.name = ord.customer_name;
+                if (ord.customer_phone) existing.phone = ord.customer_phone;
+              }
+            }
+          }
+
+          const dbCustomers: Customer[] = Array.from(grouped.entries()).map(([email, d], idx) => {
+            let tier: CustomerTier = 'NEW';
+            if (d.totalSpend >= 1000000) tier = 'VIP';
+            else if (d.ordersCount >= 2) tier = 'REGULAR';
+
+            return {
+              id: `cust_${idx + 1}_${email.replace(/[^a-z0-9]/g, '').slice(0, 8)}`,
+              name: d.name,
+              email: d.email,
+              phone: d.phone,
+              totalOrders: d.ordersCount,
+              totalSpendInPaise: d.totalSpend,
+              firstOrderAt: d.firstDate.toISOString(),
+              lastOrderAt: d.lastDate.toISOString(),
+              tier,
+              city: d.address?.city,
+              state: d.address?.state,
+              postalCode: d.address?.postalCode,
+              addressLine: d.address?.addressLine,
+              createdAt: d.firstDate.toISOString(),
+            };
+          });
+
+          const emailSet = new Set(dbCustomers.map((c) => c.email.toLowerCase()));
+          const uniqueMocks = MOCK_CUSTOMERS.filter((m) => !emailSet.has(m.email.toLowerCase()));
+          customers = [...dbCustomers, ...uniqueMocks];
+        }
+      } catch {
+        // Fall back
+      }
+    }
+
+    if (customers.length === 0 && mongoose.connection.readyState === 1) {
       try {
         const orders = await Order.find().sort({ createdAt: -1 }).lean();
         const grouped = new Map<string, {
@@ -201,7 +292,31 @@ export const adminCustomerService = {
     }
 
     let customerOrders: unknown[] = [];
-    if (mongoose.connection.readyState === 1) {
+    if (isSupabaseConfigured()) {
+      try {
+        const client = getSupabaseAdminClient();
+        const { data: supaOrders } = await client
+          .from('orders')
+          .select('*, order_items(*)')
+          .eq('customer_email', customer.email)
+          .order('created_at', { ascending: false });
+        if (Array.isArray(supaOrders)) {
+          customerOrders = supaOrders.map((o: any) => ({
+            id: o.id,
+            orderNumber: o.order_number,
+            totalAmount: o.total_amount,
+            status: o.status,
+            paymentStatus: o.payment_status,
+            createdAt: o.created_at,
+            items: o.order_items || [],
+          }));
+        }
+      } catch {
+        // Continue
+      }
+    }
+
+    if (customerOrders.length === 0 && mongoose.connection.readyState === 1) {
       try {
         customerOrders = await Order.find({ 'customer.email': customer.email }).sort({ createdAt: -1 }).lean();
       } catch {
