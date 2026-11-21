@@ -150,6 +150,16 @@ function mapSupabaseRowToProduct(row: Record<string, unknown>): Product {
   const rawStatus = (row.status as string) || (stock > 0 ? 'AVAILABLE' : 'SOLD');
   const catCode = (row.category_code as string) || (rawSerial ? extractCategoryCodeFromSerial(rawSerial) : undefined);
 
+  const resolvedVariants: Product['variants'] =
+    Array.isArray(row.variants) && row.variants.length > 0
+      ? (row.variants as Product['variants'])
+      : (sizes.length > 0 ? sizes : ['One Size']).map((sz, idx) => ({
+          id: `${rawSerial || 'var'}-${idx}-${sz.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+          label: sz,
+          size: sz,
+          stock: Math.max(1, Math.floor(stock / (sizes.length || 1))),
+        }));
+
   return {
     id: (row.id as string) || (row.serial_number as string) || 'cu-unknown',
     serialNumber: rawSerial,
@@ -167,8 +177,8 @@ function mapSupabaseRowToProduct(row: Record<string, unknown>): Product {
         : undefined,
     stock,
     images,
-    sizes,
-    variants: Array.isArray(row.variants) ? (row.variants as Product['variants']) : [],
+    sizes: sizes.length > 0 ? sizes : ['One Size'],
+    variants: resolvedVariants,
     category: normalizeCategorySlug(row.category as string, rawSerial),
     categoryLabel: (row.category_label as string) || (row.category as string) || 'Curated Piece',
     subcategory: (row.subcategory as string) || '',
@@ -179,6 +189,7 @@ function mapSupabaseRowToProduct(row: Record<string, unknown>): Product {
     makerNote: (row.maker_note as string) || undefined,
     tags,
     featured: Boolean(row.featured),
+    chestPick: Boolean(row.chest_pick),
     isNewArrival: Boolean(row.is_new_arrival),
     availability: stock > 0 ? (stock <= 2 ? 'Low Stock' : 'In Stock') : 'Sold Out',
     status: rawStatus,

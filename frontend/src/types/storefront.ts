@@ -56,6 +56,7 @@ export interface Product {
   stock: number;
   tags: string[];
   featured: boolean;
+  chestPick?: boolean;
   isNewArrival: boolean;
   availability: 'In Stock' | 'Low Stock' | 'Sold Out';
   status?: string;

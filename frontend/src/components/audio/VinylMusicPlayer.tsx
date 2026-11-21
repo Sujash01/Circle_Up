@@ -169,7 +169,9 @@ export function VinylMusicPlayer() {
     });
   }, []);
 
-  const handleTogglePlay = async () => {
+  const handleTogglePlay = async (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    e?.preventDefault();
     await lofiAudio.toggle();
   };
 

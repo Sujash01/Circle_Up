@@ -115,6 +115,7 @@ class LofiAudioEngine {
   private chordIndex = 0;
   private loopTimer: number | null = null;
   private arpTimer: number | null = null;
+  private activeNodes = new Set<AudioScheduledSourceNode>();
   private listeners = new Set<StateListener>();
   private gestureListenersAttached = false;
 
@@ -298,6 +299,10 @@ class LofiAudioEngine {
 
     bassOsc.connect(bassGain);
     bassGain.connect(this.compressor);
+    this.activeNodes.add(bassOsc);
+    bassOsc.onended = () => {
+      this.activeNodes.delete(bassOsc);
+    };
     bassOsc.start(now);
     bassOsc.stop(now + duration);
 
@@ -309,6 +314,14 @@ class LofiAudioEngine {
       // Primary sine oscillator + soft harmonic triangle
       const osc1 = ctx.createOscillator();
       const osc2 = ctx.createOscillator();
+      this.activeNodes.add(osc1);
+      this.activeNodes.add(osc2);
+      osc1.onended = () => {
+        this.activeNodes.delete(osc1);
+      };
+      osc2.onended = () => {
+        this.activeNodes.delete(osc2);
+      };
       osc1.type = 'sine';
       osc2.type = 'triangle';
 
@@ -364,6 +377,11 @@ class LofiAudioEngine {
       const gain = ctx.createGain();
       const filter = ctx.createBiquadFilter();
 
+      this.activeNodes.add(osc);
+      osc.onended = () => {
+        this.activeNodes.delete(osc);
+      };
+
       osc.type = 'sine';
       osc.frequency.setValueAtTime(freq, noteTime);
 
@@ -412,8 +430,12 @@ class LofiAudioEngine {
     try {
       const ctx = this.initContext();
       if (ctx) {
+        if (this.masterGain) {
+          this.masterGain.gain.cancelScheduledValues(ctx.currentTime);
+          this.masterGain.gain.setValueAtTime(this.volume, ctx.currentTime);
+        }
         if (ctx.state === 'suspended') {
-          void ctx.resume();
+          await ctx.resume();
         }
         if (!this.loopTimer) {
           this.chordIndex = 0;
@@ -453,17 +475,24 @@ class LofiAudioEngine {
     }
     this.stopCrackle();
 
-    // Fade out master smoothly
+    // Immediately stop and disconnect all scheduled/playing oscillators
+    this.activeNodes.forEach((node) => {
+      try {
+        node.stop();
+        node.disconnect();
+      } catch {
+        // Ignored
+      }
+    });
+    this.activeNodes.clear();
+
+    // Silence master output and suspend the audio context
     if (this.masterGain && this.ctx) {
       try {
         const now = this.ctx.currentTime;
-        this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, now);
-        this.masterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
-        setTimeout(() => {
-          if (this.masterGain && this.ctx) {
-            this.masterGain.gain.setValueAtTime(this.volume, this.ctx.currentTime);
-          }
-        }, 300);
+        this.masterGain.gain.cancelScheduledValues(now);
+        this.masterGain.gain.setValueAtTime(0, now);
+        void this.ctx.suspend();
       } catch {
         // Ignored
       }

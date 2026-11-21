@@ -218,11 +218,11 @@ export function SizeGuideModal({
           </div>
         </div>
 
-        {/* Vintage Measuring Flat Tips */}
+        {/* Flat Garment Measuring Tips */}
         <div className="border-t border-[#1e2a1c]/15 pt-4 space-y-3">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#8b5a3e]">
             <Info className="size-4" />
-            <span>How to Measure Vintage Garments</span>
+            <span>How to Measure Flat Garments</span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs leading-relaxed text-[#2c221e]/85">
@@ -241,7 +241,7 @@ export function SizeGuideModal({
           </div>
 
           <p className="text-[0.72rem] text-[#2c221e]/70 italic border-l-2 border-[#8b5a3e] pl-3 py-0.5">
-            Note: Vintage tags may vary from contemporary fast-fashion sizing due to era shrinkage and tailored cuts. For best fit, compare these inches against your best-fitting personal garment.
+            Note: Garment tags may vary from contemporary fast-fashion sizing due to era shrinkage and tailored cuts. For best fit, compare these inches against your best-fitting personal garment.
           </p>
         </div>
 

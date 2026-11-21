@@ -62,7 +62,7 @@ export function ContactPage() {
           <div>
             <h2 className="font-display text-xl text-cocoa">Store Details</h2>
             <p className="mt-2 text-foreground/80 leading-relaxed">
-              CircleUp Curated Vintage &amp; Thrift Storefront
+              CircleUp Curated Pre-Loved &amp; Thrift Storefront
               <br />
               Instagram: @CircleUp
               <br />

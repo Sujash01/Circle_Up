@@ -127,7 +127,7 @@ describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
     });
 
     expect(host.textContent).toContain('Curated Thrifted');
-    expect(host.textContent).toContain('Pre-Loved, Archival & Vintage Rails');
+    expect(host.textContent).toContain('Pre-Loved, Archival & Thrifted Rails');
     expect(host.textContent).toContain('Vintage 90s Leather Jacket');
 
     act(() => {

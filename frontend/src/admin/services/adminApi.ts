@@ -1,8 +1,8 @@
 import axios, { type AxiosInstance } from 'axios';
 import { normalizeApiError } from '@/services/apiClient';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
-import { normalizeCategorySlug } from '@/services/productService';
-import { productService } from '@/services/productService';
+import { productService, normalizeCategorySlug } from '@/services/productService';
+import { clearStorefrontCache } from '@/services/storefrontApi';
 import type {
   AdminUser,
   Coupon,
@@ -322,6 +322,7 @@ export const adminApi = {
           isNewArrival: Boolean(data.isNewArrival ?? true),
           createdAt: new Date().toISOString(),
         } as unknown as Product;
+        clearStorefrontCache();
         void productService.initLiveSync();
         return demoProd;
       }
@@ -332,10 +333,12 @@ export const adminApi = {
   async updateProduct(id: string, data: Partial<AdminProductFormValues>) {
     try {
       const res = await adminClient.put<{ data: Product }>(`/products/${id}`, data);
+      clearStorefrontCache();
       void productService.initLiveSync();
       return res.data.data;
     } catch (err) {
       if (isDemoAdminSession()) {
+        clearStorefrontCache();
         void productService.initLiveSync();
         return { id, ...data } as unknown as Product;
       }
@@ -567,7 +570,7 @@ export const adminApi = {
       }
       if (isDemoAdminSession()) {
         return {
-          announcementText: 'Curated Vintage Drops Every Friday · Free Shipping on orders above ₹2,500',
+          announcementText: 'Curated Drops Every Friday · Free Shipping on orders above ₹2,500',
           announcementLink: '/new-arrivals',
           isAnnouncementActive: true,
           marqueePhrases: ['100% Verified Circular Fashion', 'Curated In Bandra West', 'Zero Model Photos'],
@@ -642,7 +645,7 @@ export const adminApi = {
             showInHeader: true,
             headerBannerText: 'Use code THRIFT10 for 10% off your curated find',
             showInExitIntent: true,
-            popupHeadline: 'Your next favorite vintage find is waiting',
+            popupHeadline: 'Your next favorite pre-loved find is waiting',
           } as unknown as Coupon,
         ];
       }

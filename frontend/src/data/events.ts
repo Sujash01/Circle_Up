@@ -37,7 +37,7 @@ export const SAMPLE_EVENTS: EventItem[] = [
     highlights: [
       'Salvaged denim patches & thread provided',
       'Beginner-friendly hand-sewing session',
-      'Care guide for vintage cotton & wool',
+      'Care guide for pre-loved cotton & wool',
     ],
   },
   {

@@ -106,12 +106,12 @@ export function NotFoundPage() {
             <div className="overflow-hidden bg-[#ece6d2]">
               <img
                 src={story2}
-                alt="Unisex vintage sweatshirts and denim"
+                alt="Unisex thrifted sweatshirts and denim"
                 className="aspect-[4/5] w-full object-cover group-hover:scale-[1.03] transition-transform duration-500"
               />
             </div>
             <p className="text-xs font-medium text-cocoa group-hover:text-primary">
-              Unisex Vintage Rack →
+              Unisex Archive Rack →
             </p>
           </Link>
         </div>

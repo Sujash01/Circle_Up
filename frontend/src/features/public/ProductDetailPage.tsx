@@ -1,6 +1,6 @@
 import { Heart, Minus, Plus, Ruler } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import type { Product } from '@/types/storefront';
+import type { Product, ProductVariant } from '@/types/storefront';
 import { Link, useParams } from 'react-router-dom';
 import { EmptyState } from '@/components/storefront/EmptyState';
 import { ProductCard } from '@/components/storefront/ProductCard';
@@ -45,18 +45,46 @@ export function ProductDetailPage() {
   const [addedFeedback, setAddedFeedback] = useState(false);
   const [isSizeGuideOpen, setIsSizeGuideOpen] = useState(false);
 
+  const catCode =
+    product?.categoryCode ||
+    (product?.serialNumber ? extractCategoryCodeFromSerial(product.serialNumber) : undefined);
+  const catMeta = catCode ? INVENTORY_CATEGORIES[catCode] : undefined;
+
+  const rawStatus = (product?.status || '').toUpperCase() as InventoryStatusCode;
+  const invStatus =
+    INVENTORY_STATUSES[rawStatus] ||
+    ((product?.stock ?? 0) <= 0 ? INVENTORY_STATUSES.SOLD : INVENTORY_STATUSES.AVAILABLE);
+
+  const isPurchasable = Boolean(product && invStatus.isPurchasable && product.stock > 0);
+
+  const availableVariants: ProductVariant[] = useMemo(() => {
+    if (product && Array.isArray(product.variants) && product.variants.length > 0) {
+      return product.variants;
+    }
+    const sizes =
+      product && Array.isArray(product.sizes) && product.sizes.length > 0
+        ? product.sizes
+        : ['One Size'];
+    return sizes.map((sz, idx) => ({
+      id: `${product?.serialNumber || product?.id || 'var'}-${idx}-${sz.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+      label: sz,
+      size: sz,
+      stock: product?.stock ?? 1,
+    }));
+  }, [product]);
+
   useEffect(() => {
     setActiveImageIdx(0);
     setQuantity(1);
     setValidationError('');
     setAddedFeedback(false);
-    const firstVariant = product?.variants[0];
-    if (product && product.variants.length === 1 && firstVariant && firstVariant.stock > 0) {
-      setSelectedVariantId(firstVariant.id);
+    const firstAvailable = availableVariants.find((v) => v.stock > 0);
+    if (availableVariants.length === 1 && firstAvailable) {
+      setSelectedVariantId(firstAvailable.id);
     } else {
       setSelectedVariantId('');
     }
-  }, [slug, product]);
+  }, [slug, availableVariants]);
 
   if (!product) {
     return (
@@ -69,19 +97,7 @@ export function ProductDetailPage() {
     );
   }
 
-  const catCode =
-    product.categoryCode ||
-    (product.serialNumber ? extractCategoryCodeFromSerial(product.serialNumber) : undefined);
-  const catMeta = catCode ? INVENTORY_CATEGORIES[catCode] : undefined;
-
-  const rawStatus = (product.status || '').toUpperCase() as InventoryStatusCode;
-  const invStatus =
-    INVENTORY_STATUSES[rawStatus] ||
-    (product.stock <= 0 ? INVENTORY_STATUSES.SOLD : INVENTORY_STATUSES.AVAILABLE);
-
-  const isPurchasable = invStatus.isPurchasable && product.stock > 0;
-
-  const selectedVariant = product.variants.find((v) => v.id === selectedVariantId);
+  const selectedVariant = availableVariants.find((v) => v.id === selectedVariantId);
   const activePrice = selectedVariant?.priceOverride ?? product.price;
   const maxStock = selectedVariant ? selectedVariant.stock : product.stock;
   const saved = isWishlisted(product.id);
@@ -308,7 +324,7 @@ export function ProductDetailPage() {
             </div>
 
             <div className="flex flex-wrap gap-2.5">
-              {product.variants.map((variant) => {
+              {availableVariants.map((variant) => {
                 const isSelected = variant.id === selectedVariantId;
                 const soldOut = variant.stock <= 0;
                 return (

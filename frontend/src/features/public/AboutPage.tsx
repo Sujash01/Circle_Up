@@ -44,7 +44,7 @@ export function AboutPage() {
             accessories and all sorts of interesting finds.
           </p>
           <p className="text-sm sm:text-base leading-relaxed text-foreground/75">
-            From vintage leather jackets and retro denim to unworn artisan co-ords, upcycled crafts,
+            From classic leather jackets and timeless denim to unworn artisan co-ords, upcycled crafts,
             and statement bags, each piece is selected with an eye for quality, timelessness, and
             character.
           </p>
@@ -122,7 +122,7 @@ export function AboutPage() {
           <div className="space-y-2">
             <h3 className="font-display text-xl text-cocoa">Pre-Loved Clothing</h3>
             <p className="text-xs sm:text-sm leading-relaxed text-foreground/80">
-              Cleaned, graded, and inspected vintage jackets, denim, sweaters, and everyday co-ords
+              Cleaned, graded, and inspected archive jackets, denim, sweaters, and everyday co-ords
               ready for their second act.
             </p>
           </div>
@@ -136,7 +136,7 @@ export function AboutPage() {
           <div className="space-y-2">
             <h3 className="font-display text-xl text-cocoa">Jewellery &amp; Accessories</h3>
             <p className="text-xs sm:text-sm leading-relaxed text-foreground/80">
-              Structured handbags, crossbody slings, vintage belts, and small treasures that complete
+              Structured handbags, crossbody slings, handcrafted belts, and small treasures that complete
               any look.
             </p>
           </div>

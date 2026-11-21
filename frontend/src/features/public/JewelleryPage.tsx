@@ -52,7 +52,7 @@ export function JewelleryPage() {
       {products.length === 0 ? (
         <EmptyState
           title="No jewellery found"
-          description="Curated vintage metals and heirlooms are refreshed regularly."
+          description="Curated artisanal metals and heirlooms are refreshed regularly."
           actionLabel="Browse New Arrivals"
           actionTo="/new-arrivals"
         />

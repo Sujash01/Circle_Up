@@ -27,11 +27,11 @@ export function ThriftedPage() {
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-foreground/15 pb-6">
         <div>
           <p className="text-[0.72rem] font-semibold uppercase tracking-[0.2em] text-terracotta">
-            Pre-Loved, Archival &amp; Vintage Rails
+            Pre-Loved, Archival &amp; Thrifted Rails
           </p>
           <h1 className="mt-2 font-display text-4xl sm:text-5xl text-cocoa">Curated Thrifted</h1>
           <p className="mt-3 max-w-xl text-sm leading-relaxed text-foreground/80">
-            One-of-a-kind vintage apparel, gently loved wardrobe staples, estate treasures, and pre-loved classics given a second life.
+            One-of-a-kind curated apparel, gently loved wardrobe staples, estate treasures, and pre-loved classics given a second life.
           </p>
         </div>
 

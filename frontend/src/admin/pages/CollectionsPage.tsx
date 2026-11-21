@@ -25,7 +25,7 @@ const DEFAULT_TILES: CategoryTile[] = [
   {
     to: '/thrifted-treasure',
     title: 'Thrifted Treasure',
-    note: 'One-of-one vintage finds',
+    note: 'One-of-one archive finds',
     img: '/assets/hero-detail-1.jpg',
     alt: 'Top and skirt co-ord set on a mannequin',
   },
@@ -311,7 +311,7 @@ export default function CollectionsPage() {
             <div>
               <h2 className="text-sm font-bold text-cocoa">Curate 3D Treasure Chest Picks</h2>
               <p className="text-xs text-cocoa/70">
-                Choose 4 to 6 standout vintage items to appear inside the 3D rotating treasure chest on the hero section.
+                Choose 4 to 6 standout curated items to appear inside the 3D rotating treasure chest on the hero section.
               </p>
             </div>
             <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-bold text-primary">

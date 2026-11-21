@@ -37,7 +37,7 @@ const CHEST_PRODUCTS: ChestProduct[] = [
   {
     name: 'Winter Cardigan Coat',
     price: formatPrice(1890),
-    tag: 'Vintage find',
+    tag: 'Curated find',
     bg: ['#c9d3b0', '#9fae80'],
     img: lookbook,
     to: '/product/winter-cardigan-coat',
@@ -45,7 +45,7 @@ const CHEST_PRODUCTS: ChestProduct[] = [
   {
     name: 'Top & Skirt Co-Ord Set',
     price: formatPrice(4000),
-    tag: 'Vintage find',
+    tag: 'Pre-loved',
     bg: ['#e7e1ce', '#c8d3b0'],
     img: heroDetail1,
     to: '/product/top-and-skirt-co-ord-set',
@@ -69,7 +69,7 @@ const CHEST_PRODUCTS: ChestProduct[] = [
   {
     name: 'Blazer With Skirt Co-Ord Set',
     price: formatPrice(3550),
-    tag: 'Vintage find',
+    tag: 'Archival set',
     bg: ['#e7e1ce', '#c8d3b0'],
     img: rtw3,
     to: '/product/blazer-with-skirt-co-ord-set',

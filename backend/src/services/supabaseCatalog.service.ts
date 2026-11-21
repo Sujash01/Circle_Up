@@ -61,7 +61,15 @@ export function mapSupabaseRowToProductItem(row: Record<string, unknown>): IProd
     stock,
     images,
     sizes,
-    variants: Array.isArray(row.variants) ? (row.variants as any) : [],
+    variants:
+      Array.isArray(row.variants) && row.variants.length > 0
+        ? (row.variants as any)
+        : (sizes.length > 0 ? sizes : ['One Size']).map((sz, idx) => ({
+            id: `${rawSerial || 'var'}-${idx}-${sz.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+            label: sz,
+            size: sz,
+            stock: Math.max(1, Math.floor(stock / (sizes.length || 1))),
+          })),
     category: String(row.category || ''),
     categoryLabel: (row.category_label as string) || undefined,
     subcategory: (row.subcategory as string) || undefined,

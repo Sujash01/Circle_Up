@@ -254,7 +254,7 @@ export default function SiteSettingsPage() {
                         label: prev.customDrop?.label || 'Winter Archival Drop',
                         to: prev.customDrop?.to || '/thrifted-treasure',
                         badge: prev.customDrop?.badge || 'Featured Drop',
-                        description: prev.customDrop?.description || 'Curated one-of-one vintage pieces',
+                        description: prev.customDrop?.description || 'Curated one-of-one archive pieces',
                         enabled: e.target.checked,
                       },
                     }))
@@ -282,7 +282,7 @@ export default function SiteSettingsPage() {
                         label: e.target.value,
                         to: prev.customDrop?.to || '/thrifted-treasure',
                         badge: prev.customDrop?.badge || 'Featured Drop',
-                        description: prev.customDrop?.description || 'Curated one-of-one vintage pieces',
+                        description: prev.customDrop?.description || 'Curated one-of-one archive pieces',
                         enabled: prev.customDrop?.enabled ?? true,
                       },
                     }))
@@ -304,7 +304,7 @@ export default function SiteSettingsPage() {
                         label: prev.customDrop?.label || 'Winter Archival Drop',
                         to: e.target.value,
                         badge: prev.customDrop?.badge || 'Featured Drop',
-                        description: prev.customDrop?.description || 'Curated one-of-one vintage pieces',
+                        description: prev.customDrop?.description || 'Curated one-of-one archive pieces',
                         enabled: prev.customDrop?.enabled ?? true,
                       },
                     }))
@@ -326,7 +326,7 @@ export default function SiteSettingsPage() {
                         label: prev.customDrop?.label || 'Winter Archival Drop',
                         to: prev.customDrop?.to || '/thrifted-treasure',
                         badge: e.target.value,
-                        description: prev.customDrop?.description || 'Curated one-of-one vintage pieces',
+                        description: prev.customDrop?.description || 'Curated one-of-one archive pieces',
                         enabled: prev.customDrop?.enabled ?? true,
                       },
                     }))
@@ -340,7 +340,7 @@ export default function SiteSettingsPage() {
                 <label className="block font-semibold text-cocoa mb-1">Short Description</label>
                 <input
                   type="text"
-                  value={settings.customDrop?.description ?? 'Curated one-of-one vintage pieces'}
+                  value={settings.customDrop?.description ?? 'Curated one-of-one archive pieces'}
                   onChange={(e) =>
                     setSettings((prev) => ({
                       ...prev,
@@ -353,7 +353,7 @@ export default function SiteSettingsPage() {
                       },
                     }))
                   }
-                  placeholder="e.g. Curated one-of-one vintage pieces"
+                  placeholder="e.g. Curated one-of-one archive pieces"
                   className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-cocoa focus:border-primary focus:outline-none"
                 />
               </div>

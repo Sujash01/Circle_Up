@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Product } from '@/types/storefront';
 import { Heart } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { storefrontApi, type HomepagePayload } from '@/services/storefrontApi';
+import { clearStorefrontCache, storefrontApi, type HomepagePayload } from '@/services/storefrontApi';
 
 import bag1 from '@/assets/bag-1.jpg';
 import bag3 from '@/assets/bag-3.jpg';
@@ -21,7 +21,7 @@ import worldSocial from '@/assets/world-social-circle.webp';
 import worldSocialSmall from '@/assets/world-social-circle-480.webp';
 import { Reveal } from '@/components/landing/Reveal';
 import { ScrollIvyBranch } from '@/components/landing/ScrollIvyBranch';
-import { TreasureChestHero } from '@/components/landing/TreasureChestHero';
+import { TreasureChestHero, type ChestProduct } from '@/components/landing/TreasureChestHero';
 import { Blob } from '@/components/ui/Blob';
 import { WaveDivider } from '@/components/ui/WaveDivider';
 import { NotebookPage } from '@/components/ui/NotebookPage';
@@ -53,8 +53,8 @@ const handbags: ProductPreview[] = [];
 
 const winterLooks = [
   { img: winter1, alt: 'Winter cardigan coat with cream trim' },
-  { img: heroDetail2, alt: 'Denim jumpsuit with a vintage belt' },
-  { img: story2, alt: 'Vintage-inspired knit and denim co-ord on a mannequin' },
+  { img: heroDetail2, alt: 'Denim jumpsuit with a crafted belt' },
+  { img: story2, alt: 'Artisan knit and denim co-ord on a mannequin' },
   { img: heroDetail1, alt: 'Top and skirt co-ord set on a mannequin' },
 ];
 
@@ -142,7 +142,7 @@ function SectionHeading({
 
 function ProductCard({
   product,
-  badge = 'Vintage Find',
+  badge = 'Curated Find',
 }: {
   product: ProductPreview;
   badge?: string;
@@ -265,7 +265,7 @@ function StorySection() {
               <Blob
                 src={rtw1}
                 sizes="(min-width: 1024px) 38vw, 100vw"
-                alt="A vintage co-ord set carefully chosen for its next chapter"
+                alt="A curated co-ord set carefully chosen for its next chapter"
                 width={912}
                 height={1200}
                 shape="wavy-oval"
@@ -388,7 +388,7 @@ function CommunitySection() {
         <NotebookPage className="community-photo-page mx-auto w-full max-w-[31rem] justify-self-center rounded-[2rem] p-3 sm:p-4">
           <Blob
             src={communityVignette}
-            alt="Illustration of a curated clothing rail, vintage handbag, and leafy plant"
+            alt="Illustration of a curated clothing rail, crafted handbag, and leafy plant"
             width={900}
             height={900}
             shape="arch"
@@ -480,7 +480,7 @@ const worlds: Array<{
   sizes?: string;
 }> = [
     { to: '/rentals', title: 'Rentals', note: 'Wear for an occasion, then return it', img: rtw3, alt: 'Blazer with skirt co-ord set' },
-    { to: '/thrifted-treasure', title: 'Thrifted Treasure', note: 'One-of-one vintage finds', img: heroDetail1, alt: 'Top and skirt co-ord set on a mannequin' },
+    { to: '/thrifted-treasure', title: 'Thrifted Treasure', note: 'One-of-one archive finds', img: heroDetail1, alt: 'Top and skirt co-ord set on a mannequin' },
     { to: '/accessories', title: 'Accessories', note: 'Bags, scarves and small things', img: bag3, alt: 'Structured handheld bag' },
     {
       to: '/events',
@@ -649,6 +649,7 @@ export function HomePage() {
 
   useEffect(() => {
     const ac = new AbortController();
+    clearStorefrontCache();
     storefrontApi
       .getHomepage(ac.signal)
       .then((data) => setHomepageData(data))
@@ -658,7 +659,35 @@ export function HomePage() {
         }
       });
     return () => ac.abort();
-  }, []);
+  }, [catalogVersion]);
+
+  const liveChestPicks: ChestProduct[] = useMemo(() => {
+    const picked = allProducts.filter((p) => Boolean(p.chestPick));
+    if (picked.length === 0) return [];
+    const backgrounds: Array<[string, string]> = [
+      ['#c9d3b0', '#9fae80'],
+      ['#e7e1ce', '#c8d3b0'],
+      ['#bfd0dc', '#8aa6bc'],
+      ['#e7e1ce', '#c8d3b0'],
+      ['#e7e1ce', '#c8d3b0'],
+      ['#d9cdb5', '#a89572'],
+    ];
+    return picked.slice(0, 6).map((p, idx) => ({
+      name: p.name,
+      price: formatPrice(p.price),
+      tag: p.sizes?.[0] ? `Size ${p.sizes[0]}` : p.condition || 'Curated find',
+      bg: backgrounds[idx % backgrounds.length]!,
+      img: p.images[0] || bag1,
+      to: `/product/${p.slug}`,
+    }));
+  }, [allProducts]);
+
+  const activeChestPicks =
+    liveChestPicks.length > 0
+      ? liveChestPicks
+      : homepageData?.chestPicks && homepageData.chestPicks.length > 0
+        ? homepageData.chestPicks
+        : undefined;
 
   const liveReadyToWear: ProductPreview[] = allProducts
     .filter((p) => p.category === 'womens-one-piece' || p.category === 'womens-upperwear')
@@ -747,7 +776,7 @@ export function HomePage() {
             <StorefrontHeader preserveHomeHeader />
             <div className="home-vine-frame relative">
               <main id="main" className="relative z-20">
-                <TreasureChestHero picks={homepageData?.chestPicks} />
+                <TreasureChestHero picks={activeChestPicks} />
                 <div ref={belowHeroRef} className="relative">
                   <div className="relative z-20">
                     <ValuesMarquee phrases={homepageData?.marqueePhrases} />

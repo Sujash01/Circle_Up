@@ -284,7 +284,7 @@ export function StorefrontHeader({ preserveHomeHeader = false }: { preserveHomeH
     label: 'Winter Archival Drop',
     to: '/thrifted-treasure',
     badge: 'Featured Drop',
-    description: 'Curated one-of-one vintage pieces',
+    description: 'Curated one-of-one archive pieces',
     enabled: true,
   });
 
@@ -453,7 +453,7 @@ export function StorefrontHeader({ preserveHomeHeader = false }: { preserveHomeH
               className="storefront-search-button hidden min-h-[44px] items-center gap-2.5 rounded-full border-2 border-foreground/30 bg-card/90 px-4 py-2 text-xs lg:text-sm font-semibold text-cocoa shadow-xs transition-all hover:border-primary hover:text-primary hover:shadow-sm sm:flex"
             >
               <Search className="size-5" strokeWidth={2} />
-              <span>Search vintage finds...</span>
+              <span>Search pre-loved &amp; archive finds...</span>
             </button>
 
             <button
@@ -837,7 +837,7 @@ export function StorefrontFooter() {
               That Lasts!
             </p>
             <p className="mt-5 max-w-xs text-[0.9rem] leading-relaxed text-footer-foreground/70">
-              Curated vintage and thrift finds, rentals and handcrafted pieces, given a second life.
+              Curated pre-loved and thrift finds, rentals and handcrafted pieces, given a second life.
             </p>
           </div>
           <FooterCol
