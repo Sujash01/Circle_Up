@@ -21,7 +21,7 @@ function slugify(name: string): string {
 
 export const productService = {
   async listProducts(query: ProductListQuery) {
-    if (isSupabaseConfigured()) {
+    if (isSupabaseConfigured() && env.CHECKOUT_PROVIDER !== 'mongodb') {
       return supabaseCatalogService.listProducts(query);
     }
 
@@ -154,7 +154,7 @@ export const productService = {
   },
 
   async getProductByIdentifier(identifier: string) {
-    if (isSupabaseConfigured()) {
+    if (isSupabaseConfigured() && env.CHECKOUT_PROVIDER !== 'mongodb') {
       return supabaseCatalogService.getProductByIdentifier(identifier);
     }
 
@@ -196,7 +196,7 @@ export const productService = {
   },
 
   async getRelatedProducts(identifier: string, limit = 4) {
-    if (isSupabaseConfigured()) {
+    if (isSupabaseConfigured() && env.CHECKOUT_PROVIDER !== 'mongodb') {
       return supabaseCatalogService.getRelatedProducts(identifier, limit);
     }
 
@@ -227,7 +227,7 @@ export const productService = {
   },
 
   async createProduct(payload: Partial<IProductItem>) {
-    if (isSupabaseConfigured()) {
+    if (isSupabaseConfigured() && env.CHECKOUT_PROVIDER !== 'mongodb') {
       const created = await supabaseCatalogService.createProduct(payload);
       if (isDatabaseConnected()) {
         try {
@@ -306,7 +306,7 @@ export const productService = {
   },
 
   async updateProduct(serialNumber: string, updates: Partial<IProductItem>) {
-    if (isSupabaseConfigured()) {
+    if (isSupabaseConfigured() && env.CHECKOUT_PROVIDER !== 'mongodb') {
       const updated = await supabaseCatalogService.updateProduct(serialNumber, updates);
       if (isDatabaseConnected()) {
         try {

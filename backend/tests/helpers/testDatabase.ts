@@ -18,7 +18,7 @@ export async function startTestDatabase(options: { installCheckoutIndexes?: bool
   await Product.deleteMany({});
   await Product.insertMany(SEED_PRODUCTS.map((product) => ({ ...product, stock: 100 })));
   await SiteSettings.deleteMany({});
-  await SiteSettings.create({ whatsappNumber: '+919111222333' });
+  await SiteSettings.create({ whatsappNumber: '+919111222333', isWhatsappVerified: true });
   return replicaSet;
 }
 

@@ -5,16 +5,21 @@ import { createApp } from '../../src/app.js';
 import { signSessionToken } from '../../src/services/adminAuth.service.js';
 import { hashGuestToken, orderService } from '../../src/modules/orders/order.service.js';
 import { startTestDatabase, stopTestDatabase } from '../helpers/testDatabase.js';
+import { env } from '../../src/config/env.js';
 import type { MongoMemoryReplSet } from 'mongodb-memory-server';
 
 const app = createApp();
 let testDatabase: MongoMemoryReplSet;
+let originalProvider: string | undefined;
 
 beforeAll(async () => {
+  originalProvider = env.CHECKOUT_PROVIDER;
+  (env as any).CHECKOUT_PROVIDER = 'mongodb';
   testDatabase = await startTestDatabase();
 }, 120_000);
 
 afterAll(async () => {
+  (env as any).CHECKOUT_PROVIDER = originalProvider;
   if (testDatabase) await stopTestDatabase(testDatabase);
 });
 

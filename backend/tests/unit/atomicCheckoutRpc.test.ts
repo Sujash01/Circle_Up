@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   executeStorefrontCheckoutRpc,
@@ -27,6 +27,12 @@ import {
 import { formatPrice } from '@circleup/shared';
 
 describe('Milestone 1, Step 2: Atomic Checkout RPC Unit & Verification Test Suite [MOCKED / UNIT]', () => {
+  beforeAll(() => {
+    (env as any).CHECKOUT_PROVIDER = 'supabase';
+    (env as any).SUPABASE_URL = 'https://mock.supabase.co';
+    (env as any).SUPABASE_SERVICE_ROLE_KEY = 'mock-service-role-key-32chars';
+  });
+
   const dummyPayload: StorefrontCheckoutRpcParams = {
     p_key_hash: crypto.createHash('sha256').update('test-key-001').digest('hex'),
     p_fingerprint: crypto.createHash('sha256').update('test-fingerprint-001').digest('hex'),
@@ -567,11 +573,17 @@ describe('Milestone 1, Step 2: Atomic Checkout RPC Unit & Verification Test Suit
 
   // 25. Privileged Supabase Service-Role Key Requirement
   it('25. [MOCKED / UNIT] Fails closed if SUPABASE_SERVICE_ROLE_KEY is missing or unprivileged', () => {
-    expect(isSupabaseCheckoutConfigured()).toBe(false);
+    const originalKey = env.SUPABASE_SERVICE_ROLE_KEY;
+    try {
+      (env as any).SUPABASE_SERVICE_ROLE_KEY = undefined;
+      expect(isSupabaseCheckoutConfigured()).toBe(false);
 
-    expect(() => {
-      getSupabaseAdminClient();
-    }).toThrow(ServiceUnavailableError);
+      expect(() => {
+        getSupabaseAdminClient();
+      }).toThrow(ServiceUnavailableError);
+    } finally {
+      (env as any).SUPABASE_SERVICE_ROLE_KEY = originalKey;
+    }
   });
 
   // 26. Collision-Resistant Order Number Format (122-bit CSPRNG entropy via full 32-hex unhyphenated UUID v4)

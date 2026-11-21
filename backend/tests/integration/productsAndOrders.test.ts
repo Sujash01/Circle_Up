@@ -14,6 +14,7 @@ import mongoose from 'mongoose';
 import type { Db } from 'mongodb';
 import { migrateCheckoutIndexes } from '../../src/utils/checkoutIndexMigration.js';
 import { SiteSettings } from '../../src/models/SiteSettings.js';
+import { env } from '../../src/config/env.js';
 
 const app = createApp();
 let checkoutIp = 10;
@@ -43,11 +44,16 @@ const staffSession = signSessionToken({
   expiresAt: Date.now() + 60_000,
 });
 
+let originalProvider: string | undefined;
+
 beforeAll(async () => {
+  originalProvider = env.CHECKOUT_PROVIDER;
+  (env as any).CHECKOUT_PROVIDER = 'mongodb';
   testDatabase = await startTestDatabase({ installCheckoutIndexes: false });
 }, 120_000);
 
 afterAll(async () => {
+  (env as any).CHECKOUT_PROVIDER = originalProvider;
   if (testDatabase) await stopTestDatabase(testDatabase);
 });
 
@@ -245,7 +251,7 @@ describe('Products & Orders API', () => {
   it('rejects WhatsApp / UPI checkout when no store contact is configured without reserving stock', async () => {
     const settings = await SiteSettings.findOne();
     expect(settings).not.toBeNull();
-    await SiteSettings.updateOne({ _id: settings!._id }, { $set: { whatsappNumber: '' } });
+    await SiteSettings.updateOne({ _id: settings!._id }, { $set: { whatsappNumber: '', isWhatsappVerified: false } });
     const beforeStock = (await Product.findOne({ serialNumber: 'CU-001' }))!.stock;
     const beforeOrders = await Order.countDocuments();
     try {
@@ -257,7 +263,7 @@ describe('Products & Orders API', () => {
       expect(afterStock).toBe(beforeStock);
       expect(await Order.countDocuments()).toBe(beforeOrders);
     } finally {
-      await SiteSettings.updateOne({ _id: settings!._id }, { $set: { whatsappNumber: '+919111222333' } });
+      await SiteSettings.updateOne({ _id: settings!._id }, { $set: { whatsappNumber: '+919111222333', isWhatsappVerified: true } });
     }
   });
 

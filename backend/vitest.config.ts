@@ -17,6 +17,9 @@ export default defineConfig({
       CORS_ALLOWED_ORIGINS: 'http://localhost:5173',
       FRONTEND_URL: 'http://localhost:5173',
       LOG_LEVEL: 'silent',
+      CHECKOUT_PROVIDER: 'mongodb',
+      SUPABASE_URL: '',
+      SUPABASE_SERVICE_ROLE_KEY: '',
     },
   },
 });

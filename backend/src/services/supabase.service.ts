@@ -15,6 +15,9 @@ let cachedClient: SupabaseClient | null = null;
  * Strictly requires SUPABASE_SERVICE_ROLE_KEY. The anon key is NEVER used as a fallback.
  */
 export function isSupabaseConfigured(): boolean {
+  if (env.CHECKOUT_PROVIDER === 'mongodb') {
+    return false;
+  }
   const url = env.SUPABASE_URL;
   const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
   return Boolean(

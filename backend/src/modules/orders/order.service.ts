@@ -157,6 +157,13 @@ export const orderService = {
       );
     }
 
+    const isLegacyMongoConfigured =
+      env.NODE_ENV !== 'production' && env.CHECKOUT_PROVIDER === 'mongodb';
+
+    if (isLegacyMongoConfigured && !isDatabaseConnected()) {
+      throw new ServiceUnavailableError('Checkout is temporarily unavailable because order storage is offline.', 'DATABASE_UNAVAILABLE');
+    }
+
     if (paymentMethod === 'WHATSAPP_UPI') {
       const settings = await settingsRepository.getSettings();
       if (!settings.isWhatsappVerified || !getConfiguredWhatsappNumber(settings.whatsappNumber)) {
@@ -183,9 +190,6 @@ export const orderService = {
     // Supabase is the canonical target architecture and default provider.
     // The legacy MongoDB checkout provider is only available in dev/test when explicitly opted into via CHECKOUT_PROVIDER=mongodb.
     // In production, Supabase is strictly mandatory and MongoDB fallback is blocked.
-    const isLegacyMongoConfigured =
-      env.NODE_ENV !== 'production' && env.CHECKOUT_PROVIDER === 'mongodb';
-
     if (isLegacyMongoConfigured) {
       return this.createOrderMongo(payload);
     }

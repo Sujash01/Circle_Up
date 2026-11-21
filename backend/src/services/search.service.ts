@@ -45,7 +45,7 @@ export const searchService = {
       subcategory?: string;
     }> = [];
 
-    if (isSupabaseConfigured()) {
+    if (isSupabaseConfigured() && env.CHECKOUT_PROVIDER !== 'mongodb') {
       items = await supabaseCatalogService.searchCatalogItems();
     } else if (isDbConnected) {
       const docs = await Product.find({
