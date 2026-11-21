@@ -862,11 +862,11 @@ export function StorefrontFooter() {
             title="Company"
             links={[
               { label: 'About Us', to: '/about' },
+              { label: 'Saved Wishlist', to: '/wishlist' },
+              { label: 'Shopping Bag', to: '/cart' },
+              { label: 'Contact', to: '/contact' },
               { label: 'Customer Portal', to: '/account' },
               { label: 'Admin Workspace', to: '/admin' },
-              { label: 'Contact', to: '/contact' },
-              { label: 'Shopping Bag', to: '/cart' },
-              { label: 'Saved Wishlist', to: '/wishlist' },
             ]}
           />
         </div>
