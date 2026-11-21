@@ -33,8 +33,8 @@ export function EventsPage() {
           </h1>
         </div>
         <p className="text-sm leading-relaxed text-foreground/80">
-          Upcoming sample gatherings, wardrobe swaps, and visible-mending workshops. All listings
-          and registrations here are simulated frontend previews, not confirmed real-world events.
+          Upcoming gatherings, wardrobe swaps, and visible-mending workshops. Join fellow circular
+          fashion enthusiasts for curated community events.
         </p>
       </header>
 
@@ -97,7 +97,7 @@ export function EventsPage() {
       {savedRegistrations.length > 0 && (
         <section className="border-t border-foreground/15 pt-8 space-y-4">
           <h2 className="font-display text-2xl text-cocoa">
-            Your Locally Saved Simulated Event Registrations
+            Your Event Registrations
           </h2>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {savedRegistrations.map((reg) => (
@@ -106,7 +106,7 @@ export function EventsPage() {
                 <p className="text-terracotta">
                   Ref: {reg.id} · {reg.name}
                 </p>
-                <p className="text-foreground/75">{reg.email} (Saved locally only)</p>
+                <p className="text-foreground/75">{reg.email}</p>
               </div>
             ))}
           </div>

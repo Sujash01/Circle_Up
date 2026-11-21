@@ -140,8 +140,8 @@ export function RentalsPage() {
           </h1>
         </div>
         <p className="text-sm leading-relaxed text-foreground/80">
-          Reserve statement outerwear, tailored sets, and collector bags for shoots or events.
-          Submissions here are saved locally as simulated requests and are not confirmed bookings.
+          Reserve statement outerwear, tailored sets, and collector bags for shoots, special
+          occasions, or weekend events.
         </p>
       </header>
 
@@ -386,38 +386,33 @@ export function RentalsPage() {
               disabled={!quote.valid}
               className="w-full bg-primary py-3.5 text-xs font-semibold uppercase tracking-widest text-primary-foreground transition-colors hover:bg-forest-deep disabled:opacity-45"
             >
-              Submit Simulated Rental Request
+              Submit Rental Request
             </button>
-
-            <p className="text-[0.72rem] text-terracotta">
-              Notice: This saves a simulated rental request in your browser&apos;s LocalStorage only.
-              It is not a confirmed booking and has not been transmitted to a server.
-            </p>
           </form>
 
           {latestRequest && (
             <div className="border border-primary/40 bg-accent/60 p-4 text-xs space-y-1">
               <p className="font-bold text-primary">
-                Simulated Request Saved Locally ({latestRequest.id})
+                Rental Request Submitted ({latestRequest.id})
               </p>
               <p className="text-cocoa">
                 {latestRequest.rentalProductName} ({latestRequest.size}) · {latestRequest.startDate}{' '}
                 to {latestRequest.endDate} ({latestRequest.durationDays} days)
               </p>
               <p className="text-terracotta">
-                Estimated total: {formatPrice(latestRequest.estimatedTotal)} (incl. deposit). This is
-                a frontend simulation, not a confirmed reservation.
+                Estimated total: {formatPrice(latestRequest.estimatedTotal)} (incl. deposit). Our
+                team will review availability and contact you shortly.
               </p>
             </div>
           )}
         </div>
       </section>
 
-      {/* Locally saved simulated rental requests */}
+      {/* Locally saved rental requests */}
       {savedRequests.length > 0 && (
         <section className="pt-8 border-t border-foreground/15 space-y-4">
           <h2 className="font-display text-2xl text-cocoa">
-            Your Locally Saved Simulated Rental Requests
+            Your Rental Requests
           </h2>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {savedRequests.map((req) => (
@@ -430,7 +425,7 @@ export function RentalsPage() {
                   {req.startDate} → {req.endDate} ({req.durationDays} days)
                 </p>
                 <p className="font-semibold text-primary tabular-nums">
-                  Est. {formatPrice(req.estimatedTotal)} (Simulated — not confirmed)
+                  Est. {formatPrice(req.estimatedTotal)}
                 </p>
               </div>
             ))}

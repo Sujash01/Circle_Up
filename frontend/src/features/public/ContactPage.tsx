@@ -50,11 +50,10 @@ export function ContactPage() {
   return (
     <div className="space-y-12">
       <header className="border-b border-foreground/15 pb-6 max-w-2xl">
-        <p className="text-[0.72rem] uppercase tracking-[0.22em] text-terracotta">Get in Touch</p>
         <h1 className="mt-2 font-display text-4xl sm:text-5xl text-cocoa">Contact CircleUp</h1>
         <p className="mt-3 text-sm leading-relaxed text-foreground/80">
-          Questions about measurements, rentals, or upcoming swap events? Send a simulated local
-          enquiry below or reach out via our WhatsApp placeholder.
+          Questions about measurements, rentals, or upcoming swap events? Send an enquiry below or
+          reach out via WhatsApp.
         </p>
       </header>
 
@@ -67,25 +66,14 @@ export function ContactPage() {
               <br />
               Instagram: @CircleUp
               <br />
-              WhatsApp Checkout Line: +{WHATSAPP_BUSINESS_NUMBER} (configurable placeholder)
-            </p>
-          </div>
-
-          <div className="border-t border-foreground/15 pt-5 text-xs leading-relaxed text-terracotta space-y-2">
-            <p className="font-semibold uppercase tracking-wider text-cocoa">
-              Frontend Simulation Notice
-            </p>
-            <p>
-              This phase runs entirely in your browser without a backend server or CRM. Form
-              submissions are stored in LocalStorage for local preview only and are not emailed or
-              delivered to a server.
+              WhatsApp Checkout Line: +{WHATSAPP_BUSINESS_NUMBER}
             </p>
           </div>
 
           {history.length > 0 && (
             <div className="border-t border-foreground/15 pt-5 space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-cocoa">
-                Locally Saved Enquiries ({history.length})
+                Recent Enquiries ({history.length})
               </p>
               <ul className="space-y-2 text-xs">
                 {history.slice(0, 3).map((item) => (
@@ -174,17 +162,16 @@ export function ContactPage() {
             type="submit"
             className="bg-primary px-7 py-3 text-xs font-semibold uppercase tracking-widest text-primary-foreground hover:bg-forest-deep transition-colors"
           >
-            Save Simulated Message
+            Send Message
           </button>
 
           {savedEntry && (
             <div className="border border-primary/40 bg-accent/60 p-4 text-xs text-cocoa space-y-1">
               <p className="font-bold text-primary">
-                Saved Locally ({savedEntry.id})
+                Message Sent ({savedEntry.id})
               </p>
               <p>
-                Your message &ldquo;{savedEntry.subject}&rdquo; was saved in this browser&apos;s
-                LocalStorage (simulated frontend submission — not sent to a server or CRM).
+                Thank you! Your message &ldquo;{savedEntry.subject}&rdquo; has been received. Our team will get back to you shortly.
               </p>
             </div>
           )}

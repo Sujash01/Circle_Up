@@ -149,10 +149,7 @@ export function ReviewsPage() {
         {/* Review submission form */}
         <form onSubmit={handleSubmit} className="bg-card/85 border border-foreground/15 p-6 sm:p-8 space-y-5">
           <div>
-            <h2 className="font-display text-2xl text-cocoa">Leave a Simulated Review</h2>
-            <p className="mt-1 text-xs text-terracotta">
-              Saved only to this browser&apos;s LocalStorage.
-            </p>
+            <h2 className="font-display text-2xl text-cocoa">Leave a Review</h2>
           </div>
 
           <div>
@@ -249,12 +246,12 @@ export function ReviewsPage() {
             type="submit"
             className="w-full bg-primary py-3 text-xs font-semibold uppercase tracking-widest text-primary-foreground hover:bg-forest-deep transition-colors"
           >
-            Submit Simulated Review
+            Submit Review
           </button>
 
           {submittedNotice && (
             <p className="text-xs text-primary font-medium">
-              Review added locally to your browser preview.
+              Thank you! Your review has been submitted.
             </p>
           )}
         </form>

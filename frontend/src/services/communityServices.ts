@@ -77,7 +77,7 @@ export const eventService = {
     );
     if (already) {
       return {
-        error: 'A simulated registration for this email is already saved locally for this event.',
+        error: 'A registration for this email has already been received for this event.',
       };
     }
 

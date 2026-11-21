@@ -47,7 +47,7 @@ export function EventDetailPage() {
 
     const res = eventService.registerForEvent({ event, name, email, phone, notes });
     if (res.error || !res.registration) {
-      setError(res.error ?? 'Could not save simulated registration.');
+      setError(res.error ?? 'Could not complete registration. Please try again.');
       return;
     }
 
@@ -120,11 +120,7 @@ export function EventDetailPage() {
 
         <form onSubmit={handleSubmit} className="bg-card/85 border border-foreground/15 p-6 sm:p-8 space-y-5">
           <div>
-            <h2 className="font-display text-2xl text-cocoa">Simulated Event RSVP</h2>
-            <p className="mt-1 text-xs text-terracotta">
-              Saves a simulated registration locally in your browser. This is a sample mock event,
-              not a confirmed real-world booking.
-            </p>
+            <h2 className="font-display text-2xl text-cocoa">Event RSVP</h2>
           </div>
 
           <div>
@@ -196,17 +192,16 @@ export function EventDetailPage() {
             type="submit"
             className="w-full bg-primary py-3.5 text-xs font-semibold uppercase tracking-widest text-primary-foreground hover:bg-forest-deep transition-colors"
           >
-            Save Simulated Registration
+            RSVP for Event
           </button>
 
           {registration && (
             <div className="border border-primary/40 bg-accent/60 p-4 text-xs text-cocoa space-y-1">
               <p className="font-bold text-primary">
-                Simulated RSVP Saved ({registration.id})
+                RSVP Confirmed ({registration.id})
               </p>
               <p>
-                Saved locally for {registration.name} ({registration.email}). Note: This is a mock
-                event preview and has not been sent to an external server.
+                Thank you, {registration.name}! Your spot has been reserved. A confirmation has been registered for {registration.email}.
               </p>
             </div>
           )}

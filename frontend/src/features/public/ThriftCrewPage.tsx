@@ -271,8 +271,8 @@ export function ThriftCrewPage() {
               className="mt-0.5 accent-primary"
             />
             <span>
-              I confirm this is my photo and grant simulated permission to display it inside this
-              local #ThriftCrew preview.
+              I confirm this is my photo and grant permission to display it in the #ThriftCrew
+              gallery.
             </span>
           </label>
 
@@ -286,7 +286,7 @@ export function ThriftCrewPage() {
             type="submit"
             className="bg-primary px-7 py-3 text-xs font-semibold uppercase tracking-widest text-primary-foreground hover:bg-forest-deep transition-colors"
           >
-            Preview #ThriftCrew Submission
+            Submit to #ThriftCrew
           </button>
 
           {statusMessage && (
