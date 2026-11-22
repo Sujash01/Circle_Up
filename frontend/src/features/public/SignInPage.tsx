@@ -108,15 +108,22 @@ export function SignInPage() {
     setErrors({});
 
     try {
-      const res = await authService.signInWithGoogle();
+      const res = await authService.signInWithGoogle({ redirectTarget });
       if (res.success) {
-        setFeedback({
-          type: 'success',
-          message: 'Signed in with Google! Welcome back to CircleUp.',
-        });
-        setTimeout(() => {
-          navigate(redirectTarget);
-        }, 500);
+        if (res.isDemo) {
+          setFeedback({
+            type: 'success',
+            message: 'Signed in with Google! Welcome back to CircleUp.',
+          });
+          setTimeout(() => {
+            navigate(redirectTarget);
+          }, 500);
+        } else {
+          setFeedback({
+            type: 'info',
+            message: 'Connecting to Google...',
+          });
+        }
       } else {
         setErrors({ general: res.message || 'Google sign-in could not be completed.' });
       }

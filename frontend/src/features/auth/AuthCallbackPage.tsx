@@ -29,6 +29,18 @@ export function AuthCallbackPage() {
         // 2. PKCE code exchange if present in query parameters
         const searchParams = new URLSearchParams(search);
         const code = searchParams.get('code');
+        const rawRedirect = searchParams.get('redirect');
+        const targetRedirect = rawRedirect && rawRedirect.startsWith('/') && !rawRedirect.startsWith('//')
+          ? rawRedirect
+          : '/account';
+
+        const oauthError = searchParams.get('error_description') || searchParams.get('error');
+        if (oauthError) {
+          if (isMounted) {
+            setError(oauthError);
+          }
+          return;
+        }
 
         if (code) {
           const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
@@ -68,7 +80,7 @@ export function AuthCallbackPage() {
             if (isRecovery) {
               navigate('/auth/reset-password', { replace: true });
             } else {
-              navigate('/account', { replace: true });
+              navigate(targetRedirect, { replace: true });
             }
           }
           return;
@@ -89,7 +101,7 @@ export function AuthCallbackPage() {
           if (isMounted) {
             setStatusText('Verification complete! Redirecting...');
             setTimeout(() => {
-              navigate('/account', { replace: true });
+              navigate(targetRedirect, { replace: true });
             }, 600);
           }
         } else {

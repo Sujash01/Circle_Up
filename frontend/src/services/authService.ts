@@ -47,17 +47,32 @@ export function mapSupabaseUserToSessionUser(
   user: User,
   profile?: { full_name?: string | null; avatar_url?: string | null } | null,
 ): SessionUser {
-  const metadataName = (user.user_metadata?.full_name as string) || '';
+  const metadataName =
+    (user.user_metadata?.full_name as string) ||
+    (user.user_metadata?.name as string) ||
+    '';
   const emailName = user.email ? user.email.split('@')[0] : '';
   const fullName = profile?.full_name || metadataName || emailName || 'CircleUp Member';
+
+  const rawProvider =
+    (user.app_metadata?.provider as string) ||
+    (user.user_metadata?.provider as string) ||
+    'email';
+  const authProvider = rawProvider === 'google' ? 'google' : rawProvider === 'phone' ? 'phone' : 'email';
+
+  const avatarUrl =
+    profile?.avatar_url ||
+    (user.user_metadata?.avatar_url as string) ||
+    (user.user_metadata?.picture as string) ||
+    undefined;
 
   return {
     id: user.id,
     fullName,
     email: user.email || '',
     phone: user.phone || undefined,
-    avatarUrl: profile?.avatar_url || (user.user_metadata?.avatar_url as string) || undefined,
-    authProvider: 'email',
+    avatarUrl,
+    authProvider,
     actorType: 'CUSTOMER' as ActorType,
     role: 'CUSTOMER' as Role,
     permissions: [],
@@ -187,9 +202,28 @@ class AuthService {
 
       if (!error && data) {
         profileData = data;
+      } else if (!error && !data) {
+        // If profile doesn't exist yet (e.g. fresh Google OAuth sign-in), auto-create row in profiles
+        const name =
+          (session.user.user_metadata?.full_name as string) ||
+          (session.user.user_metadata?.name as string) ||
+          (session.user.email ? session.user.email.split('@')[0] : 'CircleUp Member');
+        const avatar =
+          (session.user.user_metadata?.avatar_url as string) ||
+          (session.user.user_metadata?.picture as string) ||
+          null;
+
+        await supabase.from('profiles').insert({
+          id: session.user.id,
+          full_name: name,
+          email: session.user.email || '',
+          avatar_url: avatar,
+        });
+
+        profileData = { full_name: name, avatar_url: avatar };
       }
     } catch {
-      // Non-blocking if profiles table not created yet
+      // Non-blocking if profiles table not created yet or trigger already handled it
     }
 
     const sessionUser = mapSupabaseUserToSessionUser(session.user, profileData);
@@ -578,20 +612,53 @@ class AuthService {
   /**
    * Sign in or register with Google OAuth (with fallback simulation for demo/local).
    */
-  public async signInWithGoogle(customProfile?: { fullName?: string; email?: string }): Promise<AuthResponse> {
+  public async signInWithGoogle(
+    optionsOrProfile?:
+      | { redirectTarget?: string; customProfile?: { fullName?: string; email?: string } }
+      | { fullName?: string; email?: string },
+  ): Promise<AuthResponse> {
+    const redirectTarget =
+      optionsOrProfile && 'redirectTarget' in optionsOrProfile
+        ? optionsOrProfile.redirectTarget
+        : undefined;
+    const customProfile =
+      optionsOrProfile && 'customProfile' in optionsOrProfile
+        ? optionsOrProfile.customProfile
+        : optionsOrProfile && ('fullName' in optionsOrProfile || 'email' in optionsOrProfile)
+        ? (optionsOrProfile as { fullName?: string; email?: string })
+        : undefined;
+
     if (isSupabaseConfigured()) {
       try {
-        const { error } = await supabase.auth.signInWithOAuth({
+        const redirectParam = redirectTarget ? `?redirect=${encodeURIComponent(redirectTarget)}` : '';
+        const redirectTo = `${window.location.origin}/auth/callback${redirectParam}`;
+
+        const { data, error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
           options: {
-            redirectTo: `${window.location.origin}/auth/callback`,
+            redirectTo,
+            queryParams: {
+              access_type: 'offline',
+              prompt: 'consent',
+            },
           },
         });
-        if (!error) {
-          return { success: true };
+
+        if (error) {
+          return {
+            success: false,
+            message: error.message || 'Google sign-in could not be initiated.',
+          };
         }
-      } catch {
-        // Fallback
+
+        if (data?.url && typeof window !== 'undefined' && window.location.href !== data.url) {
+          window.location.assign(data.url);
+        }
+
+        return { success: true };
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Google sign-in could not be initiated.';
+        return { success: false, message: msg };
       }
     }
 
@@ -620,7 +687,7 @@ class AuthService {
       success: true,
       user: demoUser,
       token: demoToken,
-      isDemo: !isSupabaseConfigured(),
+      isDemo: true,
       message: 'Signed in with Google.',
     };
   }

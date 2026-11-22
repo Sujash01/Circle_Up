@@ -154,15 +154,22 @@ export function SignUpPage() {
     setErrors({});
 
     try {
-      const res = await authService.signInWithGoogle();
+      const res = await authService.signInWithGoogle({ redirectTarget });
       if (res.success) {
-        setFeedback({
-          type: 'success',
-          message: 'Signed in with Google! Welcome to CircleUp.',
-        });
-        setTimeout(() => {
-          navigate(redirectTarget);
-        }, 500);
+        if (res.isDemo) {
+          setFeedback({
+            type: 'success',
+            message: 'Account created with Google! Welcome to CircleUp.',
+          });
+          setTimeout(() => {
+            navigate(redirectTarget);
+          }, 500);
+        } else {
+          setFeedback({
+            type: 'info',
+            message: 'Connecting to Google...',
+          });
+        }
       } else {
         setErrors({ general: res.message || 'Google sign-up could not be completed.' });
       }
@@ -314,7 +321,7 @@ export function SignUpPage() {
           ) : (
             <GoogleIcon className="size-4.5" />
           )}
-          <span>Sign Up with Google</span>
+          <span>Continue with Google</span>
         </button>
 
         {/* Divider */}

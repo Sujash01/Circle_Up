@@ -14,6 +14,7 @@ const mockResetPasswordForEmail = vi.fn();
 const mockUpdateUser = vi.fn();
 const mockGetSession = vi.fn();
 const mockOnAuthStateChange = vi.fn();
+const mockSignInWithOAuth = vi.fn();
 const mockFrom = vi.fn();
 
 vi.mock('@/lib/supabase', () => ({
@@ -27,6 +28,7 @@ vi.mock('@/lib/supabase', () => ({
       updateUser: (...args: unknown[]) => mockUpdateUser(...args),
       getSession: (...args: unknown[]) => mockGetSession(...args),
       onAuthStateChange: (...args: unknown[]) => mockOnAuthStateChange(...args),
+      signInWithOAuth: (...args: unknown[]) => mockSignInWithOAuth(...args),
     },
     from: (...args: unknown[]) => mockFrom(...args),
   },
@@ -227,6 +229,23 @@ describe('Auth Service Supabase Integration', () => {
     expect(mockUpdateUser).toHaveBeenCalledWith({ password: 'BrandNewPass123!' });
     expect(res.success).toBe(true);
   });
+
+  it('initiates Google OAuth with provider "google" and callback redirect URL', async () => {
+    mockSignInWithOAuth.mockResolvedValueOnce({ data: { provider: 'google', url: 'https://accounts.google.com/o/oauth2' }, error: null });
+
+    const res = await authService.signInWithGoogle({ redirectTarget: '/account/orders' });
+    expect(mockSignInWithOAuth).toHaveBeenCalledWith({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback?redirect=%2Faccount%2Forders`,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        },
+      },
+    });
+    expect(res.success).toBe(true);
+  });
 });
 
 describe('SignInPage & SignUpPage UI Rendering', () => {
@@ -256,6 +275,7 @@ describe('SignInPage & SignUpPage UI Rendering', () => {
     expect(signupLink).not.toBeNull();
     expect(host.textContent).toContain('Sign In to CircleUp');
     expect(host.textContent).toContain('Member Access');
+    expect(host.textContent).toContain('Continue with Google');
 
     act(() => {
       root.unmount();
@@ -289,6 +309,7 @@ describe('SignInPage & SignUpPage UI Rendering', () => {
     expect(signinLink).not.toBeNull();
     expect(host.textContent).toContain('Create Your Account');
     expect(host.textContent).toContain('Join CircleUp');
+    expect(host.textContent).toContain('Continue with Google');
 
     act(() => {
       root.unmount();
