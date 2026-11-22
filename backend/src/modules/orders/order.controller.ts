@@ -3,6 +3,11 @@ import { orderService } from './order.service.js';
 import { sendCreated, sendSuccess } from '../../utils/apiResponse.js';
 import { ForbiddenError, UnauthorizedError } from '../../errors/AppError.js';
 
+function withoutGuestCredential(order: Record<string, unknown>): Record<string, unknown> {
+  const { guestAccessToken: _token, guestAccessTokenHash: _hash, ...safeOrder } = order;
+  return safeOrder;
+}
+
 export const orderController = {
   async create(req: Request, res: Response, next: NextFunction) {
     try {
@@ -31,7 +36,7 @@ export const orderController = {
         status: req.query.status as string,
         phone: req.query.phone as string,
       });
-      return sendSuccess(res, result.orders, { meta: result.meta });
+      return sendSuccess(res, result.orders.map((order) => withoutGuestCredential(order)), { meta: result.meta });
     } catch (error) {
       next(error);
     }
@@ -46,7 +51,7 @@ export const orderController = {
         page: req.query.page,
         limit: req.query.limit,
       });
-      return sendSuccess(res, result.orders, { meta: result.meta });
+      return sendSuccess(res, result.orders.map((order) => withoutGuestCredential(order)), { meta: result.meta });
     } catch (error) {
       next(error);
     }
@@ -65,13 +70,13 @@ export const orderController = {
 
       // 1. Legitimate admin access: allow if caller has valid admin session
       if (req.adminUser) {
-        return sendSuccess(res, order);
+        return sendSuccess(res, withoutGuestCredential(orderRecord));
       }
 
       // 2. Authenticated customer access: check verified Supabase customer ID
       if (req.customer) {
         if (orderRecord.customerId && orderRecord.customerId === req.customer.id) {
-          return sendSuccess(res, order);
+          return sendSuccess(res, withoutGuestCredential(orderRecord));
         }
         throw new ForbiddenError(
           'You are not authorized to view this order.',
@@ -91,7 +96,7 @@ export const orderController = {
           orderRecord.guestAccessExpiresAt as Date | null | undefined,
         )
       ) {
-        return sendSuccess(res, order);
+        return sendSuccess(res, withoutGuestCredential(orderRecord));
       }
 
       // 4. In all other cases: never treat email, phone, or query params as proof of ownership

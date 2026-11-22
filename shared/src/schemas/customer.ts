@@ -18,6 +18,19 @@ export const customerSchema = z.object({
   postalCode: z.string().optional(),
   addressLine: z.string().optional(),
   notes: z.string().optional(),
+  savedAddresses: z.array(z.object({
+    addressLine: z.string().optional(),
+    city: z.string().optional(),
+    state: z.string().optional(),
+    postalCode: z.string().optional(),
+    country: z.string().optional(),
+    landmark: z.string().optional(),
+  }).strict()).optional(),
+  marketingOptInEmail: z.boolean().optional(),
+  marketingOptInWhatsapp: z.boolean().optional(),
+  garmentsSaved: z.number().int().nonnegative().optional(),
+  co2AvoidedGrams: z.number().int().nonnegative().optional(),
+  waterSavedLitres: z.number().int().nonnegative().optional(),
   createdAt: z.string().optional(),
 });
 

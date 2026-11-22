@@ -116,7 +116,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setCart(result.nextState);
       showNotice(
         result.nextState.promoCode
-          ? `Code ${result.nextState.promoCode} applied.`
+          ? `Code ${result.nextState.promoCode} saved. It will be verified at checkout; the estimate excludes any discount.`
           : 'Promo code cleared.',
       );
       return { ok: true };

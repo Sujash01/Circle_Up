@@ -1,13 +1,16 @@
 import { Calendar, Clock, MapPin } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { EmptyState } from '@/components/storefront/EmptyState';
 import { eventService } from '@/services/communityServices';
-import type { EventRegistration } from '@/types/storefront';
+import type { EventItem, EventRegistration } from '@/types/storefront';
 
 export function EventDetailPage() {
   const { id = '' } = useParams();
-  const event = eventService.getEventById(id);
+  const [event, setEvent] = useState<EventItem | null>(null);
+  const [notFound, setNotFound] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  useEffect(() => { let active = true; eventService.getEventById(id).then((item) => active && setEvent(item)).catch((cause: unknown) => { if (!active) return; if (typeof cause === 'object' && cause !== null && 'statusCode' in cause && cause.statusCode === 404) setNotFound(true); else setLoadError('Event details could not be loaded. Please try again later.'); }); return () => { active = false; }; }, [id]);
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -16,18 +19,20 @@ export function EventDetailPage() {
   const [error, setError] = useState('');
   const [registration, setRegistration] = useState<EventRegistration | null>(null);
 
-  if (!event) {
+  if (notFound) {
     return (
       <EmptyState
-        title="Sample event not found"
-        description="Return to The Social Circle to view all upcoming sample community gatherings."
+        title="Event not found"
+        description="This event is unavailable. Return to The Social Circle to view current events."
         actionLabel="Back to Events"
         actionTo="/events"
       />
     );
   }
+  if (loadError) return <p role="alert" className="text-sm text-destructive">{loadError}</p>;
+  if (!event) return <p role="status" className="text-sm text-foreground/75">Loading event…</p>;
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
     setRegistration(null);
@@ -45,7 +50,7 @@ export function EventDetailPage() {
       return;
     }
 
-    const res = eventService.registerForEvent({ event, name, email, phone, notes });
+    const res = await eventService.registerForEvent({ event, name, email, phone, notes });
     if (res.error || !res.registration) {
       setError(res.error ?? 'Could not complete registration. Please try again.');
       return;

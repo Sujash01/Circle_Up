@@ -1,8 +1,12 @@
 import type { Request, Response, NextFunction } from 'express';
 import { storageService, type UploadedImageVariants } from '../../services/storage.service.js';
 import { auditService } from '../../services/audit.service.js';
-import { sendCreated } from '../../utils/apiResponse.js';
+import { sendCreated, sendSuccess } from '../../utils/apiResponse.js';
 import { BadRequestError } from '../../errors/AppError.js';
+import { z } from 'zod';
+
+const collectionSchema = z.enum(['products', 'events', 'rentals', 'general']).default('products');
+const deleteSchema = z.object({ url: z.string().url().max(2048) }).strict();
 
 export const adminMediaController = {
   async upload(req: Request, res: Response, next: NextFunction) {
@@ -14,11 +18,17 @@ export const adminMediaController = {
       if (uploadList.length === 0) {
         throw new BadRequestError('At least one file must be uploaded.', 'NO_FILE_UPLOADED');
       }
+      const collection = collectionSchema.parse(req.body?.collection);
 
       const results: UploadedImageVariants[] = [];
-      for (const f of uploadList) {
-        const stored = await storageService.processAndStoreImage(f.buffer, f.originalname);
-        results.push(stored);
+      try {
+        for (const f of uploadList) {
+          const stored = await storageService.processAndStoreImage(f.buffer, f.originalname, collection, f.mimetype);
+          results.push(stored);
+        }
+      } catch (error) {
+        await Promise.allSettled(results.map((result) => storageService.deleteImage(result.w800)));
+        throw error;
       }
 
       await auditService.record({
@@ -30,6 +40,16 @@ export const adminMediaController = {
       });
 
       return sendCreated(res, results.length === 1 ? results[0] : results, 'Media uploaded successfully.');
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async delete(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { url } = deleteSchema.parse(req.body);
+      const result = await storageService.deleteImage(url);
+      return sendSuccess(res, result, { message: 'Image deleted successfully.' });
     } catch (error) {
       next(error);
     }

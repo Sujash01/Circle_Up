@@ -15,7 +15,6 @@ import {
   hashGuestToken,
   orderService,
 } from '../../src/modules/orders/order.service.js';
-import * as dbModule from '../../src/config/db.js';
 import { app, bootstrap, resetServerStateForTesting } from '../../src/server.js';
 import { env, strictBooleanEnvSchema } from '../../src/config/env.js';
 import {
@@ -28,7 +27,6 @@ import { formatPrice } from '@circleup/shared';
 
 describe('Milestone 1, Step 2: Atomic Checkout RPC Unit & Verification Test Suite [MOCKED / UNIT]', () => {
   beforeAll(() => {
-    (env as any).CHECKOUT_PROVIDER = 'supabase';
     (env as any).SUPABASE_URL = 'https://mock.supabase.co';
     (env as any).SUPABASE_SERVICE_ROLE_KEY = 'mock-service-role-key-32chars';
   });
@@ -858,14 +856,12 @@ describe('Milestone 1, Step 2: Atomic Checkout RPC Unit & Verification Test Suit
     }
   });
 
-  // 35. Production Supabase-Only Route Fails Closed
-  it('35. [MOCKED / UNIT] Prevents MongoDB checkout activation in production and enforces fail-closed behavior', async () => {
+  // 35. Production checkout remains disabled until price-unit reconciliation.
+  it('35. [MOCKED / UNIT] Keeps production checkout fail-closed while monetary reconciliation is incomplete', async () => {
     const originalEnv = env.NODE_ENV;
-    const originalProvider = (env as any).CHECKOUT_PROVIDER;
 
     try {
       (env as any).NODE_ENV = 'production';
-      (env as any).CHECKOUT_PROVIDER = 'mongodb'; // Attempted illegal override in production
 
       const payload = {
         customer: { name: 'Aarav Patel', email: 'aarav@example.com', phone: '+919876543210' },
@@ -875,32 +871,19 @@ describe('Milestone 1, Step 2: Atomic Checkout RPC Unit & Verification Test Suit
         idempotencyKey: 'test-idem-key-fallback-3',
       };
 
-      // Even if someone attempts to configure CHECKOUT_PROVIDER=mongodb in production,
-      // createOrder blocks MongoDB execution and evaluates the production Supabase route (failing closed).
       await expect(orderService.createOrder(payload)).rejects.toThrow(ServiceUnavailableError);
     } finally {
       (env as any).NODE_ENV = originalEnv;
-      (env as any).CHECKOUT_PROVIDER = originalProvider;
     }
   });
 
-  // 36. Decoupled Backend Startup: Supabase-First Backend Survives MongoDB Outage
-  it('36. [MOCKED / UNIT] Boots backend and serves Supabase checkout without crashing when MongoDB is unavailable', async () => {
+  // 36. Server startup is independent of legacy database environment configuration.
+  it('36. [MOCKED / UNIT] Starts without MongoDB environment variables', async () => {
     const originalEnv = env.NODE_ENV;
-    const originalProvider = env.CHECKOUT_PROVIDER;
-    const originalUri = env.MONGODB_URI;
 
     try {
       (env as any).NODE_ENV = 'production';
-      (env as any).CHECKOUT_PROVIDER = 'supabase';
-      (env as any).MONGODB_URI = 'mongodb://offline-host:27017/circleup_prod';
-
-      // 1. Mock MongoDB failure
-      const dbSpy = vi
-        .spyOn(dbModule, 'connectDatabase')
-        .mockRejectedValue(new Error('MongoNetworkTimeoutError: connection timed out'));
-
-      // 2. Mock app.listen to avoid binding real port
+      expect('MONGODB_URI' in env).toBe(false);
       const listenSpy = vi
         .spyOn(app, 'listen')
         .mockImplementation((_port: any, cb?: any) => {
@@ -908,22 +891,13 @@ describe('Milestone 1, Step 2: Atomic Checkout RPC Unit & Verification Test Suit
           return { close: vi.fn() } as any;
         });
 
-      // When CHECKOUT_PROVIDER === 'supabase', bootstrap MUST resolve cleanly and listen
       await expect(bootstrap()).resolves.toBeUndefined();
       expect(listenSpy).toHaveBeenCalled();
 
-      // 3. Conversely, if configured for legacy CHECKOUT_PROVIDER === 'mongodb' in production,
-      // it MUST throw on MongoDB failure to protect legacy operations
-      (env as any).CHECKOUT_PROVIDER = 'mongodb';
-      await expect(bootstrap()).rejects.toThrow('MongoNetworkTimeoutError');
-
-      dbSpy.mockRestore();
       listenSpy.mockRestore();
     } finally {
       resetServerStateForTesting();
       (env as any).NODE_ENV = originalEnv;
-      (env as any).CHECKOUT_PROVIDER = originalProvider;
-      (env as any).MONGODB_URI = originalUri;
     }
   });
 });

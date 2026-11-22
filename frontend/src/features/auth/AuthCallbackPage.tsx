@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
-import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import { getSafeAuthRedirect } from '@/services/authService';
+import { AlertCircle, Loader2 } from 'lucide-react';
 import circleUpLogo from '@/assets/circle-up-logo.png';
 
 export function AuthCallbackPage() {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const [statusText, setStatusText] = useState('Verifying your session...');
-  const [isEmailConfirmed, setIsEmailConfirmed] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -29,10 +29,7 @@ export function AuthCallbackPage() {
         // 2. PKCE code exchange if present in query parameters
         const searchParams = new URLSearchParams(search);
         const code = searchParams.get('code');
-        const rawRedirect = searchParams.get('redirect');
-        const targetRedirect = rawRedirect && rawRedirect.startsWith('/') && !rawRedirect.startsWith('//')
-          ? rawRedirect
-          : '/account';
+        const targetRedirect = getSafeAuthRedirect(searchParams.get('redirect'));
 
         const oauthError = searchParams.get('error_description') || searchParams.get('error');
         if (oauthError) {
@@ -49,30 +46,11 @@ export function AuthCallbackPage() {
             const errorMsg = exchangeError.message.toLowerCase();
             const isPkceMissing = errorMsg.includes('code verifier') || errorMsg.includes('pkce');
 
-            if (isPkceMissing) {
-              if (isRecovery) {
-                if (isMounted) {
-                  setError(
-                    'Your password reset link was opened in a different browser or has expired. Please request a new link from the Forgot Password page.',
-                  );
-                }
-                return;
-              }
-
-              // In Supabase, the email confirmation link was already validated on the Supabase Auth server!
-              // The missing PKCE verifier only prevents auto-session creation on external/separate browser sessions.
-              // The account is already verified and the user simply needs to sign in.
-              if (isMounted) {
-                setIsEmailConfirmed(true);
-                setStatusText('Email confirmed! Redirecting to sign in...');
-                setTimeout(() => {
-                  navigate('/signin?verified=true', { replace: true });
-                }, 2400);
-              }
-              return;
+            if (isMounted) {
+              setError(isPkceMissing && isRecovery
+                ? 'Your password reset link was opened in a different browser or has expired. Please request a new link from the Forgot Password page.'
+                : exchangeError.message);
             }
-
-            if (isMounted) setError(exchangeError.message);
             return;
           }
 
@@ -133,25 +111,7 @@ export function AuthCallbackPage() {
       </div>
 
       <div className="w-full bg-card border border-foreground/15 p-6 sm:p-8 shadow-sm text-center space-y-5">
-        {isEmailConfirmed ? (
-          <>
-            <div className="mx-auto flex size-14 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <CheckCircle2 className="size-7" />
-            </div>
-            <h1 className="font-display text-2xl sm:text-3xl text-cocoa">Email Confirmed!</h1>
-            <p className="text-xs text-foreground/85 leading-relaxed max-w-sm mx-auto">
-              Your CircleUp account has been verified successfully. Because the confirmation link was opened from an external application or new browser window, please sign in with your email and password to access your account.
-            </p>
-            <div className="pt-2">
-              <Link
-                to="/signin?verified=true"
-                className="inline-block bg-primary px-7 py-3 text-xs font-semibold uppercase tracking-widest text-primary-foreground hover:bg-forest-deep transition-colors"
-              >
-                Sign In to CircleUp
-              </Link>
-            </div>
-          </>
-        ) : error ? (
+        {error ? (
           <>
             <div className="mx-auto flex size-14 items-center justify-center rounded-full bg-destructive/10 text-destructive">
               <AlertCircle className="size-7" />

@@ -5,7 +5,8 @@ import { eventService } from '@/services/communityServices';
 import { storefrontApi } from '@/services/storefrontApi';
 
 export function EventsPage() {
-  const [events, setEvents] = useState(() => eventService.getAllEvents());
+  const [events, setEvents] = useState<Awaited<ReturnType<typeof eventService.getAllEvents>>>([]);
+  const [loadError, setLoadError] = useState('');
   const savedRegistrations = eventService.getRegistrations();
 
   useEffect(() => {
@@ -13,11 +14,9 @@ export function EventsPage() {
     storefrontApi
       .getEvents(ac.signal)
       .then((apiEvents) => {
-        if (apiEvents && apiEvents.length > 0) {
-          setEvents(apiEvents as typeof events);
-        }
+        setEvents(apiEvents as typeof events);
       })
-      .catch(() => {});
+      .catch(() => setLoadError('Events could not be loaded. Please try again later.'));
     return () => ac.abort();
   }, []);
 
@@ -39,6 +38,10 @@ export function EventsPage() {
       </header>
 
       <div className="space-y-14">
+        {loadError && <p role="alert" className="text-sm text-destructive">{loadError}</p>}
+        {!loadError && events.length === 0 && <p className="text-sm text-foreground/75">There are no events to display right now.</p>}
+        {loadError && <p role="alert" className="text-sm text-destructive">{loadError}</p>}
+        {!loadError && events.length === 0 && <p className="text-sm text-foreground/75">There are no events to display right now.</p>}
         {events.map((evt, idx) => (
           <article
             key={evt.id}
@@ -104,7 +107,7 @@ export function EventsPage() {
               <div key={reg.id} className="border border-foreground/15 bg-card/80 p-4 text-xs space-y-1">
                 <p className="font-bold text-cocoa">{reg.eventTitle}</p>
                 <p className="text-terracotta">
-                  Ref: {reg.id} · {reg.name}
+                  {reg.id.startsWith('SIM-EVT-') ? 'Saved on this device' : `Ref: ${reg.id}`} · {reg.name}
                 </p>
                 <p className="text-foreground/75">{reg.email}</p>
               </div>

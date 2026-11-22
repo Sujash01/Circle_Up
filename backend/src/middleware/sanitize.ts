@@ -3,7 +3,7 @@ import type { NextFunction, Request, Response } from 'express';
 const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 /**
- * Recursively clones plain objects/arrays while dropping MongoDB operator keys
+ * Recursively clones plain objects/arrays while dropping unsafe operator/path keys
  * ('$' prefixes, dotted keys) and prototype pollution keys.
  */
 export function sanitizeValue<T>(input: T): T {
@@ -26,7 +26,7 @@ export function sanitizeValue<T>(input: T): T {
 }
 
 /**
- * Express middleware removing dangerous MongoDB query operators from request inputs.
+ * Express middleware removing unsafe operator/path keys from request inputs.
  */
 export function sanitizeRequest(req: Request, _res: Response, next: NextFunction): void {
   if (req.body && typeof req.body === 'object') {

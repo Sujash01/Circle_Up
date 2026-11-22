@@ -10,6 +10,7 @@ import {
 } from '@circleup/shared';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const cleanFilterText = (value: string) => value.trim().replace(/[^a-zA-Z0-9\s-]/g, '').slice(0, 80);
 
 // Publicly visible statuses for storefront customers
 export const PUBLIC_STOREFRONT_STATUSES = [
@@ -30,6 +31,49 @@ export const INTERNAL_HIDDEN_STATUSES = [
   'DRAFT',
   'ARCHIVED',
 ];
+
+function buildProductRow(
+  data: Partial<ProductType>,
+  serialNumber: string,
+  slug: string,
+  categoryCode: string | undefined,
+): Record<string, unknown> {
+  const measurements = data.measurements;
+  const measurementsData = (data as Partial<ProductType> & { measurementsData?: Record<string, string> }).measurementsData;
+  return {
+    serial_number: serialNumber,
+    category_code: categoryCode || null,
+    size_category: data.sizeCategory || null,
+    measurements: typeof measurements === 'string' ? measurements : null,
+    measurements_data: measurementsData || (typeof measurements === 'object' && measurements ? measurements : {}),
+    maker_note: data.makerNote || null,
+    name: data.name,
+    slug,
+    description: data.description || '',
+    price: data.price,
+    original_price: data.originalPrice ?? null,
+    compare_at_price: data.compareAtPrice ?? null,
+    stock: data.stock ?? 1,
+    images: Array.isArray(data.images) && data.images.length > 0 ? data.images : ['/assets/rtw-1.jpg'],
+    sizes: Array.isArray(data.sizes) ? data.sizes : [],
+    variants: Array.isArray(data.variants) ? data.variants : [],
+    category: data.category || 'thrifted-treasure',
+    category_label: data.categoryLabel || 'Thrifted Treasure',
+    subcategory: data.subcategory || '',
+    product_type: data.productType || 'Pre-Loved',
+    condition: data.condition || 'Gently Used',
+    gender: data.gender || 'Unisex',
+    badge: data.badge || null,
+    sku: data.sku || serialNumber,
+    seo_title: data.seoTitle || data.name,
+    seo_description: data.seoDescription || data.description || '',
+    tags: Array.isArray(data.tags) ? data.tags : ['thrift'],
+    featured: Boolean(data.featured),
+    chest_pick: Boolean(data.chestPick),
+    is_new_arrival: Boolean(data.isNewArrival ?? true),
+    status: data.status || 'PUBLISHED',
+  };
+}
 
 /**
  * Maps a snake_case Supabase `public.products` row into the canonical camelCase `IProductItem`.
@@ -76,10 +120,7 @@ export function mapSupabaseRowToProductItem(row: Record<string, unknown>): IProd
     productType: (row.product_type as any) || 'Pre-Loved',
     condition: (row.condition as any) || 'Gently Used',
     gender: (row.gender as any) || 'Unisex',
-    measurements:
-      (row.measurements as string) ||
-      (row.measurements_data as Record<string, string>) ||
-      undefined,
+    measurements: (row.measurements as string) || (row.measurements_data as Record<string, string>) || undefined,
     makerNote: (row.maker_note as string) || undefined,
     tags,
     featured: Boolean(row.featured),
@@ -93,6 +134,28 @@ export function mapSupabaseRowToProductItem(row: Record<string, unknown>): IProd
     createdAt: row.created_at ? new Date(row.created_at as string).toISOString() : undefined,
     updatedAt: row.updated_at ? new Date(row.updated_at as string).toISOString() : undefined,
   };
+}
+
+async function getAnyProductByIdentifier(
+  identifier: string,
+  client: SupabaseClient,
+): Promise<IProductItem> {
+  const trimmed = identifier.trim();
+  if (!trimmed) throw new NotFoundError('Product identifier is required.', 'PRODUCT_NOT_FOUND');
+  if (UUID_REGEX.test(trimmed)) {
+    const { data, error } = await client.from('products').select('*').eq('id', trimmed).maybeSingle();
+    if (error) throw new ServiceUnavailableError(`Failed to retrieve product: ${error.message}`, 'DATABASE_UNAVAILABLE');
+    if (data) return mapSupabaseRowToProductItem(data);
+  }
+  const { data: bySerial, error: serialError } = await client
+    .from('products').select('*').eq('serial_number', trimmed.toUpperCase()).maybeSingle();
+  if (serialError) throw new ServiceUnavailableError(`Failed to retrieve product: ${serialError.message}`, 'DATABASE_UNAVAILABLE');
+  if (bySerial) return mapSupabaseRowToProductItem(bySerial);
+  const { data: bySlug, error: slugError } = await client
+    .from('products').select('*').eq('slug', trimmed.toLowerCase()).maybeSingle();
+  if (slugError) throw new ServiceUnavailableError(`Failed to retrieve product: ${slugError.message}`, 'DATABASE_UNAVAILABLE');
+  if (!bySlug) throw new NotFoundError(`Product not found for identifier "${identifier}".`, 'PRODUCT_NOT_FOUND');
+  return mapSupabaseRowToProductItem(bySlug);
 }
 
 export const supabaseCatalogService = {
@@ -177,7 +240,7 @@ export const supabaseCatalogService = {
 
     // 10. Search query across serial number, name, description, and subcategory
     if (search && search.trim()) {
-      const q = search.trim().replace(/[%_]/g, '');
+      const q = cleanFilterText(search);
       if (q) {
         dbQuery = dbQuery.or(
           `name.ilike.%${q}%,serial_number.ilike.%${q}%,description.ilike.%${q}%,subcategory.ilike.%${q}%`
@@ -233,33 +296,23 @@ export const supabaseCatalogService = {
       throw new NotFoundError('Product identifier is required', 'PRODUCT_NOT_FOUND');
     }
 
-    let filterClause: string;
+    let row: Record<string, unknown> | null = null;
     if (UUID_REGEX.test(trimmed)) {
-      filterClause = `id.eq.${trimmed},serial_number.ilike.${trimmed},slug.eq.${trimmed.toLowerCase()}`;
-    } else {
-      filterClause = `serial_number.ilike.${trimmed},slug.eq.${trimmed.toLowerCase()}`;
+      const { data, error } = await client.from('products').select('*').eq('id', trimmed).maybeSingle();
+      if (error) throw new ServiceUnavailableError(`Failed to retrieve product: ${error.message}`, 'DATABASE_UNAVAILABLE');
+      row = data;
     }
-
-    const { data, error } = await client
-      .from('products')
-      .select('*')
-      .or(filterClause)
-      .limit(1);
-
-    if (error) {
-      throw new ServiceUnavailableError(
-        `Failed to retrieve product "${identifier}": ${error.message}`,
-        'DATABASE_UNAVAILABLE'
-      );
-    }
-
-    const row = data?.[0];
     if (!row) {
-      throw new NotFoundError(
-        `Product not found for identifier "${identifier}"`,
-        'PRODUCT_NOT_FOUND'
-      );
+      const { data, error } = await client.from('products').select('*').eq('serial_number', trimmed.toUpperCase()).maybeSingle();
+      if (error) throw new ServiceUnavailableError(`Failed to retrieve product: ${error.message}`, 'DATABASE_UNAVAILABLE');
+      row = data;
     }
+    if (!row) {
+      const { data, error } = await client.from('products').select('*').eq('slug', trimmed.toLowerCase()).maybeSingle();
+      if (error) throw new ServiceUnavailableError(`Failed to retrieve product: ${error.message}`, 'DATABASE_UNAVAILABLE');
+      row = data;
+    }
+    if (!row) throw new NotFoundError(`Product not found for identifier "${identifier}"`, 'PRODUCT_NOT_FOUND');
 
     const status = String(row.status || '').toUpperCase();
     if (INTERNAL_HIDDEN_STATUSES.includes(status)) {
@@ -301,7 +354,7 @@ export const supabaseCatalogService = {
     if (items.length < limit) {
       const remainingLimit = limit - items.length;
       const excludedIds = [target.id, ...items.map((it) => it.id)];
-      const { data: fallbackData } = await client
+      const { data: fallbackData, error: fallbackError } = await client
         .from('products')
         .select('*')
         .not('id', 'in', `(${excludedIds.join(',')})`)
@@ -309,9 +362,8 @@ export const supabaseCatalogService = {
         .order('created_at', { ascending: false })
         .limit(remainingLimit);
 
-      if (fallbackData) {
-        items.push(...fallbackData.map(mapSupabaseRowToProductItem));
-      }
+      if (fallbackError) throw new ServiceUnavailableError(`Failed to retrieve related products: ${fallbackError.message}`, 'DATABASE_UNAVAILABLE');
+      if (fallbackData) items.push(...fallbackData.map(mapSupabaseRowToProductItem));
     }
 
     return items;
@@ -347,7 +399,7 @@ export const supabaseCatalogService = {
       // If 1-5 products are picked, pad remaining slots with active products not already in picks
       const existingIds = new Set(picks.map((p) => p.id));
       const remainingSlots = 6 - picks.length;
-      const { data: fallbackData } = await client
+      const { data: fallbackData, error: fallbackError } = await client
         .from('products')
         .select('*')
         .in('status', ['AVAILABLE', 'ACTIVE', 'PUBLISHED'])
@@ -355,6 +407,7 @@ export const supabaseCatalogService = {
         .order('created_at', { ascending: false })
         .limit(remainingSlots + picks.length);
 
+      if (fallbackError) throw new ServiceUnavailableError(`Failed to retrieve chest picks: ${fallbackError.message}`, 'DATABASE_UNAVAILABLE');
       const extra = (fallbackData || [])
         .map(mapSupabaseRowToProductItem)
         .filter((p) => !existingIds.has(p.id))
@@ -364,7 +417,7 @@ export const supabaseCatalogService = {
     }
 
     // 2. Fallback: featured active products if zero explicitly tagged
-    const { data: featuredData } = await client
+    const { data: featuredData, error: featuredError } = await client
       .from('products')
       .select('*')
       .in('status', ['AVAILABLE', 'ACTIVE', 'PUBLISHED'])
@@ -372,6 +425,7 @@ export const supabaseCatalogService = {
       .order('created_at', { ascending: false })
       .limit(6);
 
+    if (featuredError) throw new ServiceUnavailableError(`Failed to retrieve featured products: ${featuredError.message}`, 'DATABASE_UNAVAILABLE');
     return (featuredData || []).map(mapSupabaseRowToProductItem);
   },
 
@@ -384,7 +438,7 @@ export const supabaseCatalogService = {
     const { data, error } = await client
       .from('products')
       .select('*')
-      .or(`category.eq.${category},tags.cs.{${category}}`)
+      .or(`category.eq.${cleanFilterText(category)},tags.cs.{${cleanFilterText(category)}}`)
       .in('status', ['AVAILABLE', 'ACTIVE', 'PUBLISHED'])
       .order('is_new_arrival', { ascending: false })
       .order('created_at', { ascending: false })
@@ -425,7 +479,7 @@ export const supabaseCatalogService = {
     }
 
     if (query.search && query.search.trim()) {
-      const q = query.search.trim().replace(/[%_]/g, '');
+      const q = cleanFilterText(query.search);
       if (q) {
         dbQuery = dbQuery.or(
           `name.ilike.%${q}%,serial_number.ilike.%${q}%,slug.ilike.%${q}%`
@@ -462,13 +516,17 @@ export const supabaseCatalogService = {
     const client = clientOverride || getSupabaseAdminClient();
 
     if (!data.name) throw new BadRequestError('Product name is required.', 'NAME_REQUIRED');
-    if (typeof data.price !== 'number' || data.price < 0) {
+    if (typeof data.price !== 'number' || !Number.isSafeInteger(data.price) || data.price < 0) {
       throw new BadRequestError('Valid product price in paise is required.', 'INVALID_PRICE');
+    }
+    if (data.stock !== undefined && (!Number.isInteger(data.stock) || data.stock < 0)) {
+      throw new BadRequestError('Valid non-negative product stock is required.', 'INVALID_STOCK');
     }
 
     let serialNumber = data.serialNumber?.trim().toUpperCase();
     if (!serialNumber) {
-      const { count } = await client.from('products').select('*', { count: 'exact', head: true });
+      const { count, error: countError } = await client.from('products').select('*', { count: 'exact', head: true });
+      if (countError) throw new ServiceUnavailableError(`Failed to create product serial number: ${countError.message}`, 'DATABASE_ERROR');
       serialNumber = `CU-${String((count || 0) + 1).padStart(3, '0')}`;
     }
 
@@ -478,37 +536,7 @@ export const supabaseCatalogService = {
 
     const catCode = data.categoryCode || extractCategoryCodeFromSerial(serialNumber);
 
-    const rowToInsert = {
-      serial_number: serialNumber,
-      category_code: catCode,
-      size_category: data.sizeCategory || null,
-      measurements_data: (data as any).measurementsData || {},
-      name: data.name,
-      slug,
-      description: data.description || '',
-      price: data.price,
-      original_price: data.originalPrice || null,
-      compare_at_price: data.compareAtPrice || null,
-      stock: data.stock ?? 1,
-      images: Array.isArray(data.images) && data.images.length > 0 ? data.images : ['/assets/rtw-1.jpg'],
-      sizes: Array.isArray(data.sizes) ? data.sizes : [],
-      variants: Array.isArray(data.variants) ? data.variants : [],
-      category: data.category || 'thrifted-treasure',
-      category_label: data.categoryLabel || 'Thrifted Treasure',
-      subcategory: data.subcategory || '',
-      product_type: data.productType || 'Pre-Loved',
-      condition: data.condition || 'Gently Used',
-      gender: data.gender || 'Unisex',
-      badge: data.badge || null,
-      sku: data.sku || serialNumber,
-      seo_title: data.seoTitle || data.name,
-      seo_description: data.seoDescription || data.description || '',
-      tags: Array.isArray(data.tags) ? data.tags : ['thrift'],
-      featured: Boolean(data.featured),
-      chest_pick: Boolean(data.chestPick),
-      is_new_arrival: Boolean(data.isNewArrival ?? true),
-      status: data.status || 'PUBLISHED',
-    };
+    const rowToInsert = buildProductRow(data, serialNumber, slug, catCode);
 
     const { data: inserted, error } = await client
       .from('products')
@@ -518,12 +546,38 @@ export const supabaseCatalogService = {
 
     if (error) {
       if (error.code === '23505') {
-        throw new BadRequestError(`Serial number or slug already in use.`, 'DUPLICATE_PRODUCT');
+        throw new BadRequestError('Serial number or slug already in use.', 'DUPLICATE_PRODUCT');
       }
       throw new ServiceUnavailableError(`Failed to create product: ${error.message}`, 'DATABASE_ERROR');
     }
 
     return mapSupabaseRowToProductItem(inserted);
+  },
+
+  /** Seeds only the supplied products and reports failure if Supabase did not persist them. */
+  async seedProducts(products: Array<Partial<ProductType>>, clientOverride?: SupabaseClient): Promise<number> {
+    const client = clientOverride || getSupabaseAdminClient();
+    if (products.length === 0) return 0;
+    const rows = products.map((product, index) => {
+      if (!product.name || typeof product.price !== 'number' || !Number.isSafeInteger(product.price) || product.price < 0) {
+        throw new BadRequestError(`Seed product at position ${index + 1} has invalid name or price.`, 'INVALID_PRODUCT');
+      }
+      const serial = product.serialNumber?.trim().toUpperCase();
+      if (!serial) throw new BadRequestError(`Seed product at position ${index + 1} has no serial number.`, 'INVALID_SERIAL_NUMBER');
+      const slug = product.slug?.trim().toLowerCase() || `${product.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${serial.toLowerCase()}`;
+      return buildProductRow(product, serial, slug, product.categoryCode || extractCategoryCodeFromSerial(serial));
+    });
+    const { data, error } = await client
+      .from('products')
+      .upsert(rows, { onConflict: 'serial_number' })
+      .select('id');
+    if (error) {
+      throw new ServiceUnavailableError(`Failed to seed products: ${error.message}`, 'DATABASE_ERROR');
+    }
+    if (!Array.isArray(data) || data.length !== rows.length) {
+      throw new ServiceUnavailableError('Supabase did not confirm persistence of every seed product.', 'DATABASE_ERROR');
+    }
+    return data.length;
   },
 
   /**
@@ -532,13 +586,6 @@ export const supabaseCatalogService = {
   async updateProduct(id: string, updates: Partial<ProductType>, clientOverride?: SupabaseClient): Promise<IProductItem> {
     const client = clientOverride || getSupabaseAdminClient();
     const trimmed = id.trim();
-
-    let filterClause: string;
-    if (UUID_REGEX.test(trimmed)) {
-      filterClause = `id.eq.${trimmed},serial_number.ilike.${trimmed}`;
-    } else {
-      filterClause = `serial_number.ilike.${trimmed}`;
-    }
 
     const rowUpdates: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
@@ -560,33 +607,42 @@ export const supabaseCatalogService = {
     if (updates.variants !== undefined) rowUpdates.variants = updates.variants;
     if (updates.category !== undefined) rowUpdates.category = updates.category;
     if (updates.categoryLabel !== undefined) rowUpdates.category_label = updates.categoryLabel;
+    if (updates.categoryCode !== undefined) rowUpdates.category_code = updates.categoryCode;
+    if (updates.sizeCategory !== undefined) rowUpdates.size_category = updates.sizeCategory;
+    if (updates.measurements !== undefined) {
+      rowUpdates.measurements = typeof updates.measurements === 'string' ? updates.measurements : null;
+      if (typeof updates.measurements === 'object' && updates.measurements !== null) {
+        rowUpdates.measurements_data = updates.measurements;
+      }
+    }
+    const measurementsData = (updates as Partial<ProductType> & { measurementsData?: Record<string, string> }).measurementsData;
+    if (measurementsData !== undefined) rowUpdates.measurements_data = measurementsData;
+    if (updates.makerNote !== undefined) rowUpdates.maker_note = updates.makerNote;
     if (updates.subcategory !== undefined) rowUpdates.subcategory = updates.subcategory;
     if (updates.productType !== undefined) rowUpdates.product_type = updates.productType;
     if (updates.condition !== undefined) rowUpdates.condition = updates.condition;
     if (updates.gender !== undefined) rowUpdates.gender = updates.gender;
     if (updates.badge !== undefined) rowUpdates.badge = updates.badge;
     if (updates.sku !== undefined) rowUpdates.sku = updates.sku;
+    if (updates.seoTitle !== undefined) rowUpdates.seo_title = updates.seoTitle;
+    if (updates.seoDescription !== undefined) rowUpdates.seo_description = updates.seoDescription;
     if (updates.tags !== undefined) rowUpdates.tags = updates.tags;
     if (updates.featured !== undefined) rowUpdates.featured = updates.featured;
     if (updates.chestPick !== undefined) rowUpdates.chest_pick = updates.chestPick;
     if (updates.isNewArrival !== undefined) rowUpdates.is_new_arrival = updates.isNewArrival;
     if (updates.status !== undefined) rowUpdates.status = updates.status;
 
-    const { data: updated, error } = await client
-      .from('products')
-      .update(rowUpdates)
-      .or(filterClause)
-      .select('*')
-      .single();
+    let updateQuery = client.from('products').update(rowUpdates);
+    updateQuery = UUID_REGEX.test(trimmed)
+      ? updateQuery.eq('id', trimmed)
+      : updateQuery.eq('serial_number', trimmed.toUpperCase());
+    const { data: updated, error } = await updateQuery.select('*').maybeSingle();
 
     if (error) {
+      if (error.code === '23505') throw new BadRequestError('Serial number or slug already in use.', 'DUPLICATE_PRODUCT');
       throw new ServiceUnavailableError(`Failed to update product: ${error.message}`, 'DATABASE_ERROR');
     }
-
-    if (!updated) {
-      throw new NotFoundError(`Product "${id}" not found.`, 'PRODUCT_NOT_FOUND');
-    }
-
+    if (!updated) throw new NotFoundError(`Product "${id}" not found.`, 'PRODUCT_NOT_FOUND');
     return mapSupabaseRowToProductItem(updated);
   },
 
@@ -596,22 +652,12 @@ export const supabaseCatalogService = {
   async duplicateProduct(id: string, clientOverride?: SupabaseClient): Promise<IProductItem> {
     const client = clientOverride || getSupabaseAdminClient();
     const source = await this.getProductByIdentifier(id, client);
-
-    const { count } = await client.from('products').select('*', { count: 'exact', head: true });
+    const { count, error } = await client.from('products').select('*', { count: 'exact', head: true });
+    if (error) throw new ServiceUnavailableError(`Failed to count products: ${error.message}`, 'DATABASE_ERROR');
     const newSerial = `CU-${String((count || 0) + 1).padStart(3, '0')}`;
     const newName = `${source.name} (Copy)`;
     const newSlug = `${source.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-copy-${newSerial.toLowerCase()}`;
-
-    const copyData: Partial<ProductType> = {
-      ...source,
-      serialNumber: newSerial,
-      name: newName,
-      slug: newSlug,
-      status: 'DRAFT',
-      stock: 1,
-    };
-
-    return this.createProduct(copyData, client);
+    return this.createProduct({ ...source, serialNumber: newSerial, name: newName, slug: newSlug, status: 'DRAFT', stock: 1 }, client);
   },
 
   /**
@@ -623,9 +669,6 @@ export const supabaseCatalogService = {
     return { message: `Product ${product.serialNumber} soft-deleted successfully.` };
   },
 
-  /**
-   * Restores an archived product back to PUBLISHED.
-   */
   async restoreProduct(id: string, clientOverride?: SupabaseClient): Promise<{ message: string }> {
     const client = clientOverride || getSupabaseAdminClient();
     const product = await this.updateProduct(id, { status: 'PUBLISHED' }, client);
@@ -643,96 +686,61 @@ export const supabaseCatalogService = {
   ): Promise<{ modifiedCount: number }> {
     const client = clientOverride || getSupabaseAdminClient();
     if (!ids || ids.length === 0) return { modifiedCount: 0 };
-
     const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
     if (action === 'publish') update.status = 'PUBLISHED';
     else if (action === 'unpublish') update.status = 'DRAFT';
     else if (action === 'archive' || action === 'delete') update.status = 'ARCHIVED';
     else if (action === 'changeCategory' && payload?.category) update.category = payload.category;
-
-    const uuids = ids.filter((id) => UUID_REGEX.test(id.trim()));
-    const nonUuids = ids.filter((id) => !UUID_REGEX.test(id.trim())).map((s) => s.trim().toUpperCase());
-
+    const uuids = ids.filter((value) => UUID_REGEX.test(value.trim()));
+    const serials = ids.filter((value) => !UUID_REGEX.test(value.trim())).map((value) => value.trim().toUpperCase());
     let modifiedCount = 0;
-
-    if (uuids.length > 0) {
-      const { data, error } = await client
-        .from('products')
-        .update(update)
-        .in('id', uuids)
-        .select('id');
-      if (error) {
-        throw new ServiceUnavailableError(`Failed to bulk update products: ${error.message}`, 'DATABASE_ERROR');
-      }
+    if (uuids.length) {
+      const { data, error } = await client.from('products').update(update).in('id', uuids).select('id');
+      if (error) throw new ServiceUnavailableError(`Failed to bulk update products: ${error.message}`, 'DATABASE_ERROR');
       modifiedCount += data?.length || 0;
     }
-
-    if (nonUuids.length > 0) {
-      const { data, error } = await client
-        .from('products')
-        .update(update)
-        .in('serial_number', nonUuids)
-        .select('id');
-      if (error) {
-        throw new ServiceUnavailableError(`Failed to bulk update products: ${error.message}`, 'DATABASE_ERROR');
-      }
+    if (serials.length) {
+      const { data, error } = await client.from('products').update(update).in('serial_number', serials).select('id');
+      if (error) throw new ServiceUnavailableError(`Failed to bulk update products: ${error.message}`, 'DATABASE_ERROR');
       modifiedCount += data?.length || 0;
     }
-
     return { modifiedCount };
   },
 
-  /**
-   * Permanently deletes a product, failing if the product exists in customer order history.
-   */
+  /** Permanently deletes only when no order item references the product. */
   async permanentDeleteProduct(id: string, clientOverride?: SupabaseClient): Promise<{ message: string }> {
     const client = clientOverride || getSupabaseAdminClient();
-    const product = await this.getProductByIdentifier(id, client);
-
-    const { data: inOrder, error: orderCheckErr } = await client
-      .from('order_items')
-      .select('id, order_id')
-      .or(`product_id.eq.${product.id},serial_number.eq.${product.serialNumber}`)
-      .limit(1)
-      .maybeSingle();
-
-    if (orderCheckErr) {
-      throw new ServiceUnavailableError(`Failed to check existing orders: ${orderCheckErr.message}`, 'DATABASE_ERROR');
+    const product = await getAnyProductByIdentifier(id, client);
+    const { data, error } = await client.rpc('delete_product_if_unordered', { p_product_id: product.id });
+    if (error) {
+      if (error.code === '23503' || error.message.includes('PRODUCT_IN_ORDERS')) {
+        throw new BadRequestError(`Cannot permanently delete product ${product.serialNumber} because it exists in existing orders. Soft-delete (archive) instead to preserve customer audit trail.`, 'PRODUCT_IN_ORDERS');
+      }
+      if (error.code === 'P0002' || error.message.includes('PRODUCT_NOT_FOUND')) {
+        throw new NotFoundError(`Product "${id}" not found.`, 'PRODUCT_NOT_FOUND');
+      }
+      throw new ServiceUnavailableError(`Failed to delete product: ${error.message}`, 'DATABASE_ERROR');
     }
-
-    if (inOrder) {
-      throw new BadRequestError(
-        `Cannot permanently delete product ${product.serialNumber} because it exists in existing orders. Soft-delete (archive) instead to preserve customer audit trail.`,
-        'PRODUCT_IN_ORDERS'
-      );
+    if (!Array.isArray(data) || data.length !== 1) {
+      throw new ServiceUnavailableError('Supabase did not confirm product deletion.', 'DATABASE_ERROR');
     }
-
-    const { error: delErr } = await client.from('products').delete().eq('id', product.id);
-    if (delErr) {
-      throw new ServiceUnavailableError(`Failed to delete product: ${delErr.message}`, 'DATABASE_ERROR');
-    }
-
     return { message: `Product ${product.serialNumber} permanently removed.` };
   },
 
-  /**
-   * Retrieves item counts by category for active/published products.
-   */
+  /** Retrieves item counts by category for active/published products. */
   async getCategoryCounts(clientOverride?: SupabaseClient): Promise<Map<string, number>> {
     const client = clientOverride || getSupabaseAdminClient();
-    const { data, error } = await client
-      .from('products')
-      .select('category')
-      .in('status', ['ACTIVE', 'PUBLISHED']);
-
-    if (error) {
-      throw new ServiceUnavailableError(`Failed to fetch category counts: ${error.message}`, 'DATABASE_ERROR');
-    }
-
     const countMap = new Map<string, number>();
-    for (const row of data || []) {
-      const cat = (row.category as string) || '';
-      countMap.set(cat, (countMap.get(cat) || 0) + 1);
+    const pageSize = 500;
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await client.from('products').select('category')
+        .in('status', ['ACTIVE', 'PUBLISHED']).range(offset, offset + pageSize - 1);
+      if (error) throw new ServiceUnavailableError(`Failed to fetch category counts: ${error.message}`, 'DATABASE_ERROR');
+      for (const row of data || []) {
+        const cat = (row.category as string) || '';
+        countMap.set(cat, (countMap.get(cat) || 0) + 1);
+      }
+      if (!data || data.length < pageSize) break;
     }
     return countMap;
   },
@@ -742,18 +750,23 @@ export const supabaseCatalogService = {
    */
   async searchCatalogItems(clientOverride?: SupabaseClient) {
     const client = clientOverride || getSupabaseAdminClient();
-    const { data, error } = await client
-      .from('products')
-      .select('id, name, slug, category, category_label, price, images, tags, subcategory')
-      .in('status', ['ACTIVE', 'PUBLISHED']);
-
-    if (error) {
-      throw new ServiceUnavailableError(`Failed to fetch products for search: ${error.message}`, 'DATABASE_ERROR');
+    const rows: Array<Record<string, unknown>> = [];
+    const pageSize = 500;
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await client
+        .from('products')
+        .select('id, serial_number, name, description, slug, category, category_label, price, images, tags, subcategory')
+        .in('status', ['ACTIVE', 'PUBLISHED'])
+        .range(offset, offset + pageSize - 1);
+      if (error) throw new ServiceUnavailableError(`Failed to fetch products for search: ${error.message}`, 'DATABASE_ERROR');
+      rows.push(...(data || []) as Array<Record<string, unknown>>);
+      if (!data || data.length < pageSize) break;
     }
-
-    return (data || []).map((row) => ({
+    return rows.map((row) => ({
       id: String(row.id),
+      serialNumber: String(row.serial_number || ''),
       name: String(row.name || ''),
+      description: String(row.description || ''),
       slug: String(row.slug || ''),
       category: String(row.category || ''),
       categoryLabel: (row.category_label as string) || undefined,

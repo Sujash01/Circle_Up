@@ -9,26 +9,37 @@ import {
 } from '../errors/AppError.js';
 
 let cachedClient: SupabaseClient | null = null;
+let cachedAnonClient: SupabaseClient | null = null;
 
 /**
  * Checks whether privileged Supabase server environment variables have been supplied.
  * Strictly requires SUPABASE_SERVICE_ROLE_KEY. The anon key is NEVER used as a fallback.
  */
 export function isSupabaseConfigured(): boolean {
-  if (env.CHECKOUT_PROVIDER === 'mongodb') {
-    return false;
-  }
-  const url = env.SUPABASE_URL;
-  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
+  return areSupabaseCredentialsValid();
+}
+
+function areSupabaseCredentialsValid(): boolean {
+  const url = env.SUPABASE_URL?.trim();
+  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY?.trim();
   return Boolean(
     url &&
     serviceKey &&
-    url.startsWith('http') &&
+    (url.startsWith('https://') || url.startsWith('http://')) &&
     !url.includes('placeholder') &&
+    !url.includes('xyz.supabase.co') &&
+    !url.includes('<project-id>') &&
     serviceKey.length >= 20 &&
-    !serviceKey.includes('placeholder')
+    !serviceKey.includes('placeholder') &&
+    !serviceKey.includes('your-service-role') &&
+    !serviceKey.includes('replace-with')
   );
 }
+
+/**
+ * Backward compatibility alias for isSupabaseConfigured().
+ */
+export const isSupabaseBackendConfigured = isSupabaseConfigured;
 
 /**
  * Checks whether privileged Supabase server environment variables have been supplied
@@ -50,7 +61,7 @@ export function isSupabaseCheckoutConfigured(): boolean {
 
 /**
  * Instantiates or retrieves the privileged Supabase client for backend execution.
- * Fails closed if SUPABASE_SERVICE_ROLE_KEY is missing.
+ * Fails closed if SUPABASE_SERVICE_ROLE_KEY is missing or invalid.
  */
 export function getSupabaseAdminClient(): SupabaseClient {
   if (cachedClient) return cachedClient;
@@ -58,9 +69,9 @@ export function getSupabaseAdminClient(): SupabaseClient {
   const url = env.SUPABASE_URL;
   const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!url || !serviceKey || !isSupabaseConfigured()) {
+  if (!url || !serviceKey || !areSupabaseCredentialsValid()) {
     throw new ServiceUnavailableError(
-      'Privileged Supabase server configuration is missing. SUPABASE_SERVICE_ROLE_KEY is required for Supabase operations.',
+      'Privileged Supabase server configuration is missing or invalid. Valid SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.',
       'DATABASE_UNAVAILABLE',
     );
   }
@@ -73,6 +84,58 @@ export function getSupabaseAdminClient(): SupabaseClient {
   });
 
   return cachedClient;
+}
+
+/**
+ * Canonical singleton alias: getSupabaseServiceClient returns the exact same
+ * privileged singleton instance as getSupabaseAdminClient.
+ */
+export const getSupabaseServiceClient = getSupabaseAdminClient;
+
+/**
+ * Instantiates or retrieves the unprivileged public Supabase client using SUPABASE_ANON_KEY.
+ * Used strictly for public client-side/unprivileged contexts.
+ * Fails closed if SUPABASE_ANON_KEY is missing or placeholder.
+ */
+export function getSupabaseAnonClient(): SupabaseClient {
+  if (cachedAnonClient) return cachedAnonClient;
+
+  const url = env.SUPABASE_URL?.trim();
+  const anonKey = env.SUPABASE_ANON_KEY?.trim();
+
+  if (
+    !url ||
+    !anonKey ||
+    !(url.startsWith('https://') || url.startsWith('http://')) ||
+    url.includes('placeholder') ||
+    url.includes('xyz.supabase.co') ||
+    url.includes('<project-id>') ||
+    anonKey.includes('placeholder') ||
+    anonKey.includes('replace-with') ||
+    anonKey.length < 20
+  ) {
+    throw new ServiceUnavailableError(
+      'Supabase public configuration is missing or invalid. Valid SUPABASE_URL and SUPABASE_ANON_KEY are required.',
+      'CONFIG_UNAVAILABLE',
+    );
+  }
+
+  cachedAnonClient = createClient(url, anonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+
+  return cachedAnonClient;
+}
+
+/**
+ * Resets cached Supabase clients. Exclusively used by automated test fixtures.
+ */
+export function resetSupabaseClientForTesting(): void {
+  cachedClient = null;
+  cachedAnonClient = null;
 }
 
 export interface StorefrontCheckoutRpcParams {

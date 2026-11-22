@@ -2,7 +2,7 @@ import { CheckCircle2, Eye, EyeOff, Loader2, Lock, Mail, Phone, ShieldAlert, Spa
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import circleUpLogo from '@/assets/circle-up-logo.png';
-import { authService } from '@/services/authService';
+import { authService, getSafeAuthRedirect } from '@/services/authService';
 
 function GoogleIcon({ className = 'size-4' }: { className?: string }) {
   return (
@@ -58,7 +58,7 @@ export function SignUpPage() {
 
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const redirectTarget = searchParams.get('redirect') || '/account';
+  const redirectTarget = getSafeAuthRedirect(searchParams.get('redirect'));
 
   useEffect(() => {
     document.title = 'Create an Account — CircleUp';
@@ -156,20 +156,7 @@ export function SignUpPage() {
     try {
       const res = await authService.signInWithGoogle({ redirectTarget });
       if (res.success) {
-        if (res.isDemo) {
-          setFeedback({
-            type: 'success',
-            message: 'Account created with Google! Welcome to CircleUp.',
-          });
-          setTimeout(() => {
-            navigate(redirectTarget);
-          }, 500);
-        } else {
-          setFeedback({
-            type: 'info',
-            message: 'Connecting to Google...',
-          });
-        }
+        setFeedback({ type: 'info', message: 'Connecting to Google...' });
       } else {
         setErrors({ general: res.message || 'Google sign-up could not be completed.' });
       }
@@ -192,13 +179,13 @@ export function SignUpPage() {
     setErrors({});
 
     try {
-      const res = await authService.sendPhoneOtp(cleanPhone);
+      const res = await authService.sendPhoneOtp(cleanPhone, fullName.trim());
+      if (!res.success) {
+        setErrors({ general: res.message || 'Failed to send verification code.' });
+        return;
+      }
       setOtpSent(true);
-      setOtp('1234');
-      setFeedback({
-        type: 'info',
-        message: `${res.message} (Demo code 1234 pre-filled for convenience)`,
-      });
+      setFeedback({ type: 'info', message: res.message });
     } catch {
       setErrors({ general: 'Failed to send OTP code. Please retry.' });
     } finally {
@@ -221,7 +208,7 @@ export function SignUpPage() {
     setIsLoading(true);
     try {
       const cleanPhone = phone.trim().replace(/[\s-]/g, '');
-      const res = await authService.verifyPhoneOtp(cleanPhone, otp.trim(), fullName.trim());
+      const res = await authService.verifyPhoneOtp(cleanPhone, otp.trim());
       if (res.success) {
         setFeedback({
           type: 'success',
@@ -448,16 +435,13 @@ export function SignUpPage() {
                       setOtp(e.target.value);
                       if (errors.otp) setErrors((prev) => ({ ...prev, otp: undefined }));
                     }}
-                    placeholder="1234"
+                    placeholder="Code"
                     className={`w-full pl-9 pr-3 py-2.5 text-center text-lg tracking-[0.3em] font-mono font-bold bg-transparent border transition-colors text-cocoa placeholder:text-muted-foreground/60 focus:outline-none ${
                       errors.otp ? 'border-destructive focus:border-destructive' : 'border-foreground/25 focus:border-primary'
                     }`}
                   />
                 </div>
                 {errors.otp && <p className="text-[0.72rem] text-destructive">{errors.otp}</p>}
-                <p className="text-[0.68rem] text-muted-foreground">
-                  CircleUp verification: Enter demo OTP code <strong>1234</strong> to verify and create account.
-                </p>
               </div>
             )}
 

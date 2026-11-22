@@ -1,73 +1,23 @@
 import type { Server } from 'node:http';
 import { createApp } from './app.js';
-import { connectDatabase, disconnectDatabase } from './config/db.js';
 import { env } from './config/env.js';
 import { logger } from './config/logger.js';
 
 let server: Server | null = null;
-let reconnectTimer: NodeJS.Timeout | null = null;
-
 export function resetServerStateForTesting(): void {
-  if (reconnectTimer) {
-    clearInterval(reconnectTimer);
-    reconnectTimer = null;
-  }
   server = null;
-}
-
-function scheduleReconnect(): void {
-  if (reconnectTimer) return;
-
-  reconnectTimer = setInterval(async () => {
-    try {
-      await connectDatabase();
-      if (reconnectTimer) {
-        clearInterval(reconnectTimer);
-        reconnectTimer = null;
-      }
-      logger.info('MongoDB connection restored');
-    } catch {
-      logger.debug('Waiting for MongoDB to become reachable...');
-    }
-  }, 15_000);
-  reconnectTimer.unref();
 }
 
 export const app = createApp();
 
 export async function bootstrap(): Promise<void> {
-  if (env.MONGODB_URI) {
-    try {
-      await connectDatabase();
-    } catch (err) {
-      // In target Supabase-only architecture, MongoDB connection failure must NOT terminate
-      // the backend in production. Only an explicit legacy MongoDB checkout configuration fails startup.
-      if (env.CHECKOUT_PROVIDER === 'mongodb' && env.NODE_ENV !== 'development') {
-        throw err;
-      }
-
-      logger.warn(
-        { err: err instanceof Error ? err.message : err },
-        'MongoDB is not reachable. Starting CircleUp API with Supabase checkout active and MongoDB in degraded mode.',
-      );
-      scheduleReconnect();
-    }
-  } else {
-    logger.info('MONGODB_URI not configured; running CircleUp API with Supabase checkout active.');
-  }
-
   server = app.listen(env.PORT, () => {
     logger.info({ port: env.PORT, env: env.NODE_ENV }, 'CircleUp API listening');
   });
 }
 
 async function shutdown(signal: string): Promise<void> {
-  logger.info({ signal }, 'Shutdown signal received; closing HTTP server and DB pool');
-
-  if (reconnectTimer) {
-    clearInterval(reconnectTimer);
-    reconnectTimer = null;
-  }
+  logger.info({ signal }, 'Shutdown signal received; closing HTTP server');
 
   if (server) {
     await new Promise<void>((resolve, reject) => {
@@ -75,7 +25,6 @@ async function shutdown(signal: string): Promise<void> {
     });
   }
 
-  await disconnectDatabase();
   process.exit(0);
 }
 

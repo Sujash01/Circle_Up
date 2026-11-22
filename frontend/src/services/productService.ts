@@ -125,64 +125,6 @@ export function normalizeCategorySlug(rawCategory?: string, rawSerial?: string):
   return 'thrifted-treasure';
 }
 
-const PRODUCT_OVERRIDES_KEY = 'circleup_product_overrides';
-const SETTINGS_OVERRIDES_KEY = 'circleup_site_settings_override';
-
-export function getLocalProductOverrides(): Record<string, Record<string, unknown>> {
-  if (typeof window === 'undefined') return {};
-  try {
-    const raw = localStorage.getItem(PRODUCT_OVERRIDES_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
-
-export function saveLocalProductOverride(idOrSerial: string, updates: Record<string, unknown>): void {
-  if (typeof window === 'undefined' || !idOrSerial) return;
-  try {
-    const overrides = getLocalProductOverrides();
-    const existing = overrides[idOrSerial] || {};
-    overrides[idOrSerial] = { ...existing, ...updates };
-    localStorage.setItem(PRODUCT_OVERRIDES_KEY, JSON.stringify(overrides));
-  } catch {
-    // Storage quota or restriction
-  }
-}
-
-export function getLocalSettingsOverride(): Record<string, unknown> | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem(SETTINGS_OVERRIDES_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-export function saveLocalSettingsOverride(updates: Record<string, unknown>): void {
-  if (typeof window === 'undefined') return;
-  try {
-    const existing = getLocalSettingsOverride() || {};
-    localStorage.setItem(SETTINGS_OVERRIDES_KEY, JSON.stringify({ ...existing, ...updates }));
-  } catch {
-    // Storage quota or restriction
-  }
-}
-
-function applyLocalOverrides(products: Product[]): Product[] {
-  const overrides = getLocalProductOverrides();
-  if (Object.keys(overrides).length === 0) return products;
-
-  return products.map((prod) => {
-    const ov =
-      overrides[prod.id] ||
-      (prod.serialNumber ? overrides[prod.serialNumber] : undefined) ||
-      (prod.slug ? overrides[prod.slug] : undefined);
-    return ov ? ({ ...prod, ...ov } as Product) : prod;
-  });
-}
-
 // Tracks whether a live database connection is active
 let liveDatabaseConnected = false;
 
@@ -230,9 +172,8 @@ function mapSupabaseRowToProduct(row: Record<string, unknown>): Product {
     price: Number(row.price || 0),
     originalPrice: row.original_price
       ? Number(row.original_price)
-      : row.compare_at_price
-        ? Number(row.compare_at_price)
-        : undefined,
+      : undefined,
+    compareAtPrice: row.compare_at_price != null ? Number(row.compare_at_price) : undefined,
     stock,
     images,
     sizes: sizes.length > 0 ? sizes : ['One Size'],
@@ -280,7 +221,7 @@ export const productService = {
    * Directly sets the in-memory product cache (used for unit tests and local mock fixtures).
    */
   setProducts(products: Product[]): void {
-    productCache = applyLocalOverrides(products);
+    productCache = [...products];
     liveDatabaseConnected = true;
     notifyListeners();
   },
@@ -305,7 +246,7 @@ export const productService = {
             const st = String(row.status || '').toUpperCase();
             return !['MISSING', 'NEED_ATTENTION', 'DRAFT', 'ARCHIVED'].includes(st);
           });
-          productCache = applyLocalOverrides(visibleRows.map(mapSupabaseRowToProduct));
+          productCache = visibleRows.map(mapSupabaseRowToProduct);
           liveDatabaseConnected = true;
           notifyListeners();
           return;
@@ -322,7 +263,7 @@ export const productService = {
           const st = String(row.status || '').toUpperCase();
           return !['MISSING', 'NEED_ATTENTION', 'DRAFT', 'ARCHIVED'].includes(st);
         });
-        productCache = applyLocalOverrides(visibleRows.map(mapSupabaseRowToProduct));
+        productCache = visibleRows.map(mapSupabaseRowToProduct);
         liveDatabaseConnected = true;
         notifyListeners();
       }
@@ -497,18 +438,11 @@ export const productService = {
   },
 
   async updateProduct(serialNumber: string, updates: Partial<Product>): Promise<Product> {
-    saveLocalProductOverride(serialNumber, updates);
-    try {
-      const response = await apiClient.put<{ success: true; data: Product }>(`/products/${serialNumber}`, updates);
-      const updated = response.data.data;
-      productCache = productCache.map((p) => (p.serialNumber === serialNumber ? updated : p));
-      notifyListeners();
-      return updated;
-    } catch {
-      productCache = productCache.map((p) => (p.serialNumber === serialNumber ? { ...p, ...updates } : p));
-      notifyListeners();
-      return (productCache.find((p) => p.serialNumber === serialNumber) || { serialNumber, ...updates }) as Product;
-    }
+    const response = await apiClient.put<{ success: true; data: Product }>(`/products/${serialNumber}`, updates);
+    const updated = response.data.data;
+    productCache = productCache.map((p) => (p.serialNumber === serialNumber ? updated : p));
+    notifyListeners();
+    return updated;
   },
 };
 

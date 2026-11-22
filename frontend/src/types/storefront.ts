@@ -44,6 +44,7 @@ export interface Product {
   description: string;
   price: number;
   originalPrice?: number;
+  compareAtPrice?: number;
   images: string[];
   category: ProductCategorySlug;
   categoryLabel: string;

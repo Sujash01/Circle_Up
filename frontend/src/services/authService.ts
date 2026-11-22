@@ -26,7 +26,6 @@ export interface AuthResponse {
   success: boolean;
   user?: SessionUser;
   token?: string;
-  isDemo?: boolean;
   requiresEmailConfirmation?: boolean;
   message?: string;
 }
@@ -80,43 +79,41 @@ export function mapSupabaseUserToSessionUser(
   };
 }
 
-const DEMO_SESSION_KEY = 'circleup_demo_session';
+const AUTH_REDIRECT_PATHS = new Set([
+  '/', '/account', '/account/orders', '/account/profile', '/cart', '/wishlist', '/checkout', '/search', '/rentals',
+  '/events', '/about', '/contact', '/brand-new', '/thrifted', '/new-arrivals',
+  '/womens-upperwear', '/womens-bottomwear', '/womens-one-piece', '/mens-upperwear',
+  '/mens-bottomwear', '/footwear', '/ethnic-wear', '/thrifted-treasure', '/jewellery',
+  '/accessories', '/handcrafted', '/thriftcrew',
+]);
+
+/** Accept only known customer-facing internal destinations for post-auth redirects. */
+export function getSafeAuthRedirect(value?: string | null): string {
+  if (!value || !value.startsWith('/') || value.startsWith('//') || value.includes('\\')) return '/account';
+  try {
+    const parsed = new URL(value, 'https://circleup.invalid');
+    if (parsed.origin !== 'https://circleup.invalid' || parsed.hash) return '/account';
+    const isProductRoute = /^\/product\/[A-Za-z0-9][A-Za-z0-9_-]*$/.test(parsed.pathname);
+    const isEventRoute = /^\/events\/[A-Za-z0-9][A-Za-z0-9_-]*$/.test(parsed.pathname);
+    return AUTH_REDIRECT_PATHS.has(parsed.pathname) || isProductRoute || isEventRoute
+      ? parsed.pathname
+      : '/account';
+  } catch {
+    return '/account';
+  }
+}
 
 class AuthService {
   private authListenerSubscription: { unsubscribe: () => void } | null = null;
   private isListening = false;
 
-  private saveLocalSession(session: { user: SessionUser; token: string }): void {
-    if (typeof window === 'undefined') return;
-    try {
-      const serialized = JSON.stringify(session);
-      localStorage.setItem(DEMO_SESSION_KEY, serialized);
-      sessionStorage.setItem(DEMO_SESSION_KEY, serialized);
-    } catch {
-      // ignore
-    }
-  }
-
-  public getStoredLocalSession(): { user: SessionUser; token: string } | null {
-    if (typeof window === 'undefined') return null;
-    try {
-      const raw = sessionStorage.getItem(DEMO_SESSION_KEY) || localStorage.getItem(DEMO_SESSION_KEY);
-      if (!raw) return null;
-      return JSON.parse(raw);
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Returns current active session user and token from Redux store or browser storage.
-   */
+  /** Returns only a currently authenticated Supabase session mirrored in Redux. */
   public getStoredSession(): { user: SessionUser; token: string } | null {
     const state = store.getState().auth;
     if (state.user && state.accessToken) {
       return { user: state.user, token: state.accessToken };
     }
-    return this.getStoredLocalSession();
+    return null;
   }
 
   /**
@@ -130,10 +127,7 @@ class AuthService {
     this.isListening = true;
 
     if (!isSupabaseConfigured()) {
-      const local = this.getStoredLocalSession();
-      if (local?.user && local?.token) {
-        store.dispatch(setCredentials({ accessToken: local.token, user: local.user }));
-      }
+      store.dispatch(clearSession());
       store.dispatch(markAuthInitialized());
       return () => {};
     }
@@ -145,21 +139,11 @@ class AuthService {
         if (!error && session?.user) {
           await this.syncSessionWithRedux(session);
         } else {
-          const local = this.getStoredLocalSession();
-          if (local?.user && local?.token) {
-            store.dispatch(setCredentials({ accessToken: local.token, user: local.user }));
-          } else {
-            store.dispatch(clearSession());
-          }
+          store.dispatch(clearSession());
         }
       })
       .catch(() => {
-        const local = this.getStoredLocalSession();
-        if (local?.user && local?.token) {
-          store.dispatch(setCredentials({ accessToken: local.token, user: local.user }));
-        } else {
-          store.dispatch(clearSession());
-        }
+        store.dispatch(clearSession());
       })
       .finally(() => {
         store.dispatch(markAuthInitialized());
@@ -202,25 +186,6 @@ class AuthService {
 
       if (!error && data) {
         profileData = data;
-      } else if (!error && !data) {
-        // If profile doesn't exist yet (e.g. fresh Google OAuth sign-in), auto-create row in profiles
-        const name =
-          (session.user.user_metadata?.full_name as string) ||
-          (session.user.user_metadata?.name as string) ||
-          (session.user.email ? session.user.email.split('@')[0] : 'CircleUp Member');
-        const avatar =
-          (session.user.user_metadata?.avatar_url as string) ||
-          (session.user.user_metadata?.picture as string) ||
-          null;
-
-        await supabase.from('profiles').insert({
-          id: session.user.id,
-          full_name: name,
-          email: session.user.email || '',
-          avatar_url: avatar,
-        });
-
-        profileData = { full_name: name, avatar_url: avatar };
       }
     } catch {
       // Non-blocking if profiles table not created yet or trigger already handled it
@@ -242,32 +207,7 @@ class AuthService {
     const trimmedEmail = data.email.trim().toLowerCase();
     const fullName = data.fullName.trim();
 
-    if (!isSupabaseConfigured()) {
-      const demoUser: SessionUser = {
-        id: `usr_${Date.now().toString(36)}`,
-        fullName,
-        email: trimmedEmail,
-        phone: data.phone,
-        actorType: 'CUSTOMER' as ActorType,
-        role: 'CUSTOMER' as Role,
-        permissions: [],
-        isEmailVerified: true,
-        authProvider: 'email',
-      };
-
-      const demoToken = `cu_demo_jwt_${Date.now().toString(36)}`;
-      const sessionPayload = { user: demoUser, token: demoToken };
-      this.saveLocalSession(sessionPayload);
-      store.dispatch(setCredentials({ accessToken: demoToken, user: demoUser }));
-
-      return {
-        success: true,
-        user: demoUser,
-        token: demoToken,
-        isDemo: true,
-        message: 'Account created successfully in demo mode.',
-      };
-    }
+    if (!isSupabaseConfigured()) return { success: false, message: 'Supabase is not configured.' };
 
     try {
       const { data: authData, error } = await supabase.auth.signUp({
@@ -294,32 +234,10 @@ class AuthService {
         };
       }
 
-      let activeSession = authData.session;
-
-      // If email confirmation is disabled on Supabase, activeSession is already returned.
-      // If activeSession is not yet present, attempt immediate signInWithPassword to establish the token
-      if (!activeSession) {
-        const { data: signInData } = await supabase.auth.signInWithPassword({
-          email: trimmedEmail,
-          password: data.password,
-        });
-        if (signInData?.session) {
-          activeSession = signInData.session;
-        }
-      }
-
-      const sessionUser = mapSupabaseUserToSessionUser(authData.user, { full_name: fullName });
-
-      if (activeSession) {
-        store.dispatch(
-          setCredentials({
-            accessToken: activeSession.access_token,
-            user: sessionUser,
-          }),
-        );
-      }
-
-      const requiresEmailConfirmation = !activeSession && !authData.user.email_confirmed_at;
+      const activeSession = authData.session;
+      if (activeSession) await this.syncSessionWithRedux(activeSession);
+      const sessionUser = mapSupabaseUserToSessionUser(authData.user);
+      const requiresEmailConfirmation = !activeSession;
 
       return {
         success: true,
@@ -337,40 +255,12 @@ class AuthService {
   }
 
   /**
-   * Sign In with Email and Password using Supabase Auth (with demo fallback if Supabase is unconfigured).
+   * Sign in with email and password using Supabase Auth.
    */
   public async signIn(credentials: SignInCredentials): Promise<AuthResponse> {
     const trimmedEmail = credentials.email.trim().toLowerCase();
 
-    if (!isSupabaseConfigured()) {
-      const namePrefix = (trimmedEmail.split('@')[0] ?? 'User')
-        .replace(/[._]/g, ' ')
-        .replace(/\b\w/g, (c) => c.toUpperCase());
-
-      const demoUser: SessionUser = {
-        id: `usr_${Date.now().toString(36)}`,
-        fullName: namePrefix || 'CircleUp Member',
-        email: trimmedEmail,
-        actorType: 'CUSTOMER' as ActorType,
-        role: 'CUSTOMER' as Role,
-        permissions: [],
-        isEmailVerified: true,
-        authProvider: 'email',
-      };
-
-      const demoToken = `cu_demo_jwt_${Date.now().toString(36)}`;
-      const sessionPayload = { user: demoUser, token: demoToken };
-      this.saveLocalSession(sessionPayload);
-      store.dispatch(setCredentials({ accessToken: demoToken, user: demoUser }));
-
-      return {
-        success: true,
-        user: demoUser,
-        token: demoToken,
-        isDemo: true,
-        message: 'Signed in successfully in demo mode.',
-      };
-    }
+    if (!isSupabaseConfigured()) return { success: false, message: 'Supabase is not configured.' };
 
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -398,13 +288,8 @@ class AuthService {
         };
       }
 
-      const sessionUser = mapSupabaseUserToSessionUser(data.user);
-      store.dispatch(
-        setCredentials({
-          accessToken: data.session.access_token,
-          user: sessionUser,
-        }),
-      );
+      await this.syncSessionWithRedux(data.session);
+      const sessionUser = store.getState().auth.user || mapSupabaseUserToSessionUser(data.user);
 
       return {
         success: true,
@@ -426,14 +311,6 @@ class AuthService {
         await supabase.auth.signOut();
       }
     } finally {
-      if (typeof window !== 'undefined') {
-        try {
-          localStorage.removeItem(DEMO_SESSION_KEY);
-          sessionStorage.removeItem(DEMO_SESSION_KEY);
-        } catch {
-          // ignore
-        }
-      }
       store.dispatch(clearSession());
     }
   }
@@ -444,12 +321,7 @@ class AuthService {
   public async requestPasswordReset(email: string): Promise<{ success: boolean; message: string }> {
     const trimmedEmail = email.trim().toLowerCase();
 
-    if (!isSupabaseConfigured()) {
-      return {
-        success: true,
-        message: 'Demo mode: If an account exists with this email, password reset instructions have been dispatched.',
-      };
-    }
+    if (!isSupabaseConfigured()) return { success: false, message: 'Supabase is not configured.' };
 
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
@@ -474,12 +346,7 @@ class AuthService {
    * Updates password for the authenticated recovery user.
    */
   public async updatePassword(newPassword: string): Promise<{ success: boolean; message: string }> {
-    if (!isSupabaseConfigured()) {
-      return {
-        success: true,
-        message: 'Your password has been successfully updated.',
-      };
-    }
+    if (!isSupabaseConfigured()) return { success: false, message: 'Supabase is not configured.' };
 
     try {
       const { error } = await supabase.auth.updateUser({
@@ -578,14 +445,17 @@ class AuthService {
       if (updates.fullName !== undefined) payload.full_name = updates.fullName.trim();
       if (updates.avatarUrl !== undefined) payload.avatar_url = updates.avatarUrl;
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .update(payload)
-        .eq('id', userId);
+        .eq('id', userId)
+        .select('id')
+        .maybeSingle();
 
       if (error) {
         return { success: false, message: error.message };
       }
+      if (!data) return { success: false, message: 'Profile was not found; no changes were saved.' };
 
       // Update active user in Redux store
       const state = store.getState();
@@ -609,173 +479,61 @@ class AuthService {
     }
   }
 
-  /**
-   * Sign in or register with Google OAuth (with fallback simulation for demo/local).
-   */
-  public async signInWithGoogle(
-    optionsOrProfile?:
-      | { redirectTarget?: string; customProfile?: { fullName?: string; email?: string } }
-      | { fullName?: string; email?: string },
-  ): Promise<AuthResponse> {
-    const redirectTarget =
-      optionsOrProfile && 'redirectTarget' in optionsOrProfile
-        ? optionsOrProfile.redirectTarget
-        : undefined;
-    const customProfile =
-      optionsOrProfile && 'customProfile' in optionsOrProfile
-        ? optionsOrProfile.customProfile
-        : optionsOrProfile && ('fullName' in optionsOrProfile || 'email' in optionsOrProfile)
-        ? (optionsOrProfile as { fullName?: string; email?: string })
-        : undefined;
-
-    if (isSupabaseConfigured()) {
-      try {
-        const redirectParam = redirectTarget ? `?redirect=${encodeURIComponent(redirectTarget)}` : '';
-        const redirectTo = `${window.location.origin}/auth/callback${redirectParam}`;
-
-        const { data, error } = await supabase.auth.signInWithOAuth({
-          provider: 'google',
-          options: {
-            redirectTo,
-            queryParams: {
-              access_type: 'offline',
-              prompt: 'consent',
-            },
-          },
-        });
-
-        if (error) {
-          return {
-            success: false,
-            message: error.message || 'Google sign-in could not be initiated.',
-          };
-        }
-
-        if (data?.url && typeof window !== 'undefined' && window.location.href !== data.url) {
-          window.location.assign(data.url);
-        }
-
-        return { success: true };
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Google sign-in could not be initiated.';
-        return { success: false, message: msg };
-      }
+  /** Initiate Google OAuth through Supabase Auth. */
+  public async signInWithGoogle(options?: { redirectTarget?: string }): Promise<AuthResponse> {
+    if (!isSupabaseConfigured()) return { success: false, message: 'Supabase is not configured.' };
+    try {
+      const target = getSafeAuthRedirect(options?.redirectTarget);
+      const redirectTo = `${window.location.origin}/auth/callback?redirect=${encodeURIComponent(target)}`;
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo, queryParams: { access_type: 'offline', prompt: 'consent' } },
+      });
+      if (error) return { success: false, message: error.message || 'Google sign-in could not be initiated.' };
+      if (!data?.url) return { success: false, message: 'Supabase did not provide a Google sign-in URL.' };
+      // Supabase's browser client performs the redirect unless skipBrowserRedirect is set.
+      return { success: true };
+    } catch (err: unknown) {
+      return { success: false, message: err instanceof Error ? err.message : 'Google sign-in could not be initiated.' };
     }
-
-    // Reliable fallback for local testing & demo
-    const fullName = customProfile?.fullName?.trim() || 'Aanya Sharma';
-    const email = customProfile?.email?.trim().toLowerCase() || 'aanya.sharma@gmail.com';
-
-    const demoUser: SessionUser = {
-      id: `usr_g_${Date.now().toString(36)}`,
-      fullName,
-      email,
-      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
-      actorType: 'CUSTOMER' as ActorType,
-      role: 'CUSTOMER' as Role,
-      permissions: [],
-      isEmailVerified: true,
-      authProvider: 'google',
-    };
-
-    const demoToken = `cu_demo_google_jwt_${Date.now().toString(36)}`;
-    const sessionPayload = { user: demoUser, token: demoToken };
-    this.saveLocalSession(sessionPayload);
-    store.dispatch(setCredentials({ accessToken: demoToken, user: demoUser }));
-
-    return {
-      success: true,
-      user: demoUser,
-      token: demoToken,
-      isDemo: true,
-      message: 'Signed in with Google.',
-    };
   }
 
   /**
    * Phone Number OTP Request
    */
-  public async sendPhoneOtp(phone: string): Promise<{ success: boolean; message: string; demoOtp?: string }> {
+  public async sendPhoneOtp(phone: string, fullName?: string): Promise<{ success: boolean; message: string }> {
     const cleanPhone = phone.trim().replace(/[\s-]/g, '');
     const formattedPhone = cleanPhone.startsWith('+') ? cleanPhone : `+91${cleanPhone}`;
-
-    if (isSupabaseConfigured()) {
-      try {
-        const { error } = await supabase.auth.signInWithOtp({
-          phone: formattedPhone,
-        });
-        if (!error) {
-          return {
-            success: true,
-            message: `Verification code sent to ${formattedPhone}.`,
-          };
-        }
-      } catch {
-        // Fallback
-      }
+    if (!isSupabaseConfigured()) return { success: false, message: 'Supabase is not configured.' };
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        phone: formattedPhone,
+        options: fullName?.trim() ? { data: { full_name: fullName.trim() } } : undefined,
+      });
+      if (error) return { success: false, message: error.message };
+      return { success: true, message: `Verification code sent to ${formattedPhone}.` };
+    } catch (err: unknown) {
+      return { success: false, message: err instanceof Error ? err.message : 'Failed to send verification code.' };
     }
-
-    return {
-      success: true,
-      message: `Verification code sent to ${formattedPhone}. (Demo OTP: 1234)`,
-      demoOtp: '1234',
-    };
   }
 
   /**
    * Phone Number OTP Verification & Sign In
    */
-  public async verifyPhoneOtp(phone: string, otp: string, fullName?: string): Promise<AuthResponse> {
+  public async verifyPhoneOtp(phone: string, otp: string): Promise<AuthResponse> {
     const cleanPhone = phone.trim().replace(/[\s-]/g, '');
     const formattedPhone = cleanPhone.startsWith('+') ? cleanPhone : `+91${cleanPhone}`;
-
-    if (isSupabaseConfigured() && otp.trim() !== '1234') {
-      try {
-        const { data, error } = await supabase.auth.verifyOtp({
-          phone: formattedPhone,
-          token: otp.trim(),
-          type: 'sms',
-        });
-        if (!error && data.session && data.user) {
-          const sessionUser = mapSupabaseUserToSessionUser(data.user);
-          sessionUser.authProvider = 'phone';
-          store.dispatch(setCredentials({ accessToken: data.session.access_token, user: sessionUser }));
-          return { success: true, user: sessionUser, token: data.session.access_token };
-        }
-      } catch {
-        // Fallback
-      }
+    if (!isSupabaseConfigured()) return { success: false, message: 'Supabase is not configured.' };
+    if (!otp.trim()) return { success: false, message: 'Enter the verification code.' };
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({ phone: formattedPhone, token: otp.trim(), type: 'sms' });
+      if (error) return { success: false, message: error.message };
+      if (!data.session || !data.user) return { success: false, message: 'Supabase did not establish an authenticated session.' };
+      await this.syncSessionWithRedux(data.session);
+      return { success: true, user: store.getState().auth.user || mapSupabaseUserToSessionUser(data.user), token: data.session.access_token };
+    } catch (err: unknown) {
+      return { success: false, message: err instanceof Error ? err.message : 'Phone verification failed.' };
     }
-
-    if (otp.trim() !== '1234' && otp.trim().length !== 4 && otp.trim().length !== 6) {
-      return { success: false, message: 'Invalid verification code. Please enter demo OTP: 1234.' };
-    }
-
-    const name = fullName?.trim() || `Member ${cleanPhone.slice(-4)}`;
-    const demoUser: SessionUser = {
-      id: `usr_p_${Date.now().toString(36)}`,
-      fullName: name,
-      email: `${cleanPhone.replace(/\+/g, '')}@phone.circleup.in`,
-      phone: formattedPhone,
-      actorType: 'CUSTOMER' as ActorType,
-      role: 'CUSTOMER' as Role,
-      permissions: [],
-      isEmailVerified: true,
-      authProvider: 'phone',
-    };
-
-    const demoToken = `cu_demo_phone_jwt_${Date.now().toString(36)}`;
-    const sessionPayload = { user: demoUser, token: demoToken };
-    this.saveLocalSession(sessionPayload);
-    store.dispatch(setCredentials({ accessToken: demoToken, user: demoUser }));
-
-    return {
-      success: true,
-      user: demoUser,
-      token: demoToken,
-      isDemo: !isSupabaseConfigured(),
-      message: 'Phone verified and signed in.',
-    };
   }
 }
 

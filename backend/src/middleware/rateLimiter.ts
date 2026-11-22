@@ -46,6 +46,18 @@ export const orderLookupRateLimiter = createRateLimiter(
   'Too many order lookup attempts, please wait 10 minutes',
 );
 
+export const contactRateLimiter = createRateLimiter(
+  FIFTEEN_MINUTES_MS,
+  5,
+  'Too many contact submissions, please try again later',
+);
+
+export const eventRegistrationRateLimiter = createRateLimiter(
+  FIFTEEN_MINUTES_MS,
+  5,
+  'Too many event registration attempts, please try again later',
+);
+
 export const customerOrdersRateLimiter = createRateLimiter(
   FIFTEEN_MINUTES_MS,
   60,

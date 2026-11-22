@@ -42,7 +42,8 @@ describe('ExitIntentModal & Custom NotFoundPage', () => {
 
     const dialog = document.body.querySelector('[role="dialog"]');
     expect(dialog).not.toBeNull();
-    expect(dialog?.textContent).toContain('THRIFT10');
+    expect(dialog?.textContent).not.toContain('THRIFT10');
+    expect(dialog?.textContent).not.toContain('CIRCLE20');
 
     act(() => {
       root.unmount();

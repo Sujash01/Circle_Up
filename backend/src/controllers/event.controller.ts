@@ -1,48 +1,28 @@
 import type { Request, Response, NextFunction } from 'express';
-import { Event } from '../models/Event.js';
-import { sendSuccess } from '../utils/apiResponse.js';
-import mongoose from 'mongoose';
+import { z } from 'zod';
+import { BadRequestError } from '../errors/AppError.js';
+import { eventRepository } from '../repositories/event.repository.js';
+import { sendCreated, sendSuccess } from '../utils/apiResponse.js';
 
-const DEFAULT_EVENTS = [
-  {
-    id: 'evt-01',
-    title: 'CircleUp Studio Pop-Up Courtyard',
-    date: 'Saturday, November 28, 2026 · 11:00 AM - 6:00 PM',
-    location: 'Sector 7 Studio Courtyard, Chandigarh',
-    description: 'Browse freshly steamed vintage co-ords, try on corset tops, and enjoy iced matcha in our courtyard garden.',
-    image: '/assets/world-social-circle.webp',
-    type: 'POP_UP',
-    capacity: 100,
-    registeredCount: 42,
-    isRegistrationOpen: true,
-  },
-  {
-    id: 'evt-02',
-    title: 'The Social Circle Community Swap Meet',
-    date: 'Sunday, December 6, 2026 · 2:00 PM - 7:00 PM',
-    location: 'CircleUp Loft Space, Chandigarh',
-    description: 'Bring 3 pre-loved quality garments to trade with fellow thrifters. Sustainable snacks and vinyl music provided.',
-    image: '/assets/community-1.webp',
-    type: 'COMMUNITY',
-    capacity: 50,
-    registeredCount: 31,
-    isRegistrationOpen: true,
-  },
-];
+const registrationSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  email: z.string().trim().email().max(254),
+  phone: z.string().trim().regex(/^[+\d\s-]{8,15}$/),
+  notes: z.string().trim().max(1000).optional(),
+}).strict();
 
 export const eventController = {
   async listEvents(_req: Request, res: Response, next: NextFunction) {
+    try { return sendSuccess(res, await eventRepository.list(true)); } catch (error) { next(error); }
+  },
+  async getEvent(req: Request, res: Response, next: NextFunction) {
+    try { return sendSuccess(res, await eventRepository.get(String(req.params.id || ''), true)); } catch (error) { next(error); }
+  },
+  async register(req: Request, res: Response, next: NextFunction) {
     try {
-      if (mongoose.connection.readyState === 1) {
-        const events = await Event.find().sort({ createdAt: -1 }).lean();
-        if (events.length > 0) {
-          return sendSuccess(res, events);
-        }
-      }
-      return sendSuccess(res, DEFAULT_EVENTS);
-    } catch (error) {
-      next(error);
-    }
+      const parsed = registrationSchema.safeParse(req.body);
+      if (!parsed.success) throw new BadRequestError('Event registration is invalid.', 'VALIDATION_ERROR', parsed.error.issues.map((issue) => ({ field: issue.path.join('.'), issue: issue.message })));
+      return sendCreated(res, await eventRepository.register(String(req.params.id || ''), parsed.data));
+    } catch (error) { next(error); }
   },
 };
-

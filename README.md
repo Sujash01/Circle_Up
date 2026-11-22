@@ -1,9 +1,9 @@
 # CircleUp Platform
 
-Centralized thrift-commerce, fashion rental, and community platform built with React + TypeScript, Node.js + Express + TypeScript, and MongoDB (Mongoose).
+Centralized thrift-commerce, fashion rental, and community platform built with React + TypeScript, Node.js + Express + TypeScript, Supabase PostgreSQL, and Supabase Storage.
 
 ## Architecture Blueprint
-See the complete approved engineering specification in [docs/CIRCLEUP_SYSTEM_DESIGN.md](./docs/CIRCLEUP_SYSTEM_DESIGN.md).
+See [docs/CIRCLEUP_SYSTEM_DESIGN.md](./docs/CIRCLEUP_SYSTEM_DESIGN.md) for a historical design archive. The current runtime architecture uses Supabase.
 
 ## Monorepo Structure
 - `shared/` (`@circleup/shared`): Shared domain enums, store defaults, and REST API response contracts.
@@ -12,7 +12,7 @@ See the complete approved engineering specification in [docs/CIRCLEUP_SYSTEM_DES
 
 ## Prerequisites
 - Node.js `>= 20` (LTS) and npm `>= 10`
-- MongoDB Atlas Free M0 Dev Cluster (native 3-node Replica Set for ACID transactions) **or** native local MongoDB Community Server (`mongod`) initialized with `--replSet rs0`
+- Supabase project credentials for the backend (see `backend/.env.example`)
 
 ## Quick Start
 ```bash
@@ -22,7 +22,7 @@ npm install
 # 2. Build shared contracts
 npm run build --workspace=@circleup/shared
 
-# 3. Configure environment files (point MONGODB_URI to your Atlas M0 Dev URI or local mongod)
+# 3. Configure environment files with the Supabase project URL and server-only service-role key
 cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env
 

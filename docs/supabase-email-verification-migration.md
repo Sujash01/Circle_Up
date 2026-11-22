@@ -104,11 +104,7 @@ ORDER BY created_at DESC;
 
 1. **Reporting Count**: Record the number of unconfirmed users prior to migration.
 2. **Identifying Legitimate Customers**:
-   - Cross-reference unconfirmed email addresses with completed orders in MongoDB:
-     ```javascript
-     // In MongoDB mongosh:
-     db.orders.find({ "customer.email": "<email>" }, { orderNumber: 1, totalAmount: 1, createdAt: 1 })
-     ```
+   - For customer/order cross-references, use the existing Supabase `customers` and `orders` records through the authenticated backend. Resolve customers by their stored identifiers; do not infer identity from similar names.
    - Check creation timestamps: recent unconfirmed signups may represent customers in mid-registration, while older accounts may represent abandonments or invalid test email addresses.
 3. **Impact on Existing Unverified Accounts**:
    - Accounts with existing active sessions or valid refresh tokens on their client devices will continue to function until session expiry.

@@ -1,10 +1,5 @@
-import { Product } from '../models/Product.js';
-import { SEED_PRODUCTS } from '../data/seedProducts.js';
 import { BadRequestError } from '../errors/AppError.js';
-import mongoose from 'mongoose';
-import { isSupabaseConfigured } from './supabase.service.js';
 import { supabaseCatalogService } from './supabaseCatalog.service.js';
-import { env } from '../config/env.js';
 
 export interface SearchMatch {
   id: string;
@@ -31,12 +26,11 @@ export const searchService = {
     }
 
     const cleanQ = q.toLowerCase();
-    const isDbConnected = mongoose.connection.readyState === 1;
-
     let items: Array<{
       id?: string;
-      _id?: unknown;
+    serialNumber?: string;
       name: string;
+    description?: string;
       slug: string;
       category: string;
       categoryLabel?: string;
@@ -46,17 +40,7 @@ export const searchService = {
       subcategory?: string;
     }> = [];
 
-    if (isSupabaseConfigured() && env.CHECKOUT_PROVIDER !== 'mongodb') {
-      items = await supabaseCatalogService.searchCatalogItems();
-    } else if (isDbConnected) {
-      const docs = await Product.find({
-        status: { $in: ['ACTIVE', 'PUBLISHED'] },
-        deletedAt: null,
-      }).lean();
-      items = docs as unknown as typeof items;
-    } else {
-      items = (SEED_PRODUCTS as unknown as typeof items).filter((p) => (p as Record<string, unknown>).status !== 'DRAFT');
-    }
+    items = await supabaseCatalogService.searchCatalogItems();
 
     // Rank algorithm: name prefix (100) > name contains (50) > tags/category match (25)
     const scored: SearchMatch[] = [];
@@ -65,6 +49,8 @@ export const searchService = {
       const nameLower = (item.name || '').toLowerCase();
       const catLower = (item.category || '').toLowerCase();
       const subLower = (item.subcategory || '').toLowerCase();
+      const serialLower = (item.serialNumber || '').toLowerCase();
+      const descriptionLower = (item.description || '').toLowerCase();
       const tags = (item.tags || []).map((t) => t.toLowerCase());
 
       let score = 0;
@@ -78,6 +64,7 @@ export const searchService = {
       if (catLower.includes(cleanQ) || subLower.includes(cleanQ)) {
         score += 30;
       }
+      if (serialLower.includes(cleanQ) || descriptionLower.includes(cleanQ)) score += 15;
 
       if (tags.some((t) => t.includes(cleanQ))) {
         score += 20;
@@ -85,7 +72,7 @@ export const searchService = {
 
       if (score > 0) {
         scored.push({
-          id: String(item.id || item._id || item.slug),
+          id: String(item.id || item.slug),
           name: item.name,
           slug: item.slug,
           category: item.category,

@@ -1,338 +1,307 @@
-import mongoose from 'mongoose';
-import { Order } from '../models/Order.js';
-import { NotFoundError } from '../errors/AppError.js';
-import { parsePagination, buildPaginationMeta } from '../utils/pagination.js';
-import type { Customer, CustomerTier } from '@circleup/shared';
-import { isSupabaseConfigured, getSupabaseAdminClient } from './supabase.service.js';
+import crypto from 'node:crypto';
+import type { Customer, CustomerTier, IOrder, IShippingAddress } from '@circleup/shared';
+import { BadRequestError, NotFoundError, ServiceUnavailableError } from '../errors/AppError.js';
+import { getSupabaseServiceClient } from '../config/supabase.js';
+import { buildPaginationMeta, parsePagination } from '../utils/pagination.js';
 
-const MOCK_CUSTOMERS: Customer[] = [
-  {
-    id: 'cust_01',
-    name: 'Aanya Sharma',
-    email: 'aanya@example.com',
-    phone: '+91 98201 12233',
-    totalOrders: 3,
-    totalSpendInPaise: 1255000,
-    firstOrderAt: new Date(Date.now() - 45 * 86400000).toISOString(),
-    lastOrderAt: new Date(Date.now() - 2 * 86400000).toISOString(),
-    tier: 'VIP',
-    city: 'Mumbai',
-    state: 'Maharashtra',
-    postalCode: '400050',
-    addressLine: 'Bandra West, Hill Road',
-    notes: 'Loves vintage blazers and handcrafted accessories. Active circular community member.',
-    createdAt: new Date(Date.now() - 60 * 86400000).toISOString(),
-  },
-  {
-    id: 'cust_02',
-    name: 'Rohan Verma',
-    email: 'rohan.v@example.com',
-    phone: '+91 98112 44556',
-    totalOrders: 2,
-    totalSpendInPaise: 745000,
-    firstOrderAt: new Date(Date.now() - 28 * 86400000).toISOString(),
-    lastOrderAt: new Date(Date.now() - 5 * 86400000).toISOString(),
-    tier: 'REGULAR',
-    city: 'Bengaluru',
-    state: 'Karnataka',
-    postalCode: '560038',
-    addressLine: 'Indiranagar, 100ft Road',
-    notes: 'Regular menswear enthusiast. Interested in vintage jackets.',
-    createdAt: new Date(Date.now() - 35 * 86400000).toISOString(),
-  },
-  {
-    id: 'cust_03',
-    name: 'Rhea Sen',
-    email: 'rhea.sen@example.com',
-    phone: '+91 99302 77889',
-    totalOrders: 4,
-    totalSpendInPaise: 1680000,
-    firstOrderAt: new Date(Date.now() - 90 * 86400000).toISOString(),
-    lastOrderAt: new Date(Date.now() - 1 * 86400000).toISOString(),
-    tier: 'VIP',
-    city: 'Delhi',
-    state: 'Delhi',
-    postalCode: '110024',
-    addressLine: 'Defence Colony, Block C',
-    notes: 'Frequent rental customer and curated thrift explorer.',
-    createdAt: new Date(Date.now() - 100 * 86400000).toISOString(),
-  },
-  {
-    id: 'cust_04',
-    name: 'Kabir Mehta',
-    email: 'kabir.m@example.com',
-    phone: '+91 97654 33221',
-    totalOrders: 1,
-    totalSpendInPaise: 295000,
-    firstOrderAt: new Date(Date.now() - 7 * 86400000).toISOString(),
-    lastOrderAt: new Date(Date.now() - 7 * 86400000).toISOString(),
-    tier: 'NEW',
-    city: 'Pune',
-    state: 'Maharashtra',
-    postalCode: '411001',
-    addressLine: 'Koregaon Park, Lane 5',
-    notes: 'First order: vintage corduroy overshirt.',
-    createdAt: new Date(Date.now() - 10 * 86400000).toISOString(),
-  },
-];
+type CustomerRow = {
+  id: string;
+  user_id: string | null;
+  full_name: string;
+  email: string;
+  phone: string | null;
+  tier: string | null;
+  saved_addresses: unknown;
+  staff_notes: string | null;
+  marketing_opt_in_email: boolean | null;
+  marketing_opt_in_whatsapp: boolean | null;
+  garments_saved: number | null;
+  co2_avoided_grams: number | null;
+  water_saved_liters: number | null;
+  created_at: string;
+};
+
+type OrderRow = {
+  id: string;
+  order_number: string;
+  customer_id: string | null;
+  customer_name: string;
+  customer_email: string;
+  customer_phone: string | null;
+  total_amount: number;
+  subtotal: number;
+  discount_amount: number;
+  shipping_amount: number;
+  status: string;
+  payment_status: string;
+  payment_method: string;
+  promo_code: string | null;
+  notes: string | null;
+  shipping_address: unknown;
+  created_at: string;
+  updated_at: string;
+  order_items?: Array<Record<string, unknown>>;
+};
+
+type OrderSummary = {
+  count: number;
+  spend: number;
+  firstOrderAt?: string;
+  lastOrderAt?: string;
+  latestOrder?: OrderRow;
+  rows: OrderRow[];
+};
+
+const UNAVAILABLE = () => new ServiceUnavailableError('Customer CRM database is unavailable.', 'DATABASE_UNAVAILABLE');
+const normalizeEmail = (email: string) => email.trim().toLowerCase();
+const userKey = (id: string) => `user:${id}`;
+const guestKey = (email: string) => `guest:${normalizeEmail(email)}`;
+const guestId = (email: string) => `guest_${crypto.createHash('sha256').update(normalizeEmail(email)).digest('hex').slice(0, 32)}`;
+
+function orderIdentity(order: OrderRow): string {
+  return order.customer_id ? userKey(order.customer_id) : guestKey(order.customer_email);
+}
+
+function parseAddress(value: unknown): Partial<IShippingAddress> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const address = value as Record<string, unknown>;
+  const stringField = (key: string) => typeof address[key] === 'string' ? address[key] as string : undefined;
+  return {
+    addressLine: stringField('addressLine'),
+    city: stringField('city'),
+    state: stringField('state'),
+    postalCode: stringField('postalCode'),
+    country: stringField('country'),
+    landmark: stringField('landmark'),
+  };
+}
+
+function firstSavedAddress(value: unknown): Partial<IShippingAddress> {
+  if (!Array.isArray(value)) return {};
+  return parseAddress(value.find((entry) => entry && typeof entry === 'object'));
+}
+
+function calculateTier(spend: number, count: number): CustomerTier {
+  if (spend >= 1_000_000) return 'VIP';
+  if (count >= 2) return 'REGULAR';
+  return 'NEW';
+}
+
+function mapCustomer(row: CustomerRow | undefined, summary: OrderSummary, fallback?: { userId?: string; email: string; name: string; phone: string }) {
+  const latestOrder = summary.latestOrder;
+  const savedAddress = firstSavedAddress(row?.saved_addresses);
+  const latestAddress = parseAddress(latestOrder?.shipping_address);
+  const address = latestOrder ? latestAddress : savedAddress;
+  const email = row?.email || fallback?.email || '';
+  const customer: Customer = {
+    id: row?.id || (fallback?.userId ? `auth_${fallback.userId}` : guestId(email)),
+    name: row?.full_name || latestOrder?.customer_name || fallback?.name || 'Customer',
+    email,
+    phone: row?.phone || latestOrder?.customer_phone || fallback?.phone || '',
+    totalOrders: summary.count,
+    totalSpendInPaise: summary.spend,
+    firstOrderAt: summary.firstOrderAt,
+    lastOrderAt: summary.lastOrderAt,
+    tier: isCustomerTier(row?.tier) ? row!.tier as CustomerTier : calculateTier(summary.spend, summary.count),
+    city: address.city,
+    state: address.state,
+    postalCode: address.postalCode,
+    addressLine: address.addressLine,
+    notes: row?.staff_notes || undefined,
+    savedAddresses: Array.isArray(row?.saved_addresses) ? row!.saved_addresses.map((entry) => parseAddress(entry)) : [],
+    marketingOptInEmail: row?.marketing_opt_in_email ?? false,
+    marketingOptInWhatsapp: row?.marketing_opt_in_whatsapp ?? false,
+    garmentsSaved: row?.garments_saved ?? 0,
+    co2AvoidedGrams: row?.co2_avoided_grams ?? 0,
+    waterSavedLitres: row?.water_saved_liters ?? 0,
+    createdAt: row?.created_at || summary.firstOrderAt,
+  };
+  return {
+    customer,
+    sustainabilityImpact: {
+      garmentsSaved: row?.garments_saved ?? 0,
+      co2AvoidedKg: Number(((row?.co2_avoided_grams ?? 0) / 1000).toFixed(1)),
+      waterSavedLitres: row?.water_saved_liters ?? 0,
+    },
+    savedAddresses: Array.isArray(row?.saved_addresses) ? row!.saved_addresses : [],
+    marketingPreferences: {
+      email: row?.marketing_opt_in_email ?? false,
+      whatsapp: row?.marketing_opt_in_whatsapp ?? false,
+    },
+    userId: row?.user_id || fallback?.userId || null,
+  };
+}
+
+function isCustomerTier(value: unknown): value is CustomerTier {
+  return value === 'NEW' || value === 'REGULAR' || value === 'VIP' || value === 'COMMUNITY';
+}
+
+async function fetchAllRows<T>(table: 'customers' | 'orders', select: string): Promise<T[]> {
+  const client = getSupabaseServiceClient();
+  const rows: T[] = [];
+  const pageSize = 1000;
+  for (let offset = 0; ; offset += pageSize) {
+    const query = client.from(table).select(select).order('created_at', { ascending: true }).range(offset, offset + pageSize - 1);
+    let result: { data: unknown[] | null; error: unknown | null };
+    try { result = await query as unknown as { data: unknown[] | null; error: unknown | null }; }
+    catch { throw UNAVAILABLE(); }
+    const { data, error } = result;
+    if (error) throw UNAVAILABLE();
+    const page = (data || []) as T[];
+    rows.push(...page);
+    if (page.length < pageSize) return rows;
+  }
+}
+
+async function loadData() {
+  const [customers, orders] = await Promise.all([
+    fetchAllRows<CustomerRow>('customers', 'id,user_id,full_name,email,phone,tier,saved_addresses,staff_notes,marketing_opt_in_email,marketing_opt_in_whatsapp,garments_saved,co2_avoided_grams,water_saved_liters,created_at'),
+    fetchAllRows<OrderRow>('orders', 'id,order_number,customer_id,customer_name,customer_email,customer_phone,total_amount,subtotal,discount_amount,shipping_amount,status,payment_status,payment_method,promo_code,notes,shipping_address,created_at,updated_at'),
+  ]);
+  const summaries = new Map<string, OrderSummary>();
+  for (const order of orders) {
+    const key = orderIdentity(order);
+    const summary = summaries.get(key) || { count: 0, spend: 0, rows: [] };
+    summary.count += 1;
+    summary.spend += Number(order.total_amount || 0);
+    summary.rows.push(order);
+    if (!summary.firstOrderAt || order.created_at < summary.firstOrderAt) summary.firstOrderAt = order.created_at;
+    if (!summary.lastOrderAt || order.created_at >= summary.lastOrderAt) {
+      summary.lastOrderAt = order.created_at;
+      summary.latestOrder = order;
+    }
+    summaries.set(key, summary);
+  }
+  return { customers, orders, summaries };
+}
+
+function paginate<T>(rows: T[], query: { page?: unknown; limit?: unknown }) {
+  const { page, limit, skip } = parsePagination(query);
+  const total = rows.length;
+  return { rows: rows.slice(skip, skip + limit), meta: buildPaginationMeta(page, limit, total) };
+}
+
+function mapOrder(order: OrderRow): IOrder {
+  const address = parseAddress(order.shipping_address);
+  const orderItems = order.order_items || [];
+  return {
+    id: order.id,
+    orderNumber: order.order_number,
+    customerId: order.customer_id || undefined,
+    customer: { name: order.customer_name, email: order.customer_email, phone: order.customer_phone || '' },
+    shippingAddress: {
+      addressLine: address.addressLine || '', city: address.city || '', state: address.state || '',
+      postalCode: address.postalCode || '', country: address.country || 'India', landmark: address.landmark,
+    },
+    items: orderItems.map((item) => ({
+      serialNumber: String(item.serial_number || ''), name: String(item.name || ''),
+      price: Number(item.price || 0), quantity: Number(item.quantity || 0),
+      size: typeof item.size === 'string' ? item.size : undefined,
+      image: typeof item.image_url === 'string' ? item.image_url : undefined,
+      slug: typeof item.slug === 'string' ? item.slug : undefined,
+    })),
+    subtotal: Number(order.subtotal || 0), discount: Number(order.discount_amount || 0),
+    deliveryFee: Number(order.shipping_amount || 0), totalAmount: Number(order.total_amount || 0),
+    status: order.status as IOrder['status'], paymentMethod: order.payment_method as IOrder['paymentMethod'],
+    paymentStatus: order.payment_status as IOrder['paymentStatus'], notes: order.notes || undefined,
+    createdAt: order.created_at, updatedAt: order.updated_at,
+  };
+}
 
 export const adminCustomerService = {
   async listCustomers(query: { page?: unknown; limit?: unknown; search?: string; tier?: string }) {
-    const { page, limit, skip } = parsePagination(query);
+    const { customers, summaries } = await loadData();
+    const registeredIdentities = new Set<string>();
+    const mapped = customers.map((row) => {
+      const key = row.user_id ? userKey(row.user_id) : guestKey(row.email);
+      registeredIdentities.add(key);
+      return mapCustomer(row, summaries.get(key) || { count: 0, spend: 0, rows: [] });
+    });
 
-    let customers: Customer[] = [];
-
-    // 1. Supabase Customers / Orders aggregation
-    if (isSupabaseConfigured()) {
-      try {
-        const client = getSupabaseAdminClient();
-        const { data: supaOrders } = await client
-          .from('orders')
-          .select('*, order_items(*)')
-          .order('created_at', { ascending: false });
-
-        if (Array.isArray(supaOrders) && supaOrders.length > 0) {
-          const grouped = new Map<string, {
-            ordersCount: number;
-            totalSpend: number;
-            name: string;
-            email: string;
-            phone: string;
-            firstDate: Date;
-            lastDate: Date;
-            address?: {
-              addressLine?: string;
-              city?: string;
-              state?: string;
-              postalCode?: string;
-            };
-          }>();
-
-          for (const ord of supaOrders) {
-            const email = (ord.customer_email || '').toLowerCase().trim();
-            if (!email) continue;
-
-            const existing = grouped.get(email);
-            const orderDate = new Date(ord.created_at);
-            const amount = Number(ord.total_amount || 0);
-
-            if (!existing) {
-              grouped.set(email, {
-                ordersCount: 1,
-                totalSpend: amount,
-                name: ord.customer_name || 'Customer',
-                email,
-                phone: ord.customer_phone || '',
-                firstDate: orderDate,
-                lastDate: orderDate,
-                address: ord.shipping_address,
-              });
-            } else {
-              existing.ordersCount += 1;
-              existing.totalSpend += amount;
-              if (orderDate < existing.firstDate) existing.firstDate = orderDate;
-              if (orderDate > existing.lastDate) {
-                existing.lastDate = orderDate;
-                if (ord.shipping_address) existing.address = ord.shipping_address;
-                if (ord.customer_name) existing.name = ord.customer_name;
-                if (ord.customer_phone) existing.phone = ord.customer_phone;
-              }
-            }
-          }
-
-          const dbCustomers: Customer[] = Array.from(grouped.entries()).map(([email, d], idx) => {
-            let tier: CustomerTier = 'NEW';
-            if (d.totalSpend >= 1000000) tier = 'VIP';
-            else if (d.ordersCount >= 2) tier = 'REGULAR';
-
-            return {
-              id: `cust_${idx + 1}_${email.replace(/[^a-z0-9]/g, '').slice(0, 8)}`,
-              name: d.name,
-              email: d.email,
-              phone: d.phone,
-              totalOrders: d.ordersCount,
-              totalSpendInPaise: d.totalSpend,
-              firstOrderAt: d.firstDate.toISOString(),
-              lastOrderAt: d.lastDate.toISOString(),
-              tier,
-              city: d.address?.city,
-              state: d.address?.state,
-              postalCode: d.address?.postalCode,
-              addressLine: d.address?.addressLine,
-              createdAt: d.firstDate.toISOString(),
-            };
-          });
-
-          const emailSet = new Set(dbCustomers.map((c) => c.email.toLowerCase()));
-          const uniqueMocks = MOCK_CUSTOMERS.filter((m) => !emailSet.has(m.email.toLowerCase()));
-          customers = [...dbCustomers, ...uniqueMocks];
-        }
-      } catch {
-        // Fall back
-      }
+    const orderOnly = new Map<string, ReturnType<typeof mapCustomer>>();
+    for (const [key, summary] of summaries) {
+      if (registeredIdentities.has(key) || summary.rows.length === 0) continue;
+      const latest = summary.latestOrder!;
+      const fallback = key.startsWith('user:')
+        ? { userId: key.slice('user:'.length), email: latest.customer_email, name: latest.customer_name, phone: latest.customer_phone || '' }
+        : { email: latest.customer_email, name: latest.customer_name, phone: latest.customer_phone || '' };
+      orderOnly.set(key, mapCustomer(undefined, summary, fallback));
     }
 
-    if (customers.length === 0 && mongoose.connection.readyState === 1) {
-      try {
-        const orders = await Order.find().sort({ createdAt: -1 }).lean();
-        const grouped = new Map<string, {
-          ordersCount: number;
-          totalSpend: number;
-          name: string;
-          email: string;
-          phone: string;
-          firstDate: Date;
-          lastDate: Date;
-          address?: {
-            addressLine: string;
-            city: string;
-            state: string;
-            postalCode: string;
-          };
-        }>();
+    let rows = [...mapped, ...orderOnly.values()].map((entry) => entry.customer);
+    const search = query.search?.trim().toLowerCase();
+    if (search) rows = rows.filter((customer) => [customer.name, customer.email, customer.phone, customer.city, customer.notes].some((value) => value?.toLowerCase().includes(search)));
+    if (query.tier && query.tier !== 'all') rows = rows.filter((customer) => customer.tier === query.tier);
+    rows.sort((a, b) => (b.lastOrderAt || b.createdAt || '').localeCompare(a.lastOrderAt || a.createdAt || ''));
+    const result = paginate(rows, query);
+    return { customers: result.rows, meta: result.meta };
+  },
 
-        for (const ord of orders) {
-          const email = ord.customer?.email?.toLowerCase().trim();
-          if (!email) continue;
-
-          const existing = grouped.get(email);
-          const orderDate = new Date(ord.createdAt);
-          const amount = typeof ord.totalAmount === 'number' ? ord.totalAmount : 0;
-
-          if (!existing) {
-            grouped.set(email, {
-              ordersCount: 1,
-              totalSpend: amount,
-              name: ord.customer.name || 'Valued Customer',
-              email,
-              phone: ord.customer.phone || '',
-              firstDate: orderDate,
-              lastDate: orderDate,
-              address: ord.shippingAddress,
-            });
-          } else {
-            existing.ordersCount += 1;
-            existing.totalSpend += amount;
-            if (orderDate < existing.firstDate) existing.firstDate = orderDate;
-            if (orderDate > existing.lastDate) {
-              existing.lastDate = orderDate;
-              if (ord.shippingAddress) existing.address = ord.shippingAddress;
-              if (ord.customer.name) existing.name = ord.customer.name;
-              if (ord.customer.phone) existing.phone = ord.customer.phone;
-            }
-          }
-        }
-
-        const dbCustomers: Customer[] = Array.from(grouped.entries()).map(([email, d], idx) => {
-          let tier: CustomerTier = 'NEW';
-          if (d.totalSpend >= 1000000) tier = 'VIP';
-          else if (d.ordersCount >= 2) tier = 'REGULAR';
-
-          return {
-            id: `cust_${idx + 1}_${email.replace(/[^a-z0-9]/g, '').slice(0, 8)}`,
-            name: d.name,
-            email: d.email,
-            phone: d.phone,
-            totalOrders: d.ordersCount,
-            totalSpendInPaise: d.totalSpend,
-            firstOrderAt: d.firstDate.toISOString(),
-            lastOrderAt: d.lastDate.toISOString(),
-            tier,
-            city: d.address?.city,
-            state: d.address?.state,
-            postalCode: d.address?.postalCode,
-            addressLine: d.address?.addressLine,
-            createdAt: d.firstDate.toISOString(),
-          };
-        });
-
-        // Merge with mock customers (ensuring mock customers are available if database has few orders)
-        const emailSet = new Set(dbCustomers.map((c) => c.email.toLowerCase()));
-        const uniqueMocks = MOCK_CUSTOMERS.filter((m) => !emailSet.has(m.email.toLowerCase()));
-        customers = [...dbCustomers, ...uniqueMocks];
-      } catch {
-        customers = [...MOCK_CUSTOMERS];
-      }
+  async getCustomerById(id: string) {
+    if (!id || id.length > 128) throw new BadRequestError('Invalid customer ID.', 'INVALID_CUSTOMER_ID');
+    const { customers, summaries } = await loadData();
+    const normalizedLookup = normalizeEmail(id);
+    const row = customers.find((customer) => customer.id === id || customer.user_id === id || normalizeEmail(customer.email) === normalizedLookup);
+    let summary: OrderSummary | undefined;
+    let customerData: ReturnType<typeof mapCustomer>;
+    if (row) {
+      const key = row.user_id ? userKey(row.user_id) : guestKey(row.email);
+      summary = summaries.get(key) || { count: 0, spend: 0, rows: [] };
+      customerData = mapCustomer(row, summary);
     } else {
-      customers = [...MOCK_CUSTOMERS];
-    }
-
-    // Apply filters
-    if (query.search && query.search.trim()) {
-      const q = query.search.trim().toLowerCase();
-      customers = customers.filter(
-        (c) =>
-          c.name.toLowerCase().includes(q) ||
-          c.email.toLowerCase().includes(q) ||
-          c.phone.toLowerCase().includes(q) ||
-          (c.city && c.city.toLowerCase().includes(q)),
+      const orderEntry = [...summaries.entries()].find(([key]) =>
+        (key.startsWith('user:') && `auth_${key.slice('user:'.length)}` === id) ||
+        (key.startsWith('guest:') && (guestId(key.slice('guest:'.length)) === id || key.slice('guest:'.length) === normalizedLookup)),
       );
+      if (!orderEntry) throw new NotFoundError('Customer not found.', 'CUSTOMER_NOT_FOUND');
+      const [key, foundSummary] = orderEntry;
+      summary = foundSummary;
+      const latest = summary.latestOrder!;
+      const fallback = key.startsWith('user:')
+        ? { userId: key.slice('user:'.length), email: latest.customer_email, name: latest.customer_name, phone: latest.customer_phone || '' }
+        : { email: latest.customer_email, name: latest.customer_name, phone: latest.customer_phone || '' };
+      customerData = mapCustomer(undefined, summary, fallback);
     }
 
-    if (query.tier && query.tier !== 'all') {
-      customers = customers.filter((c) => c.tier === query.tier);
-    }
-
-    const total = customers.length;
-    const paginated = customers.slice(skip, skip + limit);
-
+    const client = getSupabaseServiceClient();
+    let detailRows: { data: unknown[] | null; error: unknown | null };
+    try {
+      detailRows = summary.rows.length
+        ? await client.from('orders').select('*, order_items(*)').in('id', summary.rows.map((order) => order.id)).order('created_at', { ascending: false }) as unknown as { data: unknown[] | null; error: unknown | null }
+        : { data: [], error: null };
+    } catch { throw UNAVAILABLE(); }
+    if (detailRows.error) throw UNAVAILABLE();
+    const orderRows = ((detailRows.data || []) as OrderRow[]).map(mapOrder);
     return {
-      customers: paginated,
-      meta: buildPaginationMeta(page, limit, total),
+      customer: customerData.customer,
+      orders: orderRows,
+      sustainabilityImpact: customerData.sustainabilityImpact,
+      savedAddresses: customerData.savedAddresses,
+      marketingPreferences: customerData.marketingPreferences,
     };
   },
 
-  async getCustomerById(idOrEmail: string) {
-    const clean = idOrEmail.trim().toLowerCase();
-    const { customers } = await this.listCustomers({ limit: 100 });
-    const customer = customers.find((c) => c.id === clean || c.email.toLowerCase() === clean);
-
-    if (!customer) {
-      throw new NotFoundError(`Customer '${idOrEmail}' not found.`, 'CUSTOMER_NOT_FOUND');
-    }
-
-    let customerOrders: unknown[] = [];
-    if (isSupabaseConfigured()) {
-      try {
-        const client = getSupabaseAdminClient();
-        const { data: supaOrders } = await client
-          .from('orders')
-          .select('*, order_items(*)')
-          .eq('customer_email', customer.email)
-          .order('created_at', { ascending: false });
-        if (Array.isArray(supaOrders)) {
-          customerOrders = supaOrders.map((o: any) => ({
-            id: o.id,
-            orderNumber: o.order_number,
-            totalAmount: o.total_amount,
-            status: o.status,
-            paymentStatus: o.payment_status,
-            createdAt: o.created_at,
-            items: o.order_items || [],
-          }));
-        }
-      } catch {
-        // Continue
-      }
-    }
-
-    if (customerOrders.length === 0 && mongoose.connection.readyState === 1) {
-      try {
-        customerOrders = await Order.find({ 'customer.email': customer.email }).sort({ createdAt: -1 }).lean();
-      } catch {
-        customerOrders = [];
-      }
-    }
-
-    return {
-      customer,
-      orders: customerOrders,
-      sustainabilityImpact: {
-        garmentsSaved: Math.max(1, customer.totalOrders * 2),
-        co2AvoidedKg: Number((customer.totalOrders * 3.4).toFixed(1)),
-        waterSavedLitres: customer.totalOrders * 1800,
-      },
-    };
+  async updateCustomer(id: string, patch: {
+    name?: string; phone?: string; notes?: string; tier?: CustomerTier;
+    savedAddresses?: Array<Partial<IShippingAddress>>;
+    marketingOptInEmail?: boolean; marketingOptInWhatsapp?: boolean;
+  }) {
+    if (!id || id.length > 128) throw new BadRequestError('Invalid customer ID.', 'INVALID_CUSTOMER_ID');
+    const client = getSupabaseServiceClient();
+    const values: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (patch.name !== undefined) values.full_name = patch.name.trim();
+    if (patch.phone !== undefined) values.phone = patch.phone.trim();
+    if (patch.notes !== undefined) values.staff_notes = patch.notes;
+    if (patch.tier !== undefined) values.tier = patch.tier;
+    if (patch.savedAddresses !== undefined) values.saved_addresses = patch.savedAddresses;
+    if (patch.marketingOptInEmail !== undefined) values.marketing_opt_in_email = patch.marketingOptInEmail;
+    if (patch.marketingOptInWhatsapp !== undefined) values.marketing_opt_in_whatsapp = patch.marketingOptInWhatsapp;
+    let updated: { data: { id: string } | null; error: unknown | null };
+    try { updated = await client.from('customers').update(values).eq('id', id).select('id').maybeSingle() as unknown as typeof updated; }
+    catch { throw UNAVAILABLE(); }
+    const { data, error } = updated;
+    if (error) throw UNAVAILABLE();
+    if (!data) throw new NotFoundError('Customer profile not found.', 'CUSTOMER_NOT_FOUND');
+    return this.getCustomerById(id);
   },
 };
-

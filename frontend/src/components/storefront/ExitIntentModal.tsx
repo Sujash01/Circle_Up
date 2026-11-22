@@ -59,22 +59,22 @@ export function ExitIntentModal() {
   if (!open || typeof document === 'undefined') return null;
 
   const hasItems = totals.itemCount > 0;
-  const code = exitOffer?.code || (totals.subtotal >= 1500 ? 'CIRCLE20' : 'THRIFT10');
-  const codeDesc =
-    exitOffer?.badgeText || (code === 'CIRCLE20' ? '20% off orders ₹1,500+' : '10% off your curated find');
+  const code = exitOffer?.code || '';
+  const codeDesc = exitOffer?.badgeText || 'Discover something one of a kind';
 
   const copyCode = async () => {
+    if (!code) return;
     try { await navigator.clipboard.writeText(code); setCopied(true); }
     catch { showNotice(`Your code is ${code}.`); }
   };
 
   const handleClaim = () => {
-    applyPromoCode(code);
+    if (code) applyPromoCode(code);
     setOpen(false);
     if (hasItems) {
       navigate('/cart');
     } else {
-      showNotice(`Code ${code} saved to your bag for checkout.`);
+      if (code) showNotice(`Code ${code} saved. It will be verified at checkout.`);
       navigate('/new-arrivals');
     }
   };
@@ -117,7 +117,7 @@ export function ExitIntentModal() {
               : 'Take a small thank-you toward something one of a kind.'}
           </p>
 
-          <div className="exit-offer-coupon">
+          {code && <div className="exit-offer-coupon">
             <p className="exit-offer-code-label">{codeDesc}</p>
             <div className="exit-offer-code-row">
               <p className="exit-offer-code">{code}</p>
@@ -126,11 +126,11 @@ export function ExitIntentModal() {
                 {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
               </button>
             </div>
-          </div>
+          </div>}
 
           <div className="exit-offer-actions">
             <button type="button" onClick={handleClaim} className="exit-offer-claim">
-              {hasItems ? `Apply ${code} & view bag` : `Apply ${code} & browse finds`}
+              {hasItems ? (code ? `Use ${code} & view bag` : 'View bag') : (code ? `Use ${code} & browse finds` : 'Browse finds')}
             </button>
             <button type="button" onClick={() => setOpen(false)} className="exit-offer-dismiss">
               No thanks

@@ -77,7 +77,7 @@ describe('orderService checkout confirmation', () => {
     expect(getCheckoutPaymentLabel(order.paymentMethod, order.paymentStatus)).toContain('received and verified');
     expect(order.trackingNumber).toBe('');
     expect(order.courier).toBe('');
-    expect(window.localStorage.getItem(ORDERS_STORAGE_KEY)).not.toBeNull();
+    expect(window.localStorage.getItem(ORDERS_STORAGE_KEY)).toBeNull();
   });
 
   it('rejects a successful HTTP response that contains no persisted order identity', async () => {
@@ -107,5 +107,17 @@ describe('orderService checkout confirmation', () => {
 
     expect(order.courier).toBe('');
     expect(order.trackingNumber).toBe('');
+  });
+
+  it('loads customer orders from the backend and propagates API failures without local fallback', async () => {
+    const localOrder = { id: 'LOCAL-ONLY', orderNumber: 'LOCAL-ONLY' };
+    window.localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify([localOrder]));
+    const getSpy = vi.spyOn(apiClient, 'get')
+      .mockRejectedValueOnce(new Error('Order service unavailable'))
+      .mockResolvedValueOnce({ data: { data: [] } } as never);
+    await expect(orderService.getOrders('customer-uuid', 'shopper@example.com')).rejects.toThrow('Order service unavailable');
+
+    await expect(orderService.getOrders('customer-uuid')).resolves.toEqual([]);
+    expect(getSpy).toHaveBeenCalledWith('/orders/my-orders');
   });
 });

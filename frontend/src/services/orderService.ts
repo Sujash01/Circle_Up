@@ -1,6 +1,4 @@
-import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { apiClient, ApiClientError } from '@/services/apiClient';
-import { readStorage, writeStorage } from '@/services/storage';
 
 export const ORDERS_STORAGE_KEY = 'circleup_customer_orders_v1';
 
@@ -128,35 +126,6 @@ interface BackendOrderResponse {
   items?: Array<{ serialNumber?: string; name?: string; price?: number; quantity?: number; size?: string; image?: string }>;
 }
 
-interface SupabaseOrderRow {
-  id?: string;
-  order_number?: string;
-  customer_id?: string;
-  customer_name?: string;
-  customer_email?: string;
-  customer_phone?: string;
-  total_amount?: number;
-  subtotal?: number;
-  discount_amount?: number;
-  shipping_amount?: number;
-  status?: 'CONFIRMED' | 'IN_TRANSIT' | 'DELIVERED' | 'CANCELLED';
-  payment_method?: string;
-  payment_status?: 'PENDING' | 'PAID';
-  shipping_address?: string | { addressLine?: string; city?: string; state?: string; postalCode?: string };
-  tracking_number?: string;
-  courier?: string;
-  created_at?: string;
-  order_items?: Array<{
-    name?: string;
-    size?: string;
-    color?: string;
-    price?: number;
-    quantity?: number;
-    image_url?: string;
-    serial_number?: string;
-  }>;
-}
-
 function formatDate(date: Date): string {
   return date.toLocaleDateString('en-US', {
     month: 'long',
@@ -250,11 +219,6 @@ export const orderService = {
       createdAt: serverOrder.createdAt || now.toISOString(),
     };
 
-    // Persist locally only after the backend has confirmed a durable order.
-    const localExisting = readStorage<OrderRecord[]>(ORDERS_STORAGE_KEY, []);
-    const nextLocal = [orderRecord, ...localExisting.filter((o) => o.id !== serverOrder.orderNumber)];
-    writeStorage(ORDERS_STORAGE_KEY, nextLocal);
-
     // Notify listening UI components
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('circleup_orders_updated', { detail: orderRecord }));
@@ -264,188 +228,52 @@ export const orderService = {
   },
 
   /**
-   * Retrieves all orders for the active customer, querying the authoritative backend
-   * with fallback to LocalStorage.
+   * Retrieves orders through the authenticated Express API. Supabase remains the
+   * only persistence source; the browser never queries or substitutes order rows.
    */
-  async getOrders(customerId?: string, customerEmail?: string): Promise<OrderRecord[]> {
-    const localOrders = readStorage<OrderRecord[]>(ORDERS_STORAGE_KEY, []);
-    const cleanEmail = customerEmail?.toLowerCase().trim();
-
-    // Filter local orders relevant to current user
-    const relevantLocal = localOrders.filter((ord) => {
-      if (!customerId && !cleanEmail) return true;
-      if (customerId && ord.customerId === customerId) return true;
-      if (cleanEmail && ord.customerEmail === cleanEmail) return true;
-      return false;
+  async getOrders(customerId?: string, _customerEmail?: string): Promise<OrderRecord[]> {
+    if (!customerId) return [];
+    const res = await apiClient.get<{ data: BackendOrderResponse[] }>('/orders/my-orders');
+    if (!Array.isArray(res.data?.data)) {
+      throw new Error('The server did not return customer orders. Please try again.');
+    }
+    return res.data.data.map((row) => {
+      const createdAt = new Date(row.createdAt || Date.now());
+      const address = row.shippingAddress
+        ? `${row.shippingAddress.addressLine || ''}, ${row.shippingAddress.city || ''}, ${row.shippingAddress.state || ''} ${row.shippingAddress.postalCode || ''}`.trim()
+        : 'Delivery Address on File';
+      return {
+        id: row.orderNumber || '',
+        orderNumber: row.orderNumber || '',
+        date: formatDate(createdAt),
+        estimatedDelivery: formatDate(new Date(createdAt.getTime() + 4 * 24 * 60 * 60 * 1000)),
+        courier: row.courier || '',
+        trackingNumber: row.trackingNumber || '',
+        status: row.status || 'CONFIRMED',
+        step: row.status === 'DELIVERED' ? 4 : row.status === 'IN_TRANSIT' ? 3 : 2,
+        shippingAddress: address,
+        totalAmount: Number(row.totalAmount || 0),
+        subtotal: Number(row.subtotal || 0),
+        discount: Number(row.discount || 0),
+        shippingFee: Number(row.deliveryFee || 0),
+        customerId: row.customerId,
+        customerEmail: row.customer?.email || '',
+        customerName: row.customer?.name || '',
+        customerPhone: row.customer?.phone || '',
+        paymentMethod: row.paymentMethod || 'WHATSAPP_UPI',
+        paymentStatus: row.paymentStatus === 'PAID' ? 'PAID' : 'PENDING',
+        createdAt: row.createdAt || createdAt.toISOString(),
+        items: (row.items || []).map((item) => ({
+          name: item.name || 'Thrift Find',
+          size: item.size || 'Free Size',
+          color: 'Curated Wash',
+          image: item.image || '',
+          price: Number(item.price || 0),
+          qty: Number(item.quantity || 1),
+          serialNumber: item.serialNumber,
+        })),
+      };
     });
-
-    // 1. Try authoritative Express backend /orders/my-orders if customer is authenticated
-    if (customerId) {
-      try {
-        const res = await apiClient.get<{ data: BackendOrderResponse[] }>('/orders/my-orders');
-        if (Array.isArray(res.data?.data) && res.data.data.length > 0) {
-          const backendOrders: OrderRecord[] = res.data.data.map((row: BackendOrderResponse) => {
-            const createdAt = new Date(row.createdAt || Date.now());
-            const estDate = new Date(createdAt.getTime() + 4 * 24 * 60 * 60 * 1000);
-            const address = row.shippingAddress
-              ? `${row.shippingAddress.addressLine || ''}, ${row.shippingAddress.city || ''}, ${row.shippingAddress.state || ''} ${row.shippingAddress.postalCode || ''}`.trim()
-              : 'Delivery Address on File';
-
-            return {
-              id: row.orderNumber || '',
-              orderNumber: row.orderNumber || '',
-              date: formatDate(createdAt),
-              estimatedDelivery: formatDate(estDate),
-              courier: row.courier || '',
-              trackingNumber: row.trackingNumber || '',
-              status: row.status || 'CONFIRMED',
-              step: row.status === 'DELIVERED' ? 4 : row.status === 'IN_TRANSIT' ? 3 : 2,
-              shippingAddress: address,
-              totalAmount: Number(row.totalAmount || 0),
-              subtotal: Number(row.subtotal || 0),
-              discount: Number(row.discount || 0),
-              shippingFee: Number(row.deliveryFee || 0),
-              customerId: row.customerId,
-              customerEmail: row.customer?.email || '',
-              customerName: row.customer?.name || '',
-              customerPhone: row.customer?.phone || '',
-              paymentMethod: row.paymentMethod || 'WHATSAPP_UPI',
-              paymentStatus: row.paymentStatus === 'PAID' ? 'PAID' : 'PENDING',
-              createdAt: row.createdAt || new Date().toISOString(),
-              items: (row.items || []).map((it) => ({
-                name: it.name || 'Thrift Find',
-                size: it.size || 'Free Size',
-                color: 'Curated Wash',
-                image: it.image || '',
-                price: Number(it.price || 0),
-                qty: Number(it.quantity || 1),
-                serialNumber: it.serialNumber,
-              })),
-            };
-          });
-
-          // Merge backend and local orders deduplicated by orderNumber
-          const seen = new Set<string>();
-          const merged: OrderRecord[] = [];
-          for (const ord of backendOrders) {
-            seen.add(ord.orderNumber);
-            merged.push(ord);
-          }
-          for (const ord of relevantLocal) {
-            if (!seen.has(ord.orderNumber)) {
-              seen.add(ord.orderNumber);
-              merged.push(ord);
-            }
-          }
-          return merged;
-        }
-      } catch {
-        // Fall through to Supabase / LocalStorage
-      }
-    }
-
-    // 2. Strict customer_id check against Supabase if configured
-    if (isSupabaseConfigured() && customerId) {
-      try {
-        const { data, error } = await supabase
-          .from('orders')
-          .select(`
-            id,
-            order_number,
-            customer_id,
-            customer_name,
-            customer_email,
-            customer_phone,
-            total_amount,
-            subtotal,
-            discount_amount,
-            shipping_amount,
-            status,
-            payment_method,
-            shipping_address,
-            tracking_number,
-            courier,
-            created_at,
-            order_items (
-              name,
-              size,
-              color,
-              price,
-              quantity,
-              image_url,
-              serial_number
-            )
-          `)
-          .eq('customer_id', customerId)
-          .order('created_at', { ascending: false });
-
-        if (!error && Array.isArray(data)) {
-          const mappedRemote: OrderRecord[] = (data as unknown as SupabaseOrderRow[]).map((row) => {
-            const createdAt = new Date(row.created_at || Date.now());
-            const estDate = new Date(createdAt.getTime() + 4 * 24 * 60 * 60 * 1000);
-            const rawItems = Array.isArray(row.order_items) ? row.order_items : [];
-            const fullAddress =
-              typeof row.shipping_address === 'string'
-                ? row.shipping_address
-                : row.shipping_address && typeof row.shipping_address === 'object'
-                  ? `${row.shipping_address.addressLine || ''}, ${row.shipping_address.city || ''}, ${row.shipping_address.state || ''} ${row.shipping_address.postalCode || ''}`.trim()
-                  : 'Delivery Address on File';
-
-            return {
-              id: row.order_number || row.id || '',
-              orderNumber: row.order_number || row.id || '',
-              date: formatDate(createdAt),
-              estimatedDelivery: formatDate(estDate),
-              courier: row.courier || '',
-              trackingNumber: row.tracking_number || '',
-              status: row.status || 'CONFIRMED',
-              step: row.status === 'DELIVERED' ? 4 : row.status === 'IN_TRANSIT' ? 3 : 2,
-              shippingAddress: fullAddress,
-              totalAmount: Number(row.total_amount || 0),
-              subtotal: Number(row.subtotal || 0),
-              discount: Number(row.discount_amount || 0),
-              shippingFee: Number(row.shipping_amount || 0),
-              customerId: row.customer_id,
-              customerEmail: row.customer_email || '',
-              customerName: row.customer_name || '',
-              customerPhone: row.customer_phone || '',
-              paymentMethod: row.payment_method || 'COD',
-              paymentStatus: row.payment_status === 'PAID' ? 'PAID' : 'PENDING',
-              createdAt: row.created_at || new Date().toISOString(),
-              items: rawItems.map((it) => ({
-                name: it.name || 'Thrift Find',
-                size: it.size || 'Free Size',
-                color: it.color || 'Curated Wash',
-                image: it.image_url || '',
-                price: Number(it.price || 0),
-                qty: Number(it.quantity || 1),
-                serialNumber: it.serial_number,
-              })),
-            };
-          });
-
-          const seenIds = new Set<string>();
-          const combined: OrderRecord[] = [];
-          for (const ord of mappedRemote) {
-            if (!seenIds.has(ord.id)) {
-              seenIds.add(ord.id);
-              combined.push(ord);
-            }
-          }
-          for (const ord of relevantLocal) {
-            if (!seenIds.has(ord.id)) {
-              seenIds.add(ord.id);
-              combined.push(ord);
-            }
-          }
-          return combined;
-        }
-      } catch (err) {
-        console.warn('[OrderService] Supabase query notice:', err);
-      }
-    }
-
-    return relevantLocal;
   },
 
   /**

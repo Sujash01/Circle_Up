@@ -1,17 +1,8 @@
 import argon2 from 'argon2';
-import crypto from 'crypto';
-import mongoose from 'mongoose';
-import { AdminUser, type IAdminUserDocument } from '../models/AdminUser.js';
+import crypto from 'node:crypto';
 import { env } from '../config/env.js';
-import { isSupabaseBackendConfigured, getSupabaseServiceClient } from '../config/supabase.js';
-import {
-  BadRequestError,
-  ForbiddenError,
-  NotFoundError,
-  ServiceUnavailableError,
-  TooManyRequestsError,
-  UnauthorizedError,
-} from '../errors/AppError.js';
+import { getSupabaseServiceClient } from '../config/supabase.js';
+import { BadRequestError, ConflictError, ForbiddenError, NotFoundError, ServiceUnavailableError, TooManyRequestsError, UnauthorizedError } from '../errors/AppError.js';
 
 export interface AdminSessionData {
   userId: string;
@@ -20,480 +11,195 @@ export interface AdminSessionData {
   role: 'owner' | 'staff';
   csrfToken: string;
   expiresAt: number;
+  sessionId: string;
 }
 
-// In-memory session store / mock fallback for offline or serverless testing
-const IN_MEMORY_SESSIONS = new Map<string, AdminSessionData>();
-
-// In-memory mock admin users for offline or test mode when MongoDB is disconnected
-const MOCK_ADMIN_USERS: Array<Record<string, unknown>> = [];
-
-function isDbConnected(): boolean {
-  return mongoose.connection.readyState === 1;
-}
-
-export function isProductionEnvironment(): boolean {
-  return process.env.NODE_ENV === 'production' || env.NODE_ENV === 'production';
-}
-
+export function isProductionEnvironment(): boolean { return env.NODE_ENV === 'production'; }
 export const DEFAULT_INSECURE_SESSION_SECRET = 'circleup-super-secret-admin-session-signing-key-32chars';
-
 export function resolveSessionSecret(): string {
-  if (isProductionEnvironment()) {
-    const secret = process.env.SESSION_SECRET || env.SESSION_SECRET;
-    if (
-      !secret ||
-      secret === DEFAULT_INSECURE_SESSION_SECRET ||
-      secret.length < 32
-    ) {
-      throw new Error(
-        'Fatal Security Configuration: SESSION_SECRET is missing, default, or under 32 characters in production.',
-      );
-    }
-    return secret;
+  const secret = process.env.SESSION_SECRET || env.SESSION_SECRET;
+  if (isProductionEnvironment() && (!secret || secret === DEFAULT_INSECURE_SESSION_SECRET || secret.length < 32)) {
+    throw new Error('SESSION_SECRET must be unique and at least 32 characters in production.');
   }
-  return env.SESSION_SECRET || DEFAULT_INSECURE_SESSION_SECRET;
+  return secret || DEFAULT_INSECURE_SESSION_SECRET;
 }
 
-const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+const SESSION_HASH = (token: string) => crypto.createHash('sha256').update(token).digest('hex');
+const dbUnavailable = () => new ServiceUnavailableError('Authentication database is unavailable.', 'DATABASE_UNAVAILABLE');
 
 export function signSessionToken(data: AdminSessionData): string {
-  const secret = resolveSessionSecret();
   const payload = Buffer.from(JSON.stringify(data)).toString('base64url');
-  const signature = crypto
-    .createHmac('sha256', secret)
-    .update(payload)
-    .digest('base64url');
+  const signature = crypto.createHmac('sha256', resolveSessionSecret()).update(payload).digest('base64url');
   return `${payload}.${signature}`;
 }
 
 export function verifySessionToken(token: string): AdminSessionData | null {
   try {
-    const [payload, signature] = token.split('.');
-    if (!payload || !signature) return null;
-
-    const secret = resolveSessionSecret();
-    const expectedSignature = crypto
-      .createHmac('sha256', secret)
-      .update(payload)
-      .digest('base64url');
-
-    if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
-      return null;
-    }
-
-    const data: AdminSessionData = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-    if (Date.now() > data.expiresAt) {
-      return null;
-    }
-
-    return data;
-  } catch {
-    return null;
-  }
+    const [payload, signature, extra] = token.split('.');
+    if (!payload || !signature || extra) return null;
+    const expected = crypto.createHmac('sha256', resolveSessionSecret()).update(payload).digest();
+    const supplied = Buffer.from(signature, 'base64url');
+    if (supplied.length !== expected.length || !crypto.timingSafeEqual(supplied, expected)) return null;
+    const value = JSON.parse(Buffer.from(payload, 'base64url').toString()) as AdminSessionData;
+    if (!value.userId || !value.sessionId || !value.csrfToken || !Number.isFinite(value.expiresAt) || value.expiresAt <= Date.now()) return null;
+    if (value.role !== 'owner' && value.role !== 'staff') return null;
+    return value;
+  } catch { return null; }
 }
 
-export function generateCsrfToken(): string {
-  return crypto.randomBytes(32).toString('hex');
+export function generateCsrfToken(): string { return crypto.randomBytes(32).toString('hex'); }
+
+async function requiredClient() {
+  try { return getSupabaseServiceClient(); } catch { throw dbUnavailable(); }
+}
+
+async function databaseCall<T>(operation: () => PromiseLike<T>): Promise<T> {
+  try { return await operation(); } catch { throw dbUnavailable(); }
 }
 
 export const adminAuthService = {
-  async hashPassword(password: string): Promise<string> {
-    return argon2.hash(password, { type: argon2.argon2id });
-  },
-
+  async hashPassword(password: string): Promise<string> { return argon2.hash(password, { type: argon2.argon2id }); },
   async verifyPassword(hash: string, plain: string): Promise<boolean> {
-    try {
-      return await argon2.verify(hash, plain);
-    } catch {
-      return false;
-    }
+    try { return await argon2.verify(hash, plain); } catch { return false; }
   },
 
-  async login(email: string, plainPassword: string): Promise<{
-    user: { id: string; email: string; name: string; role: string };
-    sessionToken: string;
-    csrfToken: string;
-  }> {
+  async login(email: string, plainPassword: string) {
+    const client = await requiredClient();
     const cleanEmail = email.trim().toLowerCase();
-
-    // 1. Primary Authentication: Supabase `admin_users` table
-    if (isSupabaseBackendConfigured()) {
+    let result;
+    try {
+      result = await client.from('admin_users').select('id,email,full_name,role,password_hash,is_active,failed_attempts,locked_until').eq('email', cleanEmail).maybeSingle();
+    } catch { throw dbUnavailable(); }
+    if (result.error) throw dbUnavailable();
+    const user = result.data;
+    if (!user) throw new UnauthorizedError('Invalid admin email or password.', 'INVALID_CREDENTIALS');
+    if (!user.is_active) throw new ForbiddenError('Admin account has been deactivated.', 'ACCOUNT_DEACTIVATED');
+    if (user.locked_until && new Date(user.locked_until).getTime() > Date.now()) {
+      const minutes = Math.max(1, Math.ceil((new Date(user.locked_until).getTime() - Date.now()) / 60000));
+      throw new TooManyRequestsError(`Account locked due to consecutive failed logins. Try again in ${minutes} minutes.`, 'ACCOUNT_LOCKED');
+    }
+    const valid = await this.verifyPassword(user.password_hash, plainPassword);
+    if (!valid) {
       try {
-        const client = getSupabaseServiceClient();
-        let { data: supaUser } = await client
-          .from('admin_users')
-          .select('*')
-          .eq('email', cleanEmail)
-          .maybeSingle();
-
-        // Seed default owner / staff credentials into Supabase on first run if missing
-        if (!supaUser) {
-          const isOwnerCreds = cleanEmail === 'owner@circleuponline.com' && plainPassword === 'OwnerPassword123';
-          const isStaffCreds = cleanEmail === 'staff@circleuponline.com' && plainPassword === 'StaffPassword123';
-
-          if (isOwnerCreds || isStaffCreds) {
-            const role = isOwnerCreds ? 'owner' : 'admin';
-            const name = isOwnerCreds ? 'CircleUp Owner' : 'CircleUp Staff';
-            const passwordHash = await this.hashPassword(plainPassword);
-            const { data: seeded } = await client
-              .from('admin_users')
-              .insert([
-                {
-                  email: cleanEmail,
-                  full_name: name,
-                  password_hash: passwordHash,
-                  role,
-                  is_active: true,
-                },
-              ])
-              .select('*')
-              .single();
-            if (seeded) {
-              supaUser = seeded;
-            }
-          }
-        }
-
-        if (supaUser && supaUser.is_active) {
-          const valid = await this.verifyPassword(supaUser.password_hash, plainPassword);
-          if (valid) {
-            const csrfToken = generateCsrfToken();
-            const sessionData: AdminSessionData = {
-              userId: String(supaUser.id),
-              email: supaUser.email,
-              name: supaUser.full_name || supaUser.name || 'Admin User',
-              role: (supaUser.role === 'owner' ? 'owner' : 'staff') as 'owner' | 'staff',
-              csrfToken,
-              expiresAt: Date.now() + SESSION_TTL_MS,
-            };
-
-            const sessionToken = signSessionToken(sessionData);
-            IN_MEMORY_SESSIONS.set(sessionToken, sessionData);
-
-            // Update last_login_at in Supabase non-blockingly
-            void client
-              .from('admin_users')
-              .update({ last_login_at: new Date().toISOString() })
-              .eq('id', supaUser.id);
-
-            return {
-              user: {
-                id: sessionData.userId,
-                email: sessionData.email,
-                name: sessionData.name,
-                role: sessionData.role,
-              },
-              sessionToken,
-              csrfToken,
-            };
-          }
-        }
-      } catch {
-        // Fall back gracefully to MongoDB / in-memory sessions
-      }
-    }
-
-    if (!isDbConnected()) {
-      if (isProductionEnvironment()) {
-        throw new ServiceUnavailableError(
-          'Authentication service is temporarily unavailable. Database connection is offline.',
-          'DATABASE_UNAVAILABLE',
-        );
-      }
-
-      // Degraded / testing mode: resolve from MOCK_ADMIN_USERS
-      let mock = MOCK_ADMIN_USERS.find((u) => u.email === cleanEmail);
-      if (!mock && cleanEmail === 'owner@circleuponline.com') {
-        mock = {
-          id: 'owner-default-01',
-          email: 'owner@circleuponline.com',
-          name: 'CircleUp Owner',
-          passwordHash: await this.hashPassword('OwnerPassword123'),
-          role: 'owner',
-          isActive: true,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-        MOCK_ADMIN_USERS.push(mock);
-      }
-      if (!mock && cleanEmail === 'staff@circleuponline.com') {
-        mock = {
-          id: 'staff-default-01',
-          email: 'staff@circleuponline.com',
-          name: 'CircleUp Staff',
-          passwordHash: await this.hashPassword('StaffPassword123'),
-          role: 'staff',
-          isActive: true,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-        MOCK_ADMIN_USERS.push(mock);
-      }
-
-      if (!mock || !(await this.verifyPassword(String(mock.passwordHash), plainPassword))) {
-        throw new UnauthorizedError('Invalid admin email or password.', 'INVALID_CREDENTIALS');
-      }
-
-      const csrfToken = generateCsrfToken();
-      const sessionData: AdminSessionData = {
-        userId: String(mock.id),
-        email: String(mock.email),
-        name: String(mock.name),
-        role: mock.role as 'owner' | 'staff',
-        csrfToken,
-        expiresAt: Date.now() + SESSION_TTL_MS,
-      };
-
-      const sessionToken = signSessionToken(sessionData);
-      IN_MEMORY_SESSIONS.set(sessionToken, sessionData);
-
-      return {
-        user: {
-          id: sessionData.userId,
-          email: sessionData.email,
-          name: sessionData.name,
-          role: sessionData.role,
-        },
-        sessionToken,
-        csrfToken,
-      };
-    }
-
-    const user = await AdminUser.findOne({ email: cleanEmail });
-    if (!user) {
-      if (isSupabaseBackendConfigured()) {
-        try {
-          const { data: supaUser } = await getSupabaseServiceClient()
-            .from('admin_users')
-            .select('*')
-            .eq('email', cleanEmail)
-            .maybeSingle();
-          if (supaUser && supaUser.is_active) {
-            const valid = await this.verifyPassword(supaUser.password_hash, plainPassword);
-            if (valid) {
-              const csrfToken = generateCsrfToken();
-              const sessionData: AdminSessionData = {
-                userId: String(supaUser.id),
-                email: supaUser.email,
-                name: supaUser.name,
-                role: supaUser.role as 'owner' | 'staff',
-                csrfToken,
-                expiresAt: Date.now() + SESSION_TTL_MS,
-              };
-              const sessionToken = signSessionToken(sessionData);
-              IN_MEMORY_SESSIONS.set(sessionToken, sessionData);
-              return {
-                user: {
-                  id: sessionData.userId,
-                  email: sessionData.email,
-                  name: sessionData.name,
-                  role: sessionData.role,
-                },
-                sessionToken,
-                csrfToken,
-              };
-            }
-          }
-        } catch {
-          // Continue to fallback
-        }
-      }
-
-      // Allow demo credentials in development if MongoDB collection has not been seeded
-      if (!isProductionEnvironment()) {
-        if (cleanEmail === 'owner@circleuponline.com' && plainPassword === 'OwnerPassword123') {
-          const csrfToken = generateCsrfToken();
-          const sessionData: AdminSessionData = {
-            userId: 'owner-default-01',
-            email: 'owner@circleuponline.com',
-            name: 'CircleUp Owner',
-            role: 'owner',
-            csrfToken,
-            expiresAt: Date.now() + SESSION_TTL_MS,
-          };
-          const sessionToken = signSessionToken(sessionData);
-          IN_MEMORY_SESSIONS.set(sessionToken, sessionData);
-          return {
-            user: {
-              id: sessionData.userId,
-              email: sessionData.email,
-              name: sessionData.name,
-              role: sessionData.role,
-            },
-            sessionToken,
-            csrfToken,
-          };
-        }
-        if (cleanEmail === 'staff@circleuponline.com' && plainPassword === 'StaffPassword123') {
-          const csrfToken = generateCsrfToken();
-          const sessionData: AdminSessionData = {
-            userId: 'staff-default-01',
-            email: 'staff@circleuponline.com',
-            name: 'CircleUp Staff',
-            role: 'staff',
-            csrfToken,
-            expiresAt: Date.now() + SESSION_TTL_MS,
-          };
-          const sessionToken = signSessionToken(sessionData);
-          IN_MEMORY_SESSIONS.set(sessionToken, sessionData);
-          return {
-            user: {
-              id: sessionData.userId,
-              email: sessionData.email,
-              name: sessionData.name,
-              role: sessionData.role,
-            },
-            sessionToken,
-            csrfToken,
-          };
-        }
-      }
-
+        const failed = await client.rpc('record_admin_login_failure', { p_user_id: user.id });
+        if (failed.error) throw failed.error;
+      } catch { throw dbUnavailable(); }
       throw new UnauthorizedError('Invalid admin email or password.', 'INVALID_CREDENTIALS');
     }
 
-    // Check lockout
-    if (user.lockedUntil && user.lockedUntil > new Date()) {
-      const waitMin = Math.ceil((user.lockedUntil.getTime() - Date.now()) / (60 * 1000));
-      throw new TooManyRequestsError(
-        `Account locked due to consecutive failed logins. Try again in ${waitMin} minutes.`,
-      );
-    }
-
-    if (!user.isActive) {
-      throw new ForbiddenError('Admin account has been deactivated.', 'ACCOUNT_DEACTIVATED');
-    }
-
-    const isValid = await this.verifyPassword(user.passwordHash, plainPassword);
-    if (!isValid) {
-      user.failedAttempts = (user.failedAttempts || 0) + 1;
-      if (user.failedAttempts >= 5) {
-        user.lockedUntil = new Date(Date.now() + 15 * 60 * 1000); // 15 min lockout
-        user.failedAttempts = 0;
-      }
-      await user.save();
-      throw new UnauthorizedError('Invalid admin email or password.', 'INVALID_CREDENTIALS');
-    }
-
-    // Reset failed attempts on success
-    user.failedAttempts = 0;
-    user.lockedUntil = null;
-    user.lastLoginAt = new Date();
-    await user.save();
-
+    const now = new Date().toISOString();
+    const reset = await databaseCall(() => client.from('admin_users').update({ failed_attempts: 0, locked_until: null, last_login_at: now }).eq('id', user.id));
+    if (reset.error) throw dbUnavailable();
+    const sessionId = crypto.randomUUID();
     const csrfToken = generateCsrfToken();
     const sessionData: AdminSessionData = {
-      userId: String(user._id),
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      csrfToken,
-      expiresAt: Date.now() + SESSION_TTL_MS,
+      userId: String(user.id), email: user.email, name: user.full_name,
+      role: user.role === 'owner' ? 'owner' : 'staff', csrfToken,
+      expiresAt: Date.now() + SESSION_TTL_MS, sessionId,
     };
-
     const sessionToken = signSessionToken(sessionData);
-    IN_MEMORY_SESSIONS.set(sessionToken, sessionData);
-
-    return {
-      user: {
-        id: sessionData.userId,
-        email: sessionData.email,
-        name: sessionData.name,
-        role: sessionData.role,
-      },
-      sessionToken,
-      csrfToken,
-    };
+    const stored = await databaseCall(() => client.from('admin_auth_sessions').insert({
+      id: sessionId, user_id: user.id, token_hash: SESSION_HASH(sessionToken), expires_at: new Date(sessionData.expiresAt).toISOString(),
+    }));
+    if (stored.error) throw dbUnavailable();
+    return { user: { id: sessionData.userId, email: sessionData.email, name: sessionData.name, role: sessionData.role }, sessionToken, csrfToken, sessionId };
   },
 
-  async createAdminUser(data: {
-    email: string;
-    password: string;
-    name: string;
-    role: 'owner' | 'staff';
-    force?: boolean;
-  }): Promise<IAdminUserDocument | Record<string, unknown>> {
+  async validateSession(token: string): Promise<AdminSessionData | null> {
+    const session = verifySessionToken(token);
+    if (!session) return null;
+    const client = await requiredClient();
+    const { data, error } = await databaseCall(() => client.from('admin_auth_sessions').select('id,expires_at,revoked_at,admin_users!inner(id,email,full_name,role,is_active)').eq('id', session.sessionId).eq('token_hash', SESSION_HASH(token)).is('revoked_at', null).gt('expires_at', new Date().toISOString()).maybeSingle());
+    if (error) throw dbUnavailable();
+    const user = data?.admin_users as unknown as Record<string, unknown> | undefined;
+    if (!user || user.is_active !== true || String(user.id) !== session.userId) return null;
+    return { ...session, email: String(user.email), name: String(user.full_name), role: user.role === 'owner' ? 'owner' : 'staff' };
+  },
+
+  async revokeSession(session: AdminSessionData, token: string): Promise<void> {
+    const client = await requiredClient();
+    const { error } = await databaseCall(() => client.from('admin_auth_sessions').update({ revoked_at: new Date().toISOString() }).eq('id', session.sessionId).eq('token_hash', SESSION_HASH(token)).is('revoked_at', null));
+    if (error) throw dbUnavailable();
+  },
+
+  async changePassword(userId: string, currentPlain: string, newPlain: string, currentSessionId?: string): Promise<void> {
+    if (newPlain.length < 8) throw new BadRequestError('Password must be at least 8 characters.', 'WEAK_PASSWORD');
+    const client = await requiredClient();
+    const { data: user, error } = await databaseCall(() => client.from('admin_users').select('password_hash').eq('id', userId).maybeSingle());
+    if (error) throw dbUnavailable();
+    if (!user) throw new NotFoundError('Admin user not found.', 'USER_NOT_FOUND');
+    if (!(await this.verifyPassword(user.password_hash, currentPlain))) throw new UnauthorizedError('Current password is incorrect.', 'INVALID_PASSWORD');
+    const passwordHash = await this.hashPassword(newPlain);
+    const updated = await databaseCall(() => client.rpc('change_admin_password', { p_user_id: userId, p_password_hash: passwordHash, p_keep_session_id: currentSessionId || null }));
+    if (updated.error) {
+      if (updated.error.message?.includes('USER_NOT_FOUND')) throw new NotFoundError('Admin user not found.', 'USER_NOT_FOUND');
+      throw dbUnavailable();
+    }
+  },
+
+  async createAdminUser(data: { email: string; password: string; name: string; role: 'owner' | 'staff'; force?: boolean }) {
+    if (data.password.length < 8) throw new BadRequestError('Password must be at least 8 characters.', 'WEAK_PASSWORD');
+    const client = await requiredClient();
     const cleanEmail = data.email.trim().toLowerCase();
-    const passwordHash = await this.hashPassword(data.password);
-
-    if (!isDbConnected()) {
-      if (isProductionEnvironment()) {
-        throw new ServiceUnavailableError(
-          'Database connection is offline. Cannot create admin user.',
-          'DATABASE_UNAVAILABLE',
-        );
-      }
-      const existing = MOCK_ADMIN_USERS.find((u) => u.email === cleanEmail);
-      if (existing) {
-        throw new BadRequestError(`Admin with email ${cleanEmail} already exists.`, 'DUPLICATE_EMAIL');
-      }
-      const mock = {
-        id: `admin-${Date.now()}`,
-        email: cleanEmail,
-        name: data.name,
-        passwordHash,
-        role: data.role,
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      MOCK_ADMIN_USERS.push(mock);
-      return mock;
-    }
-
+    if (cleanEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) throw new BadRequestError('A valid email is required.', 'INVALID_EMAIL');
+    if (!data.name.trim() || data.name.trim().length > 120) throw new BadRequestError('Administrator name must contain 1 to 120 characters.', 'INVALID_NAME');
     if (data.role === 'owner' && !data.force) {
-      const existingOwner = await AdminUser.findOne({ role: 'owner' });
-      if (existingOwner) {
-        throw new BadRequestError(
-          'An owner account already exists. Pass --force to create another owner.',
-          'OWNER_EXISTS',
-        );
-      }
+      const owner = await databaseCall(() => client.from('admin_users').select('id').eq('role', 'owner').limit(1).maybeSingle());
+      if (owner.error) throw dbUnavailable();
+      if (owner.data) throw new ConflictError('An owner account already exists.', 'OWNER_EXISTS');
     }
-
-    const existingUser = await AdminUser.findOne({ email: cleanEmail });
-    if (existingUser) {
-      throw new BadRequestError(`Admin with email ${cleanEmail} already exists.`, 'DUPLICATE_EMAIL');
+    const passwordHash = await this.hashPassword(data.password);
+    const { data: created, error } = await databaseCall(() => client.from('admin_users').insert({ email: cleanEmail, full_name: data.name.trim(), role: data.role, password_hash: passwordHash, is_active: true }).select('id,email,full_name,role,is_active,created_at,updated_at').single());
+    if (error) {
+      if (error.code === '23505') throw new ConflictError('An administrator with that email already exists.', 'DUPLICATE_EMAIL');
+      throw dbUnavailable();
     }
-
-    return AdminUser.create({
-      email: cleanEmail,
-      passwordHash,
-      name: data.name,
-      role: data.role,
-      isActive: true,
-    });
+    if (!created) throw dbUnavailable();
+    return { id: created.id, email: created.email, name: created.full_name, role: created.role, isActive: created.is_active, createdAt: created.created_at, updatedAt: created.updated_at };
   },
 
-  async changePassword(userId: string, currentPlain: string, newPlain: string): Promise<void> {
-    if (newPlain.length < 8) {
-      throw new BadRequestError('Password must be at least 8 characters.', 'WEAK_PASSWORD');
+  async listAdminUsers() {
+    const client = await requiredClient();
+    const { data, error } = await databaseCall(() => client.from('admin_users').select('id,email,full_name,role,is_active,last_login_at,created_at,updated_at').order('created_at', { ascending: false }));
+    if (error) throw dbUnavailable();
+    return (data || []).map((user) => ({ id: user.id, email: user.email, name: user.full_name, role: user.role, isActive: user.is_active, lastLoginAt: user.last_login_at, createdAt: user.created_at, updatedAt: user.updated_at }));
+  },
+
+  async getAdminUserById(id: string) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new BadRequestError('Invalid administrator ID.', 'INVALID_ID');
+    const client = await requiredClient();
+    const { data, error } = await databaseCall(() => client.from('admin_users').select('id,email,full_name,role,is_active,last_login_at,created_at,updated_at').eq('id', id).maybeSingle());
+    if (error) throw dbUnavailable();
+    if (!data) throw new NotFoundError('Admin user not found.', 'USER_NOT_FOUND');
+    return { id: data.id, email: data.email, name: data.full_name, role: data.role, isActive: data.is_active, lastLoginAt: data.last_login_at, createdAt: data.created_at, updatedAt: data.updated_at };
+  },
+
+  async updateAdminUser(targetId: string, actorId: string, patch: { email?: string; name?: string; role?: 'owner' | 'staff'; isActive?: boolean; password?: string }) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(targetId)) throw new BadRequestError('Invalid administrator ID.', 'INVALID_ID');
+    if (targetId === actorId && (patch.role !== undefined || patch.isActive === false)) throw new ForbiddenError('You cannot change your own role or deactivate your own account.', 'SELF_ADMIN_CHANGE_FORBIDDEN');
+    if (patch.password !== undefined && patch.password.length < 8) throw new BadRequestError('Password must be at least 8 characters.', 'WEAK_PASSWORD');
+    if (patch.email !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(patch.email.trim())) throw new BadRequestError('A valid email is required.', 'INVALID_EMAIL');
+    const client = await requiredClient();
+    const update: Record<string, unknown> = {};
+    if (patch.email !== undefined) update.email = patch.email.trim().toLowerCase();
+    if (patch.name !== undefined) update.name = patch.name.trim();
+    if (patch.role !== undefined) update.role = patch.role;
+    if (patch.isActive !== undefined) update.is_active = patch.isActive;
+    if (patch.password !== undefined) update.password_hash = await this.hashPassword(patch.password);
+    const { data: response, error } = await databaseCall(() => client.rpc('admin_update_user', { p_actor_id: actorId, p_target_id: targetId, p_patch: update }));
+    if (error) {
+      if (error.message?.includes('USER_NOT_FOUND')) throw new NotFoundError('Admin user not found.', 'USER_NOT_FOUND');
+      if (error.message?.includes('LAST_OWNER_REQUIRED')) throw new ConflictError('The last active owner cannot be demoted or deactivated.', 'LAST_OWNER_REQUIRED');
+      if (error.code === '23505') throw new ConflictError('An administrator with that email already exists.', 'DUPLICATE_EMAIL');
+      if (error.message?.includes('SELF_ADMIN_CHANGE_FORBIDDEN') || error.code === '42501') throw new ForbiddenError('Owner privilege required for this action.', 'FORBIDDEN_ROLE');
+      throw dbUnavailable();
     }
-
-    if (!isDbConnected()) {
-      if (isProductionEnvironment()) {
-        throw new ServiceUnavailableError(
-          'Database connection is offline. Cannot change password.',
-          'DATABASE_UNAVAILABLE',
-        );
-      }
-      const mock = MOCK_ADMIN_USERS.find((u) => u.id === userId);
-      if (!mock) throw new NotFoundError('Admin user not found', 'USER_NOT_FOUND');
-      const valid = await this.verifyPassword(String(mock.passwordHash), currentPlain);
-      if (!valid) throw new UnauthorizedError('Current password is incorrect.', 'INVALID_PASSWORD');
-      mock.passwordHash = await this.hashPassword(newPlain);
-      return;
-    }
-
-    const user = await AdminUser.findById(userId);
-    if (!user) throw new NotFoundError('Admin user not found', 'USER_NOT_FOUND');
-
-    const valid = await this.verifyPassword(user.passwordHash, currentPlain);
-    if (!valid) throw new UnauthorizedError('Current password is incorrect.', 'INVALID_PASSWORD');
-
-    user.passwordHash = await this.hashPassword(newPlain);
-    await user.save();
+    const data = (Array.isArray(response) ? response[0] : response) as {
+      id: string; email: string; full_name: string; role: 'owner' | 'staff'; is_active: boolean;
+      last_login_at: string | null; created_at: string; updated_at: string;
+    } | null;
+    if (!data) throw dbUnavailable();
+    return { id: data.id, email: data.email, name: data.full_name, role: data.role, isActive: data.is_active, lastLoginAt: data.last_login_at, createdAt: data.created_at, updatedAt: data.updated_at };
   },
 };
-

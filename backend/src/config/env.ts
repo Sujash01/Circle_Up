@@ -30,7 +30,6 @@ export const strictBooleanEnvSchema = z
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'staging', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(5001),
-  MONGODB_URI: z.string().default(''),
   JWT_ACCESS_SECRET: z.string().default(''),
   JWT_ADMIN_ACCESS_SECRET: z.string().default(''),
   JWT_ACCESS_TTL: z.string().default('15m'),
@@ -41,17 +40,12 @@ const envSchema = z.object({
   SUPABASE_URL: z.string().optional(),
   SUPABASE_ANON_KEY: z.string().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
-  // Explicit Checkout Provider Selection:
-  // Supabase is the canonical target architecture and default provider.
-  // The legacy MongoDB checkout provider is only available in dev/test for migration compatibility.
-  CHECKOUT_PROVIDER: z.enum(['supabase', 'mongodb']).default('supabase'),
   // Monetary-Unit Safety Gate:
   // Canonical financial units across CircleUp are non-negative integer paise (1 INR = 100 paise).
   // In production, Supabase checkout cannot be activated until the production database
   // products table has been audited and verified to use paise (e.g. 400000 for ₹4,000).
   // Strictly parsed boolean: "true" -> true, "false" -> false, missing/empty -> false.
   MONETARY_RECONCILIATION_VERIFIED: strictBooleanEnvSchema,
-  STORAGE_CDN_URL: z.string().optional(),
   COOKIE_DOMAIN: z.string().optional(),
   CORS_ALLOWED_ORIGINS: z
     .string()
@@ -63,9 +57,6 @@ const envSchema = z.object({
         .filter(Boolean),
     ),
   FRONTEND_URL: z.string().url().default('https://circleuponline.com'),
-  CLOUDINARY_CLOUD_NAME: z.string().optional(),
-  CLOUDINARY_API_KEY: z.string().optional(),
-  CLOUDINARY_API_SECRET: z.string().optional(),
   EMAIL_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().email().default('noreply@circleup.in'),
   RAZORPAY_MODE: z.literal('test').default('test'),
@@ -109,13 +100,6 @@ const envSchema = z.object({
       }
     }
 
-    if (data.CHECKOUT_PROVIDER === 'mongodb') {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['CHECKOUT_PROVIDER'],
-        message: 'Legacy MongoDB checkout provider cannot be enabled in production. Production must use Supabase.',
-      });
-    }
   }
 });
 

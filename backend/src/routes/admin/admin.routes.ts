@@ -26,7 +26,7 @@ adminRouter.use(noStoreCache);
 
 // === AUTHENTICATION ===
 adminRouter.post('/auth/login', adminAuthRateLimiter, adminAuthController.login);
-adminRouter.post('/auth/logout', requireAdminAuth(), adminAuthController.logout);
+adminRouter.post('/auth/logout', requireAdminAuth(), verifyAdminCsrf, adminAuthController.logout);
 adminRouter.get('/auth/me', requireAdminAuth(), adminAuthController.me);
 adminRouter.post(
   '/auth/change-password',
@@ -34,6 +34,10 @@ adminRouter.post(
   verifyAdminCsrf,
   adminAuthController.changePassword,
 );
+adminRouter.get('/users', requireAdminAuth('owner'), adminAuthController.listUsers);
+adminRouter.get('/users/:id', requireAdminAuth('owner'), adminAuthController.getUser);
+adminRouter.post('/users', requireAdminAuth('owner'), verifyAdminCsrf, adminAuthController.createUser);
+adminRouter.patch('/users/:id', requireAdminAuth('owner'), verifyAdminCsrf, adminAuthController.updateUser);
 
 // === PRODUCTS (CRUD, BULK, SOFT & PERMANENT DELETE) ===
 adminRouter.get('/products', requireAdminAuth(), adminProductController.list);
@@ -83,6 +87,7 @@ adminRouter.put(
 // === CUSTOMERS (CRM) ===
 adminRouter.get('/customers', requireAdminAuth(), adminCustomerController.list);
 adminRouter.get('/customers/:id', requireAdminAuth(), adminCustomerController.getById);
+adminRouter.patch('/customers/:id', requireAdminAuth('owner'), verifyAdminCsrf, adminCustomerController.update);
 
 // === MEDIA UPLOAD ===
 adminRouter.post(
@@ -92,6 +97,7 @@ adminRouter.post(
   upload.array('images', 5),
   adminMediaController.upload,
 );
+adminRouter.delete('/media', requireAdminAuth(), verifyAdminCsrf, adminMediaController.delete);
 
 // === SITE SETTINGS (OWNER ONLY FOR MUTATION) ===
 adminRouter.get('/settings', requireAdminAuth(), adminSettingsController.getSettings);

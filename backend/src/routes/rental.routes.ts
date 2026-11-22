@@ -5,4 +5,5 @@ import { cacheCatalogReads } from '../middleware/cacheControl.js';
 export const rentalRouter = Router();
 
 rentalRouter.get('/', cacheCatalogReads, rentalController.listRentals);
+rentalRouter.get('/:identifier', cacheCatalogReads, rentalController.getRental);
 

@@ -11,8 +11,13 @@ if (!fs.existsSync(screenshotsDir)) {
 }
 
 const CHROME_PATH = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+const ADMIN_EMAIL = process.env.ADMIN_VERIFY_EMAIL;
+const ADMIN_PASSWORD = process.env.ADMIN_VERIFY_PASSWORD;
 
 async function run() {
+  if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
+    throw new Error('Set ADMIN_VERIFY_EMAIL and ADMIN_VERIFY_PASSWORD to an explicitly provisioned test account.');
+  }
   console.log('[verifier] Launching headless Chrome via puppeteer-core...');
   const browser = await puppeteer.launch({
     executablePath: CHROME_PATH,
@@ -48,8 +53,8 @@ async function run() {
     // Perform Login
     console.log('[verifier] Logging in as Owner...');
     await page.setViewport({ width: 1280, height: 800 });
-    await page.type('input[type="email"]', 'owner@circleuponline.com');
-    await page.type('input[type="password"]', 'OwnerPassword123');
+    await page.type('input[type="email"]', ADMIN_EMAIL);
+    await page.type('input[type="password"]', ADMIN_PASSWORD);
     await page.click('button[type="submit"]');
 
     // Wait for navigation / redirect to /admin/overview

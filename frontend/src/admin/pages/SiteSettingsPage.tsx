@@ -406,6 +406,14 @@ export default function SiteSettingsPage() {
                   onChange={(e) => setSettings({ ...settings, whatsappNumber: e.target.value })}
                   className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-cocoa focus:border-primary focus:outline-none"
                 />
+                <label className="mt-2 flex items-center gap-2 text-cocoa">
+                  <input
+                    type="checkbox"
+                    checked={settings.isWhatsappVerified ?? false}
+                    onChange={(e) => setSettings({ ...settings, isWhatsappVerified: e.target.checked })}
+                  />
+                  Verified for checkout
+                </label>
               </div>
             </div>
           </div>

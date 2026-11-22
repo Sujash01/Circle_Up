@@ -1,8 +1,7 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Product, RentalProduct } from '../src/types/storefront';
 import {
   communityService,
-  contactService,
   eventService,
   reviewService,
 } from '../src/services/communityServices';
@@ -10,6 +9,7 @@ import { cartService, formatInr, formatPrice } from '../src/services/cartService
 import { productService } from '../src/services/productService';
 import { rentalService } from '../src/services/rentalService';
 import { wishlistService } from '../src/services/wishlistService';
+import { storefrontApi } from '../src/services/storefrontApi';
 
 const MOCK_PRODUCTS: Product[] = [
   {
@@ -114,7 +114,7 @@ describe('CircleUp Storefront Services & LocalStorage Persistence', () => {
     expect(emptySearch).toHaveLength(0);
   });
 
-  it('persists cart in LocalStorage, enforces stock limits, calculates discounts, and formats WhatsApp checkout', () => {
+  it('persists cart, enforces stock limits, and leaves coupon calculation to the server', () => {
     expect(formatPrice(4000)).toBe('₹4,000');
     expect(formatPrice(123456)).toBe('₹1,23,456');
     expect(formatPrice(1950.5)).toBe('₹1,950.5');
@@ -134,7 +134,7 @@ describe('CircleUp Storefront Services & LocalStorage Persistence', () => {
     const add2 = cartService.addItem(add1.nextState, product, variant, 1);
     expect(add2.error).toBeDefined();
 
-    // Promo code calculation (CIRCLE20 -> 20% off orders >= 1500)
+    // Coupon codes can be staged locally, but only the server may validate and calculate them.
     const promo = cartService.applyPromoCode(add1.nextState, 'CIRCLE20');
     expect(promo.error).toBeUndefined();
 
@@ -144,8 +144,8 @@ describe('CircleUp Storefront Services & LocalStorage Persistence', () => {
 
     const wa = cartService.buildWhatsAppCheckout(reloaded, 'Deliver to Bandra');
     expect(wa.totals.subtotal).toBe(4950);
-    expect(wa.totals.discount).toBe(990);
-    expect(wa.totals.estimatedTotal).toBe(3960);
+    expect(wa.totals.discount).toBe(0);
+    expect(wa.totals.estimatedTotal).toBe(4950);
     expect(wa.message).toContain(reloaded.cartId);
     expect(wa.message).toContain('Denim Jumpsuit Co-Ord Set');
     expect(wa.url).toContain('https://wa.me/');
@@ -190,7 +190,7 @@ describe('CircleUp Storefront Services & LocalStorage Persistence', () => {
     expect(recheck.valid).toBe(false);
   });
 
-  it('persists simulated reviews, event registrations, contact messages, and #ThriftCrew previews', () => {
+  it('persists reviews and #ThriftCrew previews, and stores event registration only after API success', async () => {
     const review = reviewService.submitReview({
       displayName: 'Kavya',
       rating: 5,
@@ -200,16 +200,19 @@ describe('CircleUp Storefront Services & LocalStorage Persistence', () => {
     expect(review.isLocalSubmission).toBe(true);
     expect(reviewService.getAllReviews()[0]?.id).toBe(review.id);
 
-    const evt = eventService.getAllEvents()[0]!;
-    const reg = eventService.registerForEvent({
+    const evt = { id: 'e-1', title: 'A real event', description: '', fullDetails: '', date: 'Saturday, November 28, 2026', time: '', location: 'Studio', image: '', spotsLabel: 'Open Entry', highlights: [] };
+    vi.spyOn(storefrontApi, 'registerForEvent').mockResolvedValue({
+      id: 'persisted-id', eventId: evt.id, eventTitle: evt.title, name: 'Kavya', email: 'kavya@example.com', phone: '+919800112233', createdAt: new Date().toISOString(),
+    });
+    const reg = await eventService.registerForEvent({
       event: evt,
       name: 'Kavya',
       email: 'kavya@example.com',
       phone: '+919800112233',
     });
-    expect(reg.registration?.id).toMatch(/^SIM-EVT-/);
-    // Duplicate local email blocked
-    const dup = eventService.registerForEvent({
+    expect(reg.registration?.id).toBe('persisted-id');
+    expect(eventService.getRegistrations()[0]?.id).toBe('persisted-id');
+    const dup = await eventService.registerForEvent({
       event: evt,
       name: 'Kavya',
       email: 'kavya@example.com',
@@ -217,13 +220,11 @@ describe('CircleUp Storefront Services & LocalStorage Persistence', () => {
     });
     expect(dup.error).toBeDefined();
 
-    const contact = contactService.saveSubmission({
-      name: 'Kavya',
-      email: 'kavya@example.com',
-      subject: 'Sizing question',
-      message: 'Could you share shoulder width for blazer?',
-    });
-    expect(contact.savedToStorage).toBe(true);
+    const failed = vi.spyOn(storefrontApi, 'registerForEvent').mockRejectedValueOnce(new Error('Database unavailable'));
+    const result = await eventService.registerForEvent({ event: { ...evt, id: 'e-2' }, name: 'Kavya', email: 'kavya@example.com', phone: '+919800112233' });
+    expect(result.error).toBe('Database unavailable');
+    expect(eventService.getRegistrations().some((entry) => entry.eventId === 'e-2')).toBe(false);
+    failed.mockRestore();
 
     const crew = communityService.submitPost({
       displayName: 'Kavya',

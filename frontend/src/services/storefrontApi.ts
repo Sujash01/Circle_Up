@@ -250,11 +250,22 @@ export const storefrontApi = {
   /**
    * Community pop-ups and swap meets events.
    */
-  async getEvents(signal?: AbortSignal): Promise<unknown[]> {
-    return fetchWithSwr<unknown[]>('/api/events', {
+  async getEvents(signal?: AbortSignal): Promise<import('@/types/storefront').EventItem[]> {
+    const events = await fetchWithSwr<Record<string, unknown>[]>('/api/events', {
       signal,
       maxAgeMs: 120_000,
     });
+    return events.map(mapEventForStorefront);
+  },
+
+  async getEvent(id: string): Promise<import('@/types/storefront').EventItem> {
+    const event = await fetchWithSwr<Record<string, unknown>>(`/api/events/${encodeURIComponent(id)}`, { maxAgeMs: 120_000 });
+    return mapEventForStorefront(event);
+  },
+
+  async registerForEvent(id: string, body: { name: string; email: string; phone: string; notes?: string }): Promise<import('@/types/storefront').EventRegistration> {
+    const response = await axios.post<{ data: import('@/types/storefront').EventRegistration }>(`/api/events/${encodeURIComponent(id)}/registrations`, body);
+    return response.data.data;
   },
 
   /**
@@ -276,3 +287,17 @@ export const storefrontApi = {
     return res.data.data;
   },
 };
+
+function mapEventForStorefront(row: Record<string, unknown>): import('@/types/storefront').EventItem {
+  const label = String(row.date || '');
+  const pieces = label.split(/[·•]/);
+  const date = pieces[0]?.trim() || label;
+  const time = pieces[1]?.trim() || '';
+  const capacity = typeof row.capacity === 'number' ? row.capacity : undefined;
+  const registered = typeof row.registeredCount === 'number' ? row.registeredCount : 0;
+  return {
+    id: String(row.id), title: String(row.title), description: String(row.description || ''),
+    fullDetails: String(row.description || ''), date, time, location: String(row.location),
+    image: String(row.image || ''), spotsLabel: capacity ? `${Math.max(capacity - registered, 0)} Spots` : 'Open Entry', highlights: [],
+  };
+}

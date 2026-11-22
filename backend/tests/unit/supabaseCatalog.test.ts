@@ -4,7 +4,7 @@ import {
   supabaseCatalogService,
   PUBLIC_STOREFRONT_STATUSES,
 } from '../../src/services/supabaseCatalog.service.js';
-import { NotFoundError, BadRequestError } from '../../src/errors/AppError.js';
+import { NotFoundError, BadRequestError, ServiceUnavailableError } from '../../src/errors/AppError.js';
 
 describe('Supabase Catalog Service - Unit Tests', () => {
   describe('mapSupabaseRowToProductItem', () => {
@@ -174,13 +174,25 @@ describe('Supabase Catalog Service - Unit Tests', () => {
       expect(mockOr).toHaveBeenCalledWith(expect.stringContaining('subcategory.ilike.%vintage velvet%'));
       expect(mockOr).toHaveBeenCalledWith(expect.stringContaining('serial_number.ilike.%vintage velvet%'));
     });
+
+    it('surfaces a Supabase query error instead of returning an empty catalogue', async () => {
+      const mockQuery = {
+        select: vi.fn().mockReturnThis(),
+        in: vi.fn().mockReturnThis(),
+        order: vi.fn().mockReturnThis(),
+        range: vi.fn().mockResolvedValue({ data: null, error: { message: 'database unavailable' }, count: null }),
+      };
+      const mockClient = { from: vi.fn().mockReturnValue(mockQuery) } as any;
+
+      await expect(supabaseCatalogService.listProducts({}, mockClient)).rejects.toBeInstanceOf(ServiceUnavailableError);
+      expect(mockClient.from).toHaveBeenCalledWith('products');
+    });
   });
 
   describe('supabaseCatalogService.getProductByIdentifier', () => {
     it('returns product when found with active status', async () => {
-      const mockLimit = vi.fn().mockResolvedValue({
-        data: [
-          {
+      const mockMaybeSingle = vi.fn().mockResolvedValue({
+        data: {
             id: '44444444-5555-6666-7777-888888888888',
             serial_number: 'CU-SET-100',
             name: 'Floral Co-ord',
@@ -189,12 +201,11 @@ describe('Supabase Catalog Service - Unit Tests', () => {
             stock: 1,
             status: 'ACTIVE',
           },
-        ],
         error: null,
       });
 
-      const mockOr = vi.fn().mockReturnValue({ limit: mockLimit });
-      const mockSelect = vi.fn().mockReturnValue({ or: mockOr });
+      const mockEq = vi.fn().mockReturnValue({ maybeSingle: mockMaybeSingle });
+      const mockSelect = vi.fn().mockReturnValue({ eq: mockEq });
       const mockClient = {
         from: vi.fn().mockReturnValue({ select: mockSelect }),
       } as any;
@@ -206,9 +217,8 @@ describe('Supabase Catalog Service - Unit Tests', () => {
     });
 
     it('throws NotFoundError when product has an internal hidden status (e.g. DRAFT)', async () => {
-      const mockLimit = vi.fn().mockResolvedValue({
-        data: [
-          {
+      const mockMaybeSingle = vi.fn().mockResolvedValue({
+        data: {
             id: '55555555-6666-7777-8888-999999999999',
             serial_number: 'CU-DRAFT-01',
             name: 'Unpublished Item',
@@ -216,12 +226,11 @@ describe('Supabase Catalog Service - Unit Tests', () => {
             stock: 1,
             status: 'DRAFT',
           },
-        ],
         error: null,
       });
 
-      const mockOr = vi.fn().mockReturnValue({ limit: mockLimit });
-      const mockSelect = vi.fn().mockReturnValue({ or: mockOr });
+      const mockEq = vi.fn().mockReturnValue({ maybeSingle: mockMaybeSingle });
+      const mockSelect = vi.fn().mockReturnValue({ eq: mockEq });
       const mockClient = {
         from: vi.fn().mockReturnValue({ select: mockSelect }),
       } as any;
@@ -232,13 +241,13 @@ describe('Supabase Catalog Service - Unit Tests', () => {
     });
 
     it('throws NotFoundError when database returns empty array', async () => {
-      const mockLimit = vi.fn().mockResolvedValue({
-        data: [],
+      const mockMaybeSingle = vi.fn().mockResolvedValue({
+        data: null,
         error: null,
       });
 
-      const mockOr = vi.fn().mockReturnValue({ limit: mockLimit });
-      const mockSelect = vi.fn().mockReturnValue({ or: mockOr });
+      const mockEq = vi.fn().mockReturnValue({ maybeSingle: mockMaybeSingle });
+      const mockSelect = vi.fn().mockReturnValue({ eq: mockEq });
       const mockClient = {
         from: vi.fn().mockReturnValue({ select: mockSelect }),
       } as any;
@@ -340,6 +349,25 @@ describe('Supabase Catalog Service - Unit Tests', () => {
       expect(result.stock).toBe(5);
     });
 
+    it('writes model-only measurement and maker fields to their existing SQL columns', async () => {
+      const mockSingle = vi.fn().mockResolvedValue({
+        data: { id: '88888888-9999-0000-1111-222222222222', serial_number: 'CU-099', name: 'Measured', slug: 'measured', price: 1, stock: 1 },
+        error: null,
+      });
+      const mockInsert = vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: mockSingle }) });
+      const mockClient = { from: vi.fn().mockReturnValue({ insert: mockInsert }) } as any;
+      await supabaseCatalogService.createProduct({
+        name: 'Measured', price: 1, serialNumber: 'CU-099', measurements: 'Chest 40', makerNote: 'Hand checked',
+      }, mockClient);
+      expect(mockInsert.mock.calls[0]?.[0]).toMatchObject({
+        measurements: 'Chest 40', maker_note: 'Hand checked', measurements_data: {},
+      });
+    });
+
+    it('rejects non-integer monetary values before writing', async () => {
+      await expect(supabaseCatalogService.createProduct({ name: 'Fractional', price: 1.5 }, {} as any)).rejects.toThrow(BadRequestError);
+    });
+
     it('rejects negative or missing prices on creation', async () => {
       const mockClient = {} as any;
 
@@ -353,34 +381,18 @@ describe('Supabase Catalog Service - Unit Tests', () => {
     });
 
     it('permanentDeleteProduct blocks deletion if product is in order_items', async () => {
-      vi.spyOn(supabaseCatalogService, 'getProductByIdentifier').mockResolvedValue({
-        id: '99999999-0000-1111-2222-333333333333',
-        serialNumber: 'CU-ORDERED-01',
-      } as any);
-
-      const mockMaybeSingle = vi.fn().mockResolvedValue({
-        data: { id: 'oi-123', order_id: 'ord-456' },
-        error: null,
-      });
-
+      const mockMaybeSingle = vi.fn().mockResolvedValue({ data: { id: 'product-uuid', serial_number: 'CU-ORDERED-01', name: 'Ordered', slug: 'ordered', price: 100, stock: 1, status: 'ARCHIVED' }, error: null });
+      const mockEq = vi.fn().mockReturnValue({ maybeSingle: mockMaybeSingle });
+      const mockRpc = vi.fn().mockResolvedValue({ data: null, error: { code: '23503', message: 'PRODUCT_IN_ORDERS' } });
       const mockClient = {
-        from: vi.fn().mockImplementation((table: string) => {
-          if (table === 'order_items') {
-            return {
-              select: vi.fn().mockReturnValue({
-                or: vi.fn().mockReturnValue({
-                  limit: vi.fn().mockReturnValue({ maybeSingle: mockMaybeSingle }),
-                }),
-              }),
-            };
-          }
-          return {};
-        }),
+        from: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ eq: mockEq }) }),
+        rpc: mockRpc,
       } as any;
 
       await expect(
         supabaseCatalogService.permanentDeleteProduct('CU-ORDERED-01', mockClient)
       ).rejects.toThrow(BadRequestError);
+      expect(mockRpc).toHaveBeenCalledWith('delete_product_if_unordered', { p_product_id: 'product-uuid' });
     });
   });
 });

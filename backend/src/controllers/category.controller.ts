@@ -1,9 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
 import { sendSuccess } from '../utils/apiResponse.js';
-import { Product } from '../models/Product.js';
-import { SEED_PRODUCTS } from '../data/seedProducts.js';
-import mongoose from 'mongoose';
-import { isSupabaseConfigured } from '../services/supabase.service.js';
 import { supabaseCatalogService } from '../services/supabaseCatalog.service.js';
 
 const DEFAULT_CATEGORIES = [
@@ -22,34 +18,11 @@ const DEFAULT_CATEGORIES = [
 export const categoryController = {
   async listCategories(_req: Request, res: Response, next: NextFunction) {
     try {
-      const isDbConnected = mongoose.connection.readyState === 1;
-      let categoriesWithCounts = DEFAULT_CATEGORIES.map((c) => ({
+      const countMap = await supabaseCatalogService.getCategoryCounts();
+      const categoriesWithCounts = DEFAULT_CATEGORIES.map((c) => ({
         ...c,
-        itemCount: 0,
+        itemCount: countMap.get(c.slug) || 0,
       }));
-
-      if (isSupabaseConfigured()) {
-        const countMap = await supabaseCatalogService.getCategoryCounts();
-        categoriesWithCounts = categoriesWithCounts.map((c) => ({
-          ...c,
-          itemCount: countMap.get(c.slug) || 0,
-        }));
-      } else if (isDbConnected) {
-        const counts = await Product.aggregate([
-          { $match: { status: { $in: ['ACTIVE', 'PUBLISHED'] }, deletedAt: null } },
-          { $group: { _id: '$category', count: { $sum: 1 } } },
-        ]);
-        const countMap = new Map(counts.map((c) => [c._id, c.count]));
-        categoriesWithCounts = categoriesWithCounts.map((c) => ({
-          ...c,
-          itemCount: countMap.get(c.slug) || 0,
-        }));
-      } else {
-        categoriesWithCounts = categoriesWithCounts.map((c) => ({
-          ...c,
-          itemCount: SEED_PRODUCTS.filter((p) => p.category === c.slug).length,
-        }));
-      }
 
       return sendSuccess(res, categoriesWithCounts);
     } catch (error) {

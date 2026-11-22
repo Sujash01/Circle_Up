@@ -1,5 +1,74 @@
 import request from 'supertest';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+const settingsState = vi.hoisted(() => ({
+  data: {
+    announcementText: 'Welcome', announcementLink: '/new-arrivals', isAnnouncementActive: true,
+    marqueePhrases: ['Shop pre-loved'], categoryTiles: [
+      { title: 'Clothing', imageUrl: '/clothing.jpg', linkUrl: '/category/clothing' },
+      { title: 'Bags', imageUrl: '/bags.jpg', linkUrl: '/category/bags' },
+      { title: 'Shoes', imageUrl: '/shoes.jpg', linkUrl: '/category/shoes' },
+      { title: 'Accessories', imageUrl: '/accessories.jpg', linkUrl: '/category/accessories' },
+    ], customDrop: { enabled: false, title: '', imageUrl: '', linkUrl: '' },
+    storeAddress: '', contactEmail: '', contactPhone: '', whatsappNumber: '', isWhatsappVerified: false,
+    contentVersion: 1, updatedAt: new Date().toISOString(),
+  },
+}));
+const eventState = vi.hoisted(() => ({
+  registration: { id: 'registration-1', eventId: 'event-uuid-1', eventTitle: 'CircleUp Courtyard', name: 'Aanya', email: 'aanya@example.com', phone: '+919800112233', notes: 'Bring a jacket', createdAt: new Date().toISOString() },
+  register: vi.fn(async (_id: string, input: Record<string, string>) => ({ id: 'registration-1', eventId: 'event-uuid-1', eventTitle: 'CircleUp Courtyard', ...input, createdAt: new Date().toISOString() })),
+}));
+const catalogState = vi.hoisted(() => {
+  const row = (id: string, name: string, category = 'womens-one-piece') => ({ id, serialNumber: id, slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), name, description: `${name} in denim`, category, categoryLabel: category, price: 125000, images: ['/product.webp'], sizes: ['M'], tags: ['denim'], stock: 2, badge: 'Vintage find' });
+  const products = [row('CU-001', 'Denim Co-Ord Set'), row('CU-002', 'Denim Shirt'), row('CU-003', 'Denim Skirt'), row('CU-004', 'Denim Jacket')];
+  return {
+    products,
+    categoryCounts: async () => new Map([['womens-one-piece', 4], ['accessories', 2]]),
+    searchItems: async () => products.map((p) => ({ ...p, subcategory: 'denim' })),
+    chestPicks: async () => products,
+    collection: async (category: string) => products.filter((p) => p.category === category || category === 'accessories').slice(0, 4),
+    related: async () => [],
+  };
+});
+vi.mock('../../src/services/supabaseCatalog.service.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/services/supabaseCatalog.service.js')>();
+  return { ...actual, supabaseCatalogService: {
+    ...actual.supabaseCatalogService,
+    getCategoryCounts: catalogState.categoryCounts,
+    searchCatalogItems: catalogState.searchItems,
+    findChestPicks: catalogState.chestPicks,
+    findCollectionRow: catalogState.collection,
+    getRelatedProducts: catalogState.related,
+  } };
+});
+vi.mock('../../src/repositories/rental.repository.js', () => ({
+  rentalRepository: {
+    list: async () => [{ id: 'rental-uuid-1', name: 'Courtyard Co-Ord Set', slug: 'courtyard-co-ord-set', category: 'rentals', image: '/rental.webp', rentalPrice3Days: 120000, rentalPrice7Days: 200000, rentalPrice14Days: 320000, securityDeposit: 300000, condition: 'Mint', size: 'Size M', isAvailable: true, description: 'A rental item.' }],
+    get: async (identifier: string) => identifier === 'missing' ? Promise.reject(new (await import('../../src/errors/AppError.js')).NotFoundError('Rental item not found.', 'RENTAL_NOT_FOUND')) : ({ id: 'rental-uuid-1', name: 'Courtyard Co-Ord Set', slug: 'courtyard-co-ord-set', category: 'rentals', image: '/rental.webp', rentalPrice3Days: 120000, rentalPrice7Days: 200000, rentalPrice14Days: 320000, securityDeposit: 300000, condition: 'Mint', size: 'Size M', isAvailable: true, description: 'A rental item.' }),
+  },
+}));
+vi.mock('../../src/repositories/settings.repository.js', () => ({
+  getConfiguredWhatsappNumber: (value?: string) => value && value.replace(/\D/g, '').length >= 10 ? value : '',
+  settingsRepository: { getSettings: async () => ({ ...settingsState.data }) },
+}));
+vi.mock('../../src/repositories/coupon.repository.js', () => ({
+  couponRepository: {
+    findByCode: async (code: string) => {
+      const rows: Record<string, any> = {
+        THRIFT10: { code: 'THRIFT10', discountType: 'PERCENTAGE', value: 10, minOrderAmount: 100000, maxDiscountAmount: 50000, isActive: true, usageCount: 0, usageLimit: 1000 },
+        CIRCLE20: { code: 'CIRCLE20', discountType: 'PERCENTAGE', value: 20, minOrderAmount: 150000, maxDiscountAmount: 100000, isActive: true, usageCount: 0, usageLimit: 500 },
+      };
+      return rows[code.toUpperCase()] || null;
+    },
+  },
+}));
+vi.mock('../../src/repositories/event.repository.js', () => ({
+  eventRepository: {
+    list: async () => [{ id: 'event-uuid-1', title: 'CircleUp Courtyard', date: 'Saturday, November 28, 2026 · 11:00 AM - 6:00 PM', location: 'Chandigarh', description: '', image: '/event.webp', type: 'POP_UP', registeredCount: 0, isRegistrationOpen: true }],
+    get: async (id: string) => { if (id === 'missing') { const { NotFoundError } = await import('../../src/errors/AppError.js'); throw new NotFoundError('Event not found.', 'EVENT_NOT_FOUND'); } return { id: 'event-uuid-1', title: 'CircleUp Courtyard', date: 'Saturday, November 28, 2026 · 11:00 AM - 6:00 PM', location: 'Chandigarh', description: '', image: '/event.webp', type: 'POP_UP', registeredCount: 0, isRegistrationOpen: true }; },
+    register: eventState.register,
+  },
+}));
 import { createApp } from '../../src/app.js';
 
 const app = createApp();
@@ -76,9 +145,24 @@ describe('Phase 2 API Endpoints', () => {
       expect(Number.isInteger(first.rentalPrice3Days)).toBe(true);
       expect(first).toHaveProperty('securityDeposit');
       expect(Number.isInteger(first.securityDeposit)).toBe(true);
+      expect(first.image).toBe('/rental.webp');
     });
 
-    it('GET /api/events returns curated pop-ups and swap meets', async () => {
+    it('GET /api/rentals/:identifier returns detail and a missing rental returns 404', async () => {
+      const found = await request(app).get('/api/rentals/courtyard-co-ord-set');
+      expect(found.status).toBe(200);
+      expect(found.body.data.rentalPrice14Days).toBe(320000);
+      const missing = await request(app).get('/api/rentals/missing');
+      expect(missing.status).toBe(404);
+    });
+
+    it('returns only the fields from the rental catalogue contract', async () => {
+      const res = await request(app).get('/api/rentals');
+      expect(res.status).toBe(200);
+      expect(res.body.data[0]).toMatchObject({ rentalPrice3Days: 120000, rentalPrice7Days: 200000, rentalPrice14Days: 320000, securityDeposit: 300000, isAvailable: true, image: '/rental.webp' });
+    });
+
+    it('GET /api/events returns persisted events using the public event contract', async () => {
       const res = await request(app).get('/api/events');
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -86,6 +170,23 @@ describe('Phase 2 API Endpoints', () => {
       expect(res.body.data.length).toBeGreaterThan(0);
       expect(res.body.data[0]).toHaveProperty('title');
       expect(res.body.data[0]).toHaveProperty('location');
+    });
+
+    it('GET /api/events/:id returns event detail and a missing event returns 404', async () => {
+      const found = await request(app).get('/api/events/event-uuid-1');
+      expect(found.status).toBe(200);
+      expect(found.body.data.image).toBe('/event.webp');
+      const missing = await request(app).get('/api/events/missing');
+      expect(missing.status).toBe(404);
+    });
+
+    it('persists valid registration input and rejects invalid email', async () => {
+      const valid = await request(app).post('/api/events/event-uuid-1/registrations').send({ name: 'Aanya', email: 'aanya@example.com', phone: '+919800112233', notes: 'Bring a jacket' });
+      expect(valid.status).toBe(201);
+      expect(valid.body.data.id).toBe('registration-1');
+      const invalid = await request(app).post('/api/events/event-uuid-1/registrations').send({ name: 'Aanya', email: 'bad', phone: '+919800112233' });
+      expect(invalid.status).toBe(400);
+      expect(eventState.register).toHaveBeenCalledTimes(1);
     });
   });
 

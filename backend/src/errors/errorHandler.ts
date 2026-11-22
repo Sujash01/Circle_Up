@@ -1,5 +1,4 @@
 import type { NextFunction, Request, Response } from 'express';
-import mongoose from 'mongoose';
 import { ZodError } from 'zod';
 import type { ApiErrorDetail, ApiErrorResponse } from '@circleup/shared';
 import { env } from '../config/env.js';
@@ -32,37 +31,6 @@ function normalizeError(err: unknown): NormalizedError {
         field: issue.path.join('.') || undefined,
         issue: issue.message,
       })),
-    };
-  }
-
-  if (err instanceof mongoose.Error.ValidationError) {
-    return {
-      statusCode: 400,
-      code: 'VALIDATION_ERROR',
-      message: 'Database schema validation failed',
-      details: Object.values(err.errors).map((e) => ({
-        field: e.path,
-        issue: e.message,
-      })),
-    };
-  }
-
-  if (err instanceof mongoose.Error.CastError) {
-    return {
-      statusCode: 400,
-      code: 'INVALID_IDENTIFIER',
-      message: `Invalid value for ${err.path}`,
-    };
-  }
-
-  // MongoDB duplicate key error (E11000)
-  if (typeof err === 'object' && err !== null && 'code' in err && (err as { code: unknown }).code === 11000) {
-    const keyPattern = (err as { keyPattern?: Record<string, unknown> }).keyPattern;
-    const duplicateFields = keyPattern ? Object.keys(keyPattern).join(', ') : 'field';
-    return {
-      statusCode: 409,
-      code: 'DUPLICATE_RESOURCE',
-      message: `A record with the same ${duplicateFields} already exists`,
     };
   }
 

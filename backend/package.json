@@ -9,7 +9,6 @@
     "start": "node dist/server.js",
     "seed": "tsx src/scripts/seed.ts",
     "admin:create": "tsx src/scripts/adminCreate.ts",
-    "migrate:checkout-indexes": "tsx src/scripts/checkoutIndexes.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src tests",
     "test": "vitest run"
@@ -27,7 +26,6 @@
     "express-rate-limit": "^7.5.0",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
-    "mongoose": "^8.9.5",
     "multer": "^2.5.0",
     "pino": "^9.6.0",
     "pino-http": "^10.4.0",
@@ -45,7 +43,6 @@
     "@types/multer": "^2.3.0",
     "@types/supertest": "^6.0.2",
     "eslint": "^9.18.0",
-    "mongodb-memory-server": "^10.1.4",
     "supertest": "^7.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",

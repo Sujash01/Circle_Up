@@ -1,9 +1,8 @@
 import { SAMPLE_COMMUNITY_POSTS } from '@/data/community';
-import { SAMPLE_EVENTS } from '@/data/events';
+import { storefrontApi } from './storefrontApi';
 import { SAMPLE_REVIEWS } from '@/data/reviews';
 import type {
   CommunitySubmission,
-  ContactSubmission,
   EventItem,
   EventRegistration,
   ReviewItem,
@@ -13,7 +12,6 @@ import { readStorage, writeStorage } from './storage';
 const REVIEWS_KEY = 'circleup_local_reviews_v1';
 const EVENT_REGS_KEY = 'circleup_event_regs_v1';
 const COMMUNITY_KEY = 'circleup_community_posts_v1';
-const CONTACT_KEY = 'circleup_contact_submissions_v1';
 
 export const reviewService = {
   getAllReviews(): ReviewItem[] {
@@ -47,14 +45,13 @@ export const reviewService = {
     return next;
   },
 };
-
 export const eventService = {
-  getAllEvents(): EventItem[] {
-    return SAMPLE_EVENTS;
+  async getAllEvents(): Promise<EventItem[]> {
+    return storefrontApi.getEvents();
   },
 
-  getEventById(id: string): EventItem | undefined {
-    return SAMPLE_EVENTS.find((evt) => evt.id === id);
+  async getEventById(id: string): Promise<EventItem> {
+    return storefrontApi.getEvent(id);
   },
 
   getRegistrations(): EventRegistration[] {
@@ -62,13 +59,13 @@ export const eventService = {
     return Array.isArray(data) ? data : [];
   },
 
-  registerForEvent(input: {
+  async registerForEvent(input: {
     event: EventItem;
     name: string;
     email: string;
     phone: string;
     notes?: string;
-  }): { registration?: EventRegistration; error?: string } {
+  }): Promise<{ registration?: EventRegistration; error?: string }> {
     const existing = this.getRegistrations();
     const already = existing.find(
       (r) =>
@@ -81,19 +78,15 @@ export const eventService = {
       };
     }
 
-    const record: EventRegistration = {
-      id: `SIM-EVT-${Date.now().toString(36).toUpperCase()}`,
-      eventId: input.event.id,
-      eventTitle: input.event.title,
-      name: input.name.trim(),
-      email: input.email.trim(),
-      phone: input.phone.trim(),
-      notes: input.notes?.trim() || undefined,
-      createdAt: new Date().toISOString(),
-    };
-
-    writeStorage(EVENT_REGS_KEY, [record, ...existing]);
-    return { registration: record };
+    try {
+      const record = await storefrontApi.registerForEvent(input.event.id, {
+        name: input.name.trim(), email: input.email.trim(), phone: input.phone.trim(), notes: input.notes?.trim(),
+      });
+      writeStorage(EVENT_REGS_KEY, [record, ...existing]);
+      return { registration: record };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'Could not complete registration. Please try again.' };
+    }
   },
 };
 
@@ -132,31 +125,3 @@ export const communityService = {
     return { submission: entry, savedToStorage };
   },
 };
-
-export const contactService = {
-  getSubmissions(): ContactSubmission[] {
-    const data = readStorage<ContactSubmission[]>(CONTACT_KEY, []);
-    return Array.isArray(data) ? data : [];
-  },
-
-  saveSubmission(input: {
-    name: string;
-    email: string;
-    subject: string;
-    message: string;
-  }): { submission: ContactSubmission; savedToStorage: boolean } {
-    const entry: ContactSubmission = {
-      id: `MSG-${Date.now().toString(36).toUpperCase()}`,
-      name: input.name.trim(),
-      email: input.email.trim(),
-      subject: input.subject.trim(),
-      message: input.message.trim(),
-      createdAt: new Date().toISOString(),
-    };
-
-    const existing = this.getSubmissions();
-    const savedToStorage = writeStorage(CONTACT_KEY, [entry, ...existing]);
-    return { submission: entry, savedToStorage };
-  },
-};
-

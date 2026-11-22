@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
-import { verifySessionToken, type AdminSessionData } from '../services/adminAuth.service.js';
+import { adminAuthService, type AdminSessionData } from '../services/adminAuth.service.js';
 import { ForbiddenError, UnauthorizedError } from '../errors/AppError.js';
 
 declare global {
@@ -24,17 +24,12 @@ export function requireAdminAuth(allowedRole?: 'owner' | 'staff') {
       return next(new UnauthorizedError('Admin authentication required.', 'UNAUTHORIZED'));
     }
 
-    const session = verifySessionToken(token);
-    if (!session) {
-      return next(new UnauthorizedError('Invalid or expired admin session.', 'INVALID_SESSION'));
-    }
-
-    if (allowedRole === 'owner' && session.role !== 'owner') {
-      return next(new ForbiddenError('Owner privilege required for this action.', 'FORBIDDEN_ROLE'));
-    }
-
-    req.adminUser = session;
-    next();
+    void adminAuthService.validateSession(token).then((session) => {
+      if (!session) return next(new UnauthorizedError('Invalid, expired, or revoked admin session.', 'INVALID_SESSION'));
+      if (allowedRole === 'owner' && session.role !== 'owner') return next(new ForbiddenError('Owner privilege required for this action.', 'FORBIDDEN_ROLE'));
+      req.adminUser = session;
+      next();
+    }).catch(next);
   };
 }
 
@@ -46,10 +41,8 @@ export function optionalAdminAuth(req: Request, _res: Response, next: NextFuncti
       : null);
 
   if (token) {
-    const session = verifySessionToken(token);
-    if (session) {
-      req.adminUser = session;
-    }
+    void adminAuthService.validateSession(token).then((session) => { if (session) req.adminUser = session; }).then(() => next()).catch(next);
+    return;
   }
   next();
 }

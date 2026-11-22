@@ -17,17 +17,16 @@ function addDaysIso(startIso: string, deltaDays: number): string {
 export function RentalsPage() {
   const navigate = useNavigate();
   const [rentals, setRentals] = useState<RentalProduct[]>(() => rentalService.getAllRentalProducts());
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     const ac = new AbortController();
     storefrontApi
       .getRentals(ac.signal)
       .then((apiRentals) => {
-        if (apiRentals && apiRentals.length > 0) {
-          setRentals(apiRentals as unknown as RentalProduct[]);
-        }
+        setRentals(apiRentals as unknown as RentalProduct[]);
       })
-      .catch(() => {});
+      .catch(() => setLoadError('Rental items could not be loaded. Please try again later.'));
     return () => ac.abort();
   }, []);
 
@@ -72,7 +71,7 @@ export function RentalsPage() {
         </header>
         <EmptyState
           title="Rental collection being refreshed"
-          description="Our circular rental pieces are currently being inspected and dry-cleaned. Please check back soon or browse our ready-to-wear arrivals."
+          description={loadError || 'Our circular rental pieces are currently being inspected and dry-cleaned. Please check back soon or browse our ready-to-wear arrivals.'}
           actionLabel="Browse New Arrivals"
           onAction={() => navigate('/new-arrivals')}
         />

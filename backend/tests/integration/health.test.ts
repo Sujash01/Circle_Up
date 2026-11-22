@@ -5,7 +5,7 @@ import { createApp } from '../../src/app.js';
 const app = createApp();
 
 describe('GET /api/v1/health & Express Middleware Pipeline', () => {
-  it('returns 503 degraded envelope when database is disconnected and attaches X-Request-Id', async () => {
+  it('returns 503 degraded envelope when Supabase is unavailable and attaches X-Request-Id', async () => {
     const res = await request(app).get('/api/v1/health');
 
     expect(res.status).toBe(503);

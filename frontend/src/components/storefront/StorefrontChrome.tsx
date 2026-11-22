@@ -68,7 +68,7 @@ export function StorefrontTopBanner({ text }: { text?: string }) {
       ) : (
         <>
           <span>
-            Use code <strong>THRIFT10</strong> or <strong>CIRCLE20</strong> in bag
+            Curated finds, thoughtfully chosen
           </span>
           <i aria-hidden="true">•</i>
           <span>Plastic-free packaging, always</span>

@@ -20,19 +20,19 @@ export interface ExitIntentOfferState {
 }
 
 const DEFAULT_HEADER_PROMO: HeaderPromoState = {
-  text: 'Use code THRIFT10 or CIRCLE20 in bag · Plastic-free sustainable packaging on every parcel',
+  text: 'Plastic-free sustainable packaging on every parcel',
   link: '/new-arrivals',
   ctaLabel: 'Shop Finds',
   isActive: true,
 };
 
 const DEFAULT_EXIT_INTENT: ExitIntentOfferState = {
-  code: 'THRIFT10',
+  code: '',
   headline: 'Your next favorite find is waiting',
   subtext: 'Take a small thank-you toward something one of a kind.',
-  badgeText: '10% OFF YOUR FIRST FIND',
-  discountType: 'PERCENTAGE',
-  discountValue: 10,
+  badgeText: 'Discover something one of a kind',
+  discountType: '',
+  discountValue: 0,
 };
 
 let cachedHeaderPromo: HeaderPromoState = { ...DEFAULT_HEADER_PROMO };

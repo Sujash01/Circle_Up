@@ -1,8 +1,13 @@
 import type { Request, Response, NextFunction } from 'express';
 import { adminAuthService } from '../../services/adminAuth.service.js';
 import { auditService } from '../../services/audit.service.js';
-import { sendSuccess } from '../../utils/apiResponse.js';
+import { sendCreated, sendSuccess } from '../../utils/apiResponse.js';
 import { adminLoginSchema } from '@circleup/shared';
+import { z } from 'zod';
+
+const adminCreateSchema = z.object({ email: z.string().email().max(254), name: z.string().trim().min(1).max(120), password: z.string().min(8).max(256), role: z.enum(['owner', 'staff']).default('staff') }).strict();
+const adminUpdateSchema = z.object({ email: z.string().email().max(254).optional(), name: z.string().trim().min(1).max(120).optional(), role: z.enum(['owner', 'staff']).optional(), isActive: z.boolean().optional(), password: z.string().min(8).max(256).optional() }).strict().refine((value) => Object.keys(value).length > 0, 'At least one field is required.');
+const passwordChangeSchema = z.object({ currentPassword: z.string().min(1).max(256), newPassword: z.string().min(8).max(256) }).strict();
 
 export const adminAuthController = {
   async login(req: Request, res: Response, next: NextFunction) {
@@ -28,6 +33,7 @@ export const adminAuthController = {
             role: result.user.role as 'owner' | 'staff',
             csrfToken: result.csrfToken,
             expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+            sessionId: result.sessionId,
           },
           action: 'ADMIN_LOGIN',
           entity: 'AdminUser',
@@ -41,7 +47,6 @@ export const adminAuthController = {
       return sendSuccess(res, {
         user: result.user,
         csrfToken: result.csrfToken,
-        sessionToken: result.sessionToken,
       });
     } catch (error) {
       next(error);
@@ -50,7 +55,9 @@ export const adminAuthController = {
 
   async logout(req: Request, res: Response, next: NextFunction) {
     try {
-      res.clearCookie('admin_session', { path: '/' });
+      const token = req.cookies?.admin_session || (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : '');
+      res.clearCookie('admin_session', { path: '/', httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' });
+      if (req.adminUser && token) await adminAuthService.revokeSession(req.adminUser, token);
       if (req.adminUser) {
         await auditService.record({
           actor: req.adminUser,
@@ -68,12 +75,6 @@ export const adminAuthController = {
 
   async me(req: Request, res: Response, next: NextFunction) {
     try {
-      const sessionToken =
-        req.cookies?.admin_session ||
-        (req.headers.authorization?.startsWith('Bearer ')
-          ? req.headers.authorization.slice(7)
-          : undefined);
-
       return sendSuccess(res, {
         user: {
           id: req.adminUser?.userId,
@@ -82,7 +83,6 @@ export const adminAuthController = {
           role: req.adminUser?.role,
         },
         csrfToken: req.adminUser?.csrfToken,
-        sessionToken,
       });
     } catch (error) {
       next(error);
@@ -92,8 +92,8 @@ export const adminAuthController = {
   async changePassword(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = req.adminUser!.userId;
-      const { currentPassword, newPassword } = req.body;
-      await adminAuthService.changePassword(userId, currentPassword, newPassword);
+      const { currentPassword, newPassword } = passwordChangeSchema.parse(req.body);
+      await adminAuthService.changePassword(userId, currentPassword, newPassword, req.adminUser!.sessionId);
 
       await auditService.record({
         actor: req.adminUser,
@@ -107,6 +107,37 @@ export const adminAuthController = {
     } catch (error) {
       next(error);
     }
+  },
+
+  async listUsers(_req: Request, res: Response, next: NextFunction) {
+    try { return sendSuccess(res, await adminAuthService.listAdminUsers()); } catch (error) { next(error); }
+  },
+
+  async getUser(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+      return sendSuccess(res, await adminAuthService.getAdminUserById(id));
+    } catch (error) { next(error); }
+  },
+
+  async createUser(req: Request, res: Response, next: NextFunction) {
+    try {
+      const input = adminCreateSchema.parse(req.body);
+      const created = await adminAuthService.createAdminUser(input);
+      await auditService.record({ actor: req.adminUser, action: 'ADMIN_USER_CREATE', entity: 'AdminUser', entityId: created.id, diff: { email: created.email, role: created.role }, req });
+      return sendCreated(res, created);
+    } catch (error) { next(error); }
+  },
+
+  async updateUser(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+      const input = adminUpdateSchema.parse(req.body);
+      const updated = await adminAuthService.updateAdminUser(id, req.adminUser!.userId, input);
+      const safeDiff = { email: input.email, name: input.name, role: input.role, isActive: input.isActive };
+      await auditService.record({ actor: req.adminUser, action: 'ADMIN_USER_UPDATE', entity: 'AdminUser', entityId: updated.id, diff: safeDiff, req });
+      return sendSuccess(res, updated);
+    } catch (error) { next(error); }
   },
 };
 

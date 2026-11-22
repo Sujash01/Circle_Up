@@ -1,26 +1,97 @@
 import jwt from 'jsonwebtoken';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+
+const settingsState = vi.hoisted(() => ({
+  data: {
+    announcementText: '', announcementLink: '/new-arrivals', isAnnouncementActive: true,
+    marqueePhrases: [], categoryTiles: [], customDrop: { enabled: false, title: '', imageUrl: '', linkUrl: '' },
+    storeAddress: '', contactEmail: '', contactPhone: '', whatsappNumber: '+919111222333', isWhatsappVerified: true,
+    contentVersion: 1, updatedAt: new Date().toISOString(),
+  } as Record<string, any>,
+}));
+const checkoutState = vi.hoisted(() => {
+  const rows = new Map<string, Record<string, any>>();
+  const idempotency = new Map<string, { fingerprint: string; response: Record<string, any> }>();
+  let filters: Array<[string, unknown]> = [];
+  let updateValues: Record<string, unknown> | null = null;
+  const builder: Record<string, (...args: any[]) => any> = {};
+  const matches = (row: Record<string, any>) => filters.every(([key, value]) => row[key] === value);
+  const result = () => {
+    const found = [...rows.values()].filter(matches);
+    if (updateValues) for (const row of found) Object.assign(row, updateValues);
+    return { data: updateValues ? found.map((row) => ({ id: row.id })) : found, count: found.length, error: null };
+  };
+  const chain = () => builder;
+  Object.assign(builder, {
+    select: chain, eq: (key: string, value: unknown) => { filters.push([key, value]); return builder; },
+    order: chain, range: chain, update: (values: Record<string, unknown>) => { updateValues = values; return builder; },
+    maybeSingle: async () => { const response = result(); return { ...response, data: Array.isArray(response.data) ? response.data[0] || null : response.data }; },
+    then: (resolve: (value: ReturnType<typeof result>) => unknown, reject?: (reason: unknown) => unknown) => Promise.resolve(result()).then(resolve, reject),
+  });
+  const client = { from: (_name: string) => { filters = []; updateValues = null; return builder; } };
+  return {
+    rows, idempotency, client,
+    reset: () => { rows.clear(); idempotency.clear(); },
+    checkout: async (params: Record<string, any>) => {
+      const cached = idempotency.get(params.p_key_hash);
+      if (cached) {
+        if (cached.fingerprint !== params.p_fingerprint) {
+          const { ConflictError } = await import('../../src/errors/AppError.js');
+          throw new ConflictError('This idempotency key was already used for a different checkout.', 'IDEMPOTENCY_KEY_REUSED');
+        }
+        return cached.response;
+      }
+      const number = params.p_order_number;
+      const order = {
+        id: `order-${number}`, order_number: number, customer_id: params.p_customer_id,
+        customer_name: params.p_customer.name, customer_email: params.p_customer.email, customer_phone: params.p_customer.phone,
+        total_amount: 255000, subtotal: 255000, discount_amount: 0, shipping_amount: 0,
+        status: 'CONFIRMED', payment_method: params.p_payment_method, payment_status: 'PENDING',
+        shipping_address: params.p_shipping_address, promo_code: params.p_promo_code, notes: params.p_notes,
+        guest_access_token_hash: params.p_guest_access_token_hash, guest_access_expires_at: params.p_guest_access_expires_at,
+        created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+        order_items: params.p_items.map((item: Record<string, any>) => ({ product_id: 'product-cu-001', serial_number: item.serialNumber, name: 'Vintage Silk Shirt', price: 255000, quantity: item.quantity, size: item.size || 'M', image_url: '/shirt.jpg', slug: 'vintage-silk-shirt' })),
+      };
+      rows.set(number, order);
+      const response = {
+        id: order.id, orderNumber: number, customerId: order.customer_id,
+        customer: params.p_customer, shippingAddress: params.p_shipping_address,
+        items: order.order_items.map((item: Record<string, any>) => ({ productId: item.product_id, serialNumber: item.serial_number, name: item.name, price: item.price, quantity: item.quantity, size: item.size, image: item.image_url, slug: item.slug })),
+        subtotal: order.subtotal, discount: order.discount_amount, deliveryFee: order.shipping_amount, totalAmount: order.total_amount,
+        status: order.status, paymentMethod: order.payment_method, paymentStatus: order.payment_status,
+        promoCode: order.promo_code, notes: order.notes, guestAccessToken: null, createdAt: order.created_at,
+      };
+      idempotency.set(params.p_key_hash, { fingerprint: params.p_fingerprint, response });
+      return response;
+    },
+  };
+});
+vi.mock('../../src/repositories/settings.repository.js', () => ({
+  getConfiguredWhatsappNumber: (value?: string) => value && value.replace(/\D/g, '').length >= 10 ? value : '',
+  settingsRepository: {
+    getSettings: async () => ({ ...settingsState.data }),
+    updateSettings: async (patch: Record<string, unknown>) => (settingsState.data = { ...settingsState.data, ...patch, contentVersion: settingsState.data.contentVersion + 1 }),
+    bumpVersion: async () => ++settingsState.data.contentVersion,
+  },
+}));
+vi.mock('../../src/services/supabase.service.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/services/supabase.service.js')>();
+  return {
+    ...actual,
+    getSupabaseAdminClient: () => checkoutState.client,
+    isSupabaseCheckoutConfigured: () => true,
+    executeStorefrontCheckoutRpc: checkoutState.checkout,
+  };
+});
 import { createApp } from '../../src/app.js';
-import { signSessionToken } from '../../src/services/adminAuth.service.js';
+import { adminAuthService, signSessionToken, verifySessionToken } from '../../src/services/adminAuth.service.js';
 import { hashGuestToken, orderService } from '../../src/modules/orders/order.service.js';
-import { startTestDatabase, stopTestDatabase } from '../helpers/testDatabase.js';
-import { env } from '../../src/config/env.js';
-import type { MongoMemoryReplSet } from 'mongodb-memory-server';
 
 const app = createApp();
-let testDatabase: MongoMemoryReplSet;
-let originalProvider: string | undefined;
-
 beforeAll(async () => {
-  originalProvider = env.CHECKOUT_PROVIDER;
-  (env as any).CHECKOUT_PROVIDER = 'mongodb';
-  testDatabase = await startTestDatabase();
-}, 120_000);
-
-afterAll(async () => {
-  (env as any).CHECKOUT_PROVIDER = originalProvider;
-  if (testDatabase) await stopTestDatabase(testDatabase);
+  vi.spyOn(adminAuthService, 'validateSession').mockImplementation(async (token) => verifySessionToken(token));
+  checkoutState.reset();
 });
 
 const CUSTOMER_SECRET =
@@ -67,6 +138,7 @@ describe('Order & Admin Security Remediation Suite', () => {
     role: 'owner',
     csrfToken: 'owner-csrf-token-1234',
     expiresAt: Date.now() + 3600000,
+    sessionId: 'fixture-owner-session',
   });
 
   const staffSessionToken = signSessionToken({
@@ -76,6 +148,7 @@ describe('Order & Admin Security Remediation Suite', () => {
     role: 'staff',
     csrfToken: 'staff-csrf-token-5678',
     expiresAt: Date.now() + 3600000,
+    sessionId: 'fixture-staff-session',
   });
 
   // 1. Order Endpoint Protection

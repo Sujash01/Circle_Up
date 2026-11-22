@@ -50,6 +50,7 @@ const TIER_CONFIG: Record<
 export function CustomersPage() {
   const { showToast } = useAdminToast();
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customerTotal, setCustomerTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [tierFilter, setTierFilter] = useState('all');
@@ -64,6 +65,7 @@ export function CustomersPage() {
     };
   } | null>(null);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState('');
 
   const loadCustomers = useCallback(async () => {
     try {
@@ -73,7 +75,10 @@ export function CustomersPage() {
         tier: tierFilter !== 'all' ? tierFilter : undefined,
       });
       setCustomers(res.customers);
+      setCustomerTotal(res.meta.total);
     } catch {
+      setCustomers([]);
+      setCustomerTotal(0);
       showToast('Failed to load customers list.', 'error');
     } finally {
       setIsLoading(false);
@@ -90,19 +95,14 @@ export function CustomersPage() {
   const handleOpenDetail = async (customer: Customer) => {
     setSelectedCustomerId(customer.id);
     setIsDetailLoading(true);
+    setSelectedCustomerData(null);
+    setDetailError('');
     try {
       const data = await adminApi.getCustomerById(customer.id);
       setSelectedCustomerData(data);
     } catch {
-      setSelectedCustomerData({
-        customer,
-        orders: [],
-        sustainabilityImpact: {
-          garmentsSaved: Math.max(1, customer.totalOrders * 2),
-          co2AvoidedKg: Number((customer.totalOrders * 3.4).toFixed(1)),
-          waterSavedLitres: customer.totalOrders * 1800,
-        },
-      });
+      setDetailError('Failed to load customer details. Please try again.');
+      showToast('Failed to load customer details.', 'error');
     } finally {
       setIsDetailLoading(false);
     }
@@ -144,7 +144,7 @@ export function CustomersPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="rounded-2xl border border-[#1e2a1c]/15 bg-card/90 p-4 shadow-xs">
           <p className="text-[0.68rem] uppercase font-bold tracking-wider text-[#8b5a3e]">Total Customers</p>
-          <p className="mt-1 font-serif text-2xl font-bold text-[#1e2a1c]">{customers.length}</p>
+          <p className="mt-1 font-serif text-2xl font-bold text-[#1e2a1c]">{customerTotal}</p>
         </div>
         <div className="rounded-2xl border border-[#1e2a1c]/15 bg-card/90 p-4 shadow-xs">
           <p className="text-[0.68rem] uppercase font-bold tracking-wider text-[#8b5a3e]">VIP Members</p>
@@ -157,7 +157,7 @@ export function CustomersPage() {
         <div className="rounded-2xl border border-[#1e2a1c]/15 bg-card/90 p-4 shadow-xs">
           <p className="text-[0.68rem] uppercase font-bold tracking-wider text-[#8b5a3e]">Circular Garments Rehomed</p>
           <p className="mt-1 font-serif text-2xl font-bold text-[#1e2a1c]">
-            {customers.reduce((acc, c) => acc + c.totalOrders * 2, 0)}
+            {customers.reduce((acc, c) => acc + (c.garmentsSaved || 0), 0)}
           </p>
         </div>
       </div>
@@ -189,6 +189,7 @@ export function CustomersPage() {
             <option value="VIP">VIP Circle</option>
             <option value="REGULAR">Regular Member</option>
             <option value="NEW">New Customer</option>
+            <option value="COMMUNITY">Community Pioneer</option>
           </select>
         </div>
       </div>
@@ -312,6 +313,8 @@ export function CustomersPage() {
                 <RefreshCw className="size-6 animate-spin text-[#1e2a1c] mx-auto" />
                 <p className="text-xs font-semibold text-[#1e2a1c]">Loading customer profile...</p>
               </div>
+            ) : detailError ? (
+              <div className="py-12 text-center text-xs text-red-800">{detailError}</div>
             ) : selectedCustomerData ? (
               <>
                 <div className="flex items-start justify-between border-b border-[#1e2a1c]/10 pb-4">

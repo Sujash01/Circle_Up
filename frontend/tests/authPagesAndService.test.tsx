@@ -15,10 +15,13 @@ const mockUpdateUser = vi.fn();
 const mockGetSession = vi.fn();
 const mockOnAuthStateChange = vi.fn();
 const mockSignInWithOAuth = vi.fn();
+const mockSignInWithOtp = vi.fn();
+const mockVerifyOtp = vi.fn();
 const mockFrom = vi.fn();
+const mockIsSupabaseConfigured = vi.fn();
 
 vi.mock('@/lib/supabase', () => ({
-  isSupabaseConfigured: () => true,
+  isSupabaseConfigured: () => mockIsSupabaseConfigured(),
   supabase: {
     auth: {
       signInWithPassword: (...args: unknown[]) => mockSignInWithPassword(...args),
@@ -29,6 +32,8 @@ vi.mock('@/lib/supabase', () => ({
       getSession: (...args: unknown[]) => mockGetSession(...args),
       onAuthStateChange: (...args: unknown[]) => mockOnAuthStateChange(...args),
       signInWithOAuth: (...args: unknown[]) => mockSignInWithOAuth(...args),
+      signInWithOtp: (...args: unknown[]) => mockSignInWithOtp(...args),
+      verifyOtp: (...args: unknown[]) => mockVerifyOtp(...args),
     },
     from: (...args: unknown[]) => mockFrom(...args),
   },
@@ -40,6 +45,7 @@ import { authService } from '../src/services/authService';
 describe('Auth Service Supabase Integration', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
+    mockIsSupabaseConfigured.mockReturnValue(true);
     mockSignOut.mockResolvedValue({ error: null });
     await authService.signOut();
   });
@@ -85,11 +91,8 @@ describe('Auth Service Supabase Integration', () => {
     expect(state.user?.email).toBe('aanya@example.com');
     expect(state.accessToken).toBe('mock-sb-access-token-12345');
 
-    // Confirm password is never leaked into localStorage or sessionStorage
-    const local = localStorage.getItem('circleup_demo_session') || '';
-    const session = sessionStorage.getItem('circleup_demo_session') || '';
-    expect(local).not.toContain('SecretPassword123!');
-    expect(session).not.toContain('SecretPassword123!');
+    expect(localStorage.getItem('circleup_demo_session')).toBeNull();
+    expect(sessionStorage.getItem('circleup_demo_session')).toBeNull();
   });
 
   it('signs up and initializes user session when email confirmation is not strictly required', async () => {
@@ -102,6 +105,11 @@ describe('Auth Service Supabase Integration', () => {
         },
         session: {
           access_token: 'mock-signup-token-67890',
+          user: {
+            id: 'mock-uuid-2',
+            email: 'rohan@example.com',
+            user_metadata: { full_name: 'Rohan Mehta' },
+          },
         },
       },
       error: null,
@@ -129,7 +137,7 @@ describe('Auth Service Supabase Integration', () => {
     expect(res.token).toBe('mock-signup-token-67890');
   });
 
-  it('signs up and immediately establishes JWT token via signInWithPassword fallback if session was not returned in initial signUp', async () => {
+  it('does not fabricate a login when signup requires email confirmation', async () => {
     mockSignUp.mockResolvedValueOnce({
       data: {
         user: {
@@ -141,14 +149,6 @@ describe('Auth Service Supabase Integration', () => {
       },
       error: null,
     });
-    mockSignInWithPassword.mockResolvedValueOnce({
-      data: {
-        user: { id: 'mock-uuid-3', email: 'priya@example.com' },
-        session: { access_token: 'mock-auto-login-jwt-token' },
-      },
-      error: null,
-    });
-
     const res = await authService.signUp({
       fullName: 'Priya Patel',
       email: 'priya@example.com',
@@ -156,9 +156,9 @@ describe('Auth Service Supabase Integration', () => {
     });
 
     expect(res.success).toBe(true);
-    expect(res.requiresEmailConfirmation).toBe(false);
-    expect(res.token).toBe('mock-auto-login-jwt-token');
-    expect(store.getState().auth.accessToken).toBe('mock-auto-login-jwt-token');
+    expect(res.requiresEmailConfirmation).toBe(true);
+    expect(res.token).toBeUndefined();
+    expect(mockSignInWithPassword).not.toHaveBeenCalled();
   });
 
   it('correctly reports requiresEmailConfirmation: true when signup returns no session and email is unconfirmed', async () => {
@@ -174,11 +174,6 @@ describe('Auth Service Supabase Integration', () => {
       },
       error: null,
     });
-    mockSignInWithPassword.mockResolvedValueOnce({
-      data: { user: null, session: null },
-      error: { message: 'Email not confirmed' },
-    });
-
     const res = await authService.signUp({
       fullName: 'Unconfirmed User',
       email: 'unconfirmed@example.com',
@@ -246,6 +241,55 @@ describe('Auth Service Supabase Integration', () => {
     });
     expect(res.success).toBe(true);
   });
+
+  it('reports Google OAuth initiation errors without creating a session', async () => {
+    mockSignInWithOAuth.mockResolvedValueOnce({ data: { provider: 'google', url: null }, error: { message: 'OAuth provider unavailable' } });
+    const res = await authService.signInWithGoogle();
+    expect(res.success).toBe(false);
+    expect(res.message).toBe('OAuth provider unavailable');
+    expect(store.getState().auth.user).toBeNull();
+  });
+
+  it('fails closed when Supabase is not configured and never creates a local demo session', async () => {
+    mockIsSupabaseConfigured.mockReturnValue(false);
+    localStorage.setItem('circleup_demo_session', JSON.stringify({ user: { id: 'fake' }, token: 'fake' }));
+    sessionStorage.setItem('circleup_demo_session', JSON.stringify({ user: { id: 'fake' }, token: 'fake' }));
+
+    expect((await authService.signIn({ email: 'a@b.com', password: 'password' })).success).toBe(false);
+    expect((await authService.signUp({ fullName: 'A Person', email: 'a@b.com', password: 'password' })).success).toBe(false);
+    expect((await authService.signInWithGoogle()).success).toBe(false);
+    expect((await authService.sendPhoneOtp('+14155550123')).success).toBe(false);
+    expect((await authService.verifyPhoneOtp('+14155550123', '1234')).success).toBe(false);
+    expect((await authService.requestPasswordReset('a@b.com')).success).toBe(false);
+    expect((await authService.updatePassword('new-password')).success).toBe(false);
+    expect(authService.getStoredSession()).toBeNull();
+    expect(store.getState().auth.user).toBeNull();
+    localStorage.removeItem('circleup_demo_session');
+    sessionStorage.removeItem('circleup_demo_session');
+  });
+
+  it('rejects invalid redirects and allows explicit customer routes', async () => {
+    const { getSafeAuthRedirect } = await import('../src/services/authService');
+    expect(getSafeAuthRedirect('//evil.example')).toBe('/account');
+    expect(getSafeAuthRedirect('/\\evil.example')).toBe('/account');
+    expect(getSafeAuthRedirect('/admin/overview')).toBe('/account');
+    expect(getSafeAuthRedirect('/product/green-dress')).toBe('/product/green-dress');
+    expect(getSafeAuthRedirect('/account/orders')).toBe('/account/orders');
+  });
+
+  it('reports OTP send and verification failures from Supabase without signing in', async () => {
+    mockSignInWithOtp.mockResolvedValueOnce({ error: { message: 'SMS provider unavailable' } });
+    mockVerifyOtp.mockResolvedValueOnce({ data: { session: null, user: null }, error: { message: 'Invalid token' } });
+
+    expect((await authService.sendPhoneOtp('+14155550123')).success).toBe(false);
+    expect((await authService.verifyPhoneOtp('+14155550123', '1234')).success).toBe(false);
+    expect(store.getState().auth.user).toBeNull();
+  });
+
+  it('reports Supabase password reset failures', async () => {
+    mockResetPasswordForEmail.mockResolvedValueOnce({ error: { message: 'Email provider unavailable' } });
+    expect((await authService.requestPasswordReset('a@b.com')).success).toBe(false);
+  });
 });
 
 describe('SignInPage & SignUpPage UI Rendering', () => {
@@ -276,6 +320,7 @@ describe('SignInPage & SignUpPage UI Rendering', () => {
     expect(host.textContent).toContain('Sign In to CircleUp');
     expect(host.textContent).toContain('Member Access');
     expect(host.textContent).toContain('Continue with Google');
+    expect(host.textContent).not.toContain('Demo');
 
     act(() => {
       root.unmount();
@@ -310,6 +355,7 @@ describe('SignInPage & SignUpPage UI Rendering', () => {
     expect(host.textContent).toContain('Create Your Account');
     expect(host.textContent).toContain('Join CircleUp');
     expect(host.textContent).toContain('Continue with Google');
+    expect(host.textContent).not.toContain('Demo');
 
     act(() => {
       root.unmount();

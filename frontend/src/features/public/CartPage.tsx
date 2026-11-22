@@ -486,7 +486,7 @@ export function CartPage() {
             </div>
             {promoError && <p className="text-[0.72rem] text-destructive">{promoError}</p>}
             {cart.promoCode && (
-              <p className="text-[0.72rem] text-primary">Promo &lsquo;{cart.promoCode}&rsquo; applied</p>
+              <p className="text-[0.72rem] text-primary">Code &lsquo;{cart.promoCode}&rsquo; will be verified at checkout. The estimate excludes any discount.</p>
             )}
           </form>
 

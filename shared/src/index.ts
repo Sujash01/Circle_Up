@@ -14,3 +14,4 @@ export * from './schemas/event.js';
 export * from './schemas/settings.js';
 export * from './schemas/admin.js';
 export * from './schemas/customer.js';
+export * from './schemas/inquiry.js';

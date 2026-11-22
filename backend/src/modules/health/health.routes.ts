@@ -1,21 +1,18 @@
 import { Router } from 'express';
-import mongoose from 'mongoose';
 import type { HealthCheckData } from '@circleup/shared';
-import { getDatabaseStatus } from '../../config/db.js';
 import { env } from '../../config/env.js';
+import { getSupabaseAdminClient } from '../../services/supabase.service.js';
 import { sendSuccess } from '../../utils/apiResponse.js';
 
 export const healthRouter = Router();
 
 healthRouter.get('/', async (_req, res) => {
-  let dbStatus = getDatabaseStatus();
-
-  if (dbStatus === 'connected' && mongoose.connection.db) {
-    try {
-      await mongoose.connection.db.admin().ping();
-    } catch {
-      dbStatus = 'disconnected';
-    }
+  let dbStatus: HealthCheckData['db'] = 'disconnected';
+  try {
+    const { error } = await getSupabaseAdminClient().from('products').select('id').limit(1);
+    if (!error) dbStatus = 'connected';
+  } catch {
+    dbStatus = 'disconnected';
   }
 
   const isHealthy = dbStatus === 'connected';

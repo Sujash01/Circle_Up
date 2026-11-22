@@ -1,33 +1,29 @@
-import { connectDatabase, disconnectDatabase } from '../config/db.js';
-import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
-import { Product } from '../models/Product.js';
-import { Coupon } from '../models/Coupon.js';
-import { Rental } from '../models/Rental.js';
-import { Event } from '../models/Event.js';
-import { SiteSettings } from '../models/SiteSettings.js';
-import { adminAuthService } from '../services/adminAuth.service.js';
+import { rentalCatalogItemSchema, type IProductItem } from '@circleup/shared';
+import { rentalRepository } from '../repositories/rental.repository.js';
+import { eventRepository } from '../repositories/event.repository.js';
+import { settingsRepository } from '../repositories/settings.repository.js';
+import { couponRepository } from '../repositories/coupon.repository.js';
 import { SEED_PRODUCTS } from '../data/seedProducts.js';
+import { supabaseCatalogService } from '../services/supabaseCatalog.service.js';
 
 const LAUNCH_COUPONS = [
   {
     code: 'THRIFT10',
-    discountType: 'PERCENTAGE',
-    discountValue: 10,
-    minOrderInPaise: 100000,
-    maxDiscountInPaise: 50000,
+    discountType: 'PERCENTAGE' as const,
+    value: 10,
+    minOrderAmount: 100000,
+    maxDiscountAmount: 50000,
     usageLimit: 1000,
-    usedCount: 0,
     isActive: true,
   },
   {
     code: 'CIRCLE20',
-    discountType: 'PERCENTAGE',
-    discountValue: 20,
-    minOrderInPaise: 150000,
-    maxDiscountInPaise: 100000,
+    discountType: 'PERCENTAGE' as const,
+    value: 20,
+    minOrderAmount: 150000,
+    maxDiscountAmount: 100000,
     usageLimit: 500,
-    usedCount: 0,
     isActive: true,
   },
 ];
@@ -88,137 +84,44 @@ const DEFAULT_EVENTS = [
   },
 ];
 
-const DEFAULT_SETTINGS = {
-  announcementText: 'Use code THRIFT10 or CIRCLE20 in bag • Plastic-free sustainable packaging on every parcel',
-  marqueePhrases: [
-    'Thrifted with care',
-    'Rentals for every occasion',
-    'Handcrafted pieces',
-    'Plastic-free packaging',
-    'Community sale days',
-    'Fashion that lasts',
-  ],
-  storeAddress: 'CircleUp Studio Courtyard, Sector 7, Chandigarh',
-  contactEmail: 'care@circleuponline.com',
-  contactPhone: '+91 98765 43210',
-  whatsappNumber: '',
-  contentVersion: 1,
-};
-
 async function runSeed() {
-  logger.info({ uri: env.MONGODB_URI.replace(/:[^:]*@/, ':****@') }, 'Connecting to MongoDB for catalog seed...');
-  await connectDatabase();
-
-  // 1. Seed Products
-  let productCount = 0;
-  for (const item of SEED_PRODUCTS as unknown as Array<Record<string, unknown>>) {
-    const serial = String(item.serialNumber).toUpperCase();
-    await Product.findOneAndUpdate(
-      { serialNumber: serial },
-      {
-        $set: {
-          serialNumber: serial,
-          name: item.name,
-          slug: item.slug,
-          description: item.description,
-          price: item.price,
-          originalPrice: item.originalPrice,
-          stock: item.stock ?? 1,
-          images: item.images,
-          sizes: item.sizes || [],
-          category: item.category,
-          categoryLabel: item.categoryLabel || '',
-          subcategory: item.subcategory || '',
-          productType: item.productType || 'Pre-Loved',
-          condition: item.condition || 'Gently Used',
-          gender: item.gender || 'Unisex',
-          measurements: item.measurements || '',
-          makerNote: item.makerNote || '',
-          tags: item.tags || [],
-          featured: item.featured ?? false,
-          isNewArrival: item.isNewArrival ?? true,
-          status: 'ACTIVE',
-          chestPick: Boolean(item.chestPick || item.featured),
-          variants: item.variants || [],
-        },
-      },
-      { upsert: true, new: true },
-    );
-    productCount++;
-  }
+  // 1. Seed Products into the authoritative PostgreSQL catalog.
+  const seedProducts = (SEED_PRODUCTS as unknown as Array<Partial<IProductItem> & { chestPick?: boolean }>).map((item) => ({
+    ...item,
+    status: (item.stock ?? 1) > 0 ? 'ACTIVE' as const : 'SOLD_OUT' as const,
+    chestPick: Boolean(item.chestPick || item.featured),
+  }));
+  const productCount = await supabaseCatalogService.seedProducts(seedProducts);
   logger.info({ count: productCount }, 'Seeded products successfully');
 
   // 2. Seed Coupons
   for (const coupon of LAUNCH_COUPONS) {
-    await Coupon.findOneAndUpdate(
-      { code: coupon.code },
-      { $set: coupon },
-      { upsert: true, new: true },
-    );
+    await couponRepository.seedIfMissing(coupon);
   }
   logger.info({ count: LAUNCH_COUPONS.length }, 'Seeded launch coupons successfully');
 
   // 3. Seed Rentals
   for (const rental of DEFAULT_RENTALS) {
-    await Rental.findOneAndUpdate(
-      { slug: rental.slug },
-      { $set: rental },
-      { upsert: true, new: true },
-    );
+    await rentalRepository.seedIfMissing(rentalCatalogItemSchema.parse(rental));
   }
   logger.info({ count: DEFAULT_RENTALS.length }, 'Seeded rentals successfully');
 
   // 4. Seed Events
   for (const evt of DEFAULT_EVENTS) {
-    await Event.findOneAndUpdate(
-      { title: evt.title },
-      { $set: evt },
-      { upsert: true, new: true },
-    );
+    await eventRepository.seedIfMissing({ ...evt, type: evt.type as 'POP_UP' | 'COMMUNITY' | 'OFFLINE_SALE', image: evt.image, registeredCount: evt.registeredCount || 0, isRegistrationOpen: evt.isRegistrationOpen ?? true });
   }
   logger.info({ count: DEFAULT_EVENTS.length }, 'Seeded events successfully');
 
   // 5. Seed Site Settings
-  await SiteSettings.findOneAndUpdate(
-    {},
-    { $setOnInsert: DEFAULT_SETTINGS },
-    { upsert: true, new: true },
-  );
+  await settingsRepository.getSettings();
   logger.info('Seeded site settings successfully');
 
-  // 6. Seed Default Admin Users
-  try {
-    await adminAuthService.createAdminUser({
-      email: 'owner@circleuponline.com',
-      password: 'OwnerPassword123',
-      name: 'CircleUp Owner',
-      role: 'owner',
-      force: true,
-    });
-    logger.info('Seeded default owner user: owner@circleuponline.com');
-  } catch {
-    logger.info('Owner user already exists, skipping.');
-  }
+  // Administrator provisioning is explicit via `npm run admin:create`; never seed credentials.
 
-  try {
-    await adminAuthService.createAdminUser({
-      email: 'staff@circleuponline.com',
-      password: 'StaffPassword123',
-      name: 'CircleUp Staff',
-      role: 'staff',
-      force: true,
-    });
-    logger.info('Seeded default staff user: staff@circleuponline.com');
-  } catch {
-    logger.info('Staff user already exists, skipping.');
-  }
-
-  await disconnectDatabase();
   process.exit(0);
 }
 
-runSeed().catch(async (err) => {
+runSeed().catch((err) => {
   logger.error({ err: err instanceof Error ? err.message : err }, 'Failed to seed catalog');
-  await disconnectDatabase();
   process.exit(1);
 });

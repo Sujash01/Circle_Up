@@ -1,4 +1,6 @@
-# CIRCLEUP — MASTER SYSTEM DESIGN DOCUMENT (SDD)
+> **Historical architecture archive.** This document describes a superseded MongoDB Atlas/Mongoose design and is retained for historical context only. It is not current implementation or deployment guidance. CircleUp's active database and application-managed media storage use Supabase. Consult repository migrations and `backend/.env.example` for current configuration.
+
+# CIRCLEUP — MASTER SYSTEM DESIGN DOCUMENT (Historical)
 
 **Version:** 1.0 (Engineering Blueprint)  
 **Target Stack:** React + TypeScript (Vite) · Node.js + Express + TypeScript · MongoDB Atlas (Mongoose) · Cloudinary · Vercel + Render  

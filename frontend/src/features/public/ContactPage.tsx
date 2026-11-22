@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { apiClient } from '@/services/apiClient';
 import { WHATSAPP_BUSINESS_NUMBER } from '@/services/cartService';
-import { contactService } from '@/services/communityServices';
 import type { ContactSubmission } from '@/types/storefront';
 
 export function ContactPage() {
@@ -10,13 +9,13 @@ export function ContactPage() {
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [savedEntry, setSavedEntry] = useState<ContactSubmission | null>(null);
-  const [history, setHistory] = useState<ContactSubmission[]>(() =>
-    contactService.getSubmissions(),
-  );
+  const [history, setHistory] = useState<ContactSubmission[]>([]);
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     setError('');
     setSavedEntry(null);
 
@@ -37,14 +36,30 @@ export function ContactPage() {
       return;
     }
 
-    const result = contactService.saveSubmission({ name, email, subject, message });
-    setSavedEntry(result.submission);
-    setHistory(contactService.getSubmissions());
-    void apiClient.post('/contact', { name, email, subject, message }).catch(() => {});
-    setName('');
-    setEmail('');
-    setSubject('');
-    setMessage('');
+    setIsSubmitting(true);
+    try {
+      const response = await apiClient.post<{ data: ContactSubmission }>('/contact', {
+        name,
+        email,
+        subject,
+        message,
+      });
+      const submittedEntry = response.data.data;
+      setSavedEntry(submittedEntry);
+      setHistory((current) => [submittedEntry, ...current]);
+      setName('');
+      setEmail('');
+      setSubject('');
+      setMessage('');
+    } catch (submitError) {
+      setError(
+        submitError instanceof Error
+          ? submitError.message
+          : 'We could not send your message. Please try again.',
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -160,9 +175,10 @@ export function ContactPage() {
 
           <button
             type="submit"
+            disabled={isSubmitting}
             className="bg-primary px-7 py-3 text-xs font-semibold uppercase tracking-widest text-primary-foreground hover:bg-forest-deep transition-colors"
           >
-            Send Message
+            {isSubmitting ? 'Sending...' : 'Send Message'}
           </button>
 
           {savedEntry && (

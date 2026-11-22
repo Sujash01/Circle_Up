@@ -132,12 +132,6 @@ export const cartService = {
       const nextState = { ...state, promoCode: undefined };
       return { nextState: this.saveCart(nextState) };
     }
-    if (normalized !== 'THRIFT10' && normalized !== 'CIRCLE20') {
-      return {
-        nextState: state,
-        error: 'Invalid code. Try THRIFT10 (10% off) or CIRCLE20 (20% off orders ₹1,500+).',
-      };
-    }
     const nextState = { ...state, promoCode: normalized };
     return { nextState: this.saveCart(nextState) };
   },
@@ -154,22 +148,13 @@ export const cartService = {
       0,
     );
 
-    let discount = 0;
-    let discountLabel: string | undefined;
-
-    if (state.promoCode === 'THRIFT10' && subtotal > 0) {
-      discount = Math.round(subtotal * 0.1);
-      discountLabel = 'THRIFT10 (10% off)';
-    } else if (state.promoCode === 'CIRCLE20' && subtotal >= 1500) {
-      discount = Math.round(subtotal * 0.2);
-      discountLabel = 'CIRCLE20 (20% off)';
-    }
+    const discount = 0;
 
     return {
       itemCount,
       subtotal,
       discount,
-      discountLabel,
+      discountLabel: undefined,
       estimatedTotal: Math.max(0, subtotal - discount),
     };
   },

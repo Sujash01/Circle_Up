@@ -1,4 +1,6 @@
-# CircleUp Architecture & Contract Audit
+> **Historical audit — November 14, 2026.** This document records the pre-migration architecture and contains obsolete MongoDB recommendations. Do not use it as current setup or operational guidance. The active application uses Supabase PostgreSQL and Supabase Storage.
+
+# CircleUp Architecture & Contract Audit (Historical)
 
 **Date**: November 14, 2026  
 **Auditor**: Autonomous Senior Full-Stack Engineer  

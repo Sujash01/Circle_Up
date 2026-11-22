@@ -68,6 +68,8 @@ export function ProductFormPage() {
   const [images, setImages] = useState<ImageItem[]>([
     { url: '/assets/rtw-1.jpg', altText: 'Front view flat lay of garment', isCover: true },
   ]);
+  const [persistedImageUrls, setPersistedImageUrls] = useState<string[]>([]);
+  const [newUploadUrls, setNewUploadUrls] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
 
   // Auto-slug generator
@@ -147,6 +149,7 @@ export function ProductFormPage() {
           }
 
           if (found.images && found.images.length > 0) {
+            setPersistedImageUrls(found.images);
             setImages(
               found.images.map((img: string, idx: number) => ({
                 url: img,
@@ -187,6 +190,7 @@ export function ProductFormPage() {
     try {
       setIsUploading(true);
       const results = await adminApi.uploadMedia(Array.from(files));
+      setNewUploadUrls((current) => [...current, ...results.map((result) => result.w800)]);
       const newItems: ImageItem[] = results.map((r, i) => ({
         url: r.w800,
         altText: `${name || 'Product'} photo`,
@@ -351,14 +355,23 @@ export function ProductFormPage() {
       setIsSaving(true);
       if (isEditing && id) {
         await adminApi.updateProduct(id, payload);
-        showToast(`Product ${name} updated successfully.`, 'success');
       } else {
         await adminApi.createProduct(payload);
-        showToast(`Thrift piece ${name} added to catalog.`, 'success');
       }
+      const removedMedia = [...new Set([...persistedImageUrls, ...newUploadUrls])]
+        .filter((url) => !sortedImages.includes(url) && url.includes('/storage/v1/object/public/product-images/'));
+      const cleanup = await Promise.allSettled(removedMedia.map((url) => adminApi.deleteMedia(url)));
+      const cleanupFailed = cleanup.some((result) => result.status === 'rejected');
+      showToast(
+        cleanupFailed
+          ? `Product ${name} saved. Some unused images could not be removed.`
+          : isEditing ? `Product ${name} updated successfully.` : `Thrift piece ${name} added to catalog.`,
+        cleanupFailed ? 'info' : 'success',
+      );
       setIsDirty(false);
       navigate('/admin/products');
     } catch (err: unknown) {
+      await Promise.allSettled(newUploadUrls.map((url) => adminApi.deleteMedia(url)));
       showToast(err instanceof Error ? err.message : 'Failed to save product.', 'error');
     } finally {
       setIsSaving(false);
