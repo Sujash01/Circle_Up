@@ -672,7 +672,15 @@ export function HomePage() {
       ['#e7e1ce', '#c8d3b0'],
       ['#d9cdb5', '#a89572'],
     ];
-    return picked.slice(0, 6).map((p, idx) => ({
+
+    let fullList = [...picked];
+    if (fullList.length < 6) {
+      const pickedIds = new Set(fullList.map((p) => p.id));
+      const extra = allProducts.filter((p) => !pickedIds.has(p.id) && p.images?.length > 0);
+      fullList = [...fullList, ...extra.slice(0, 6 - fullList.length)];
+    }
+
+    return fullList.slice(0, 6).map((p, idx) => ({
       name: p.name,
       price: formatPrice(p.price),
       tag: p.sizes?.[0] ? `Size ${p.sizes[0]}` : p.condition || 'Curated find',

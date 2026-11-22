@@ -156,7 +156,15 @@ export const productRepository = {
 
     if (!isDbConnected()) {
       const picks = (SEED_PRODUCTS as unknown as Array<Record<string, unknown>>).filter((p) => Boolean(p.chestPick));
-      return (picks.length >= 4 ? picks : SEED_PRODUCTS.slice(0, 6)) as unknown as IProductDocument[];
+      if (picks.length > 0) {
+        if (picks.length >= 6) return picks.slice(0, 6) as unknown as IProductDocument[];
+        const existingIds = new Set(picks.map((p) => (p as { id?: string }).id));
+        const extra = (SEED_PRODUCTS as unknown as Array<Record<string, unknown>>)
+          .filter((p) => !existingIds.has((p as { id?: string }).id))
+          .slice(0, 6 - picks.length);
+        return [...picks, ...extra] as unknown as IProductDocument[];
+      }
+      return SEED_PRODUCTS.slice(0, 6) as unknown as IProductDocument[];
     }
 
     const picks = await Product.find({
@@ -167,8 +175,18 @@ export const productRepository = {
       .limit(6)
       .lean({ virtuals: true });
 
-    if (picks.length >= 4) {
-      return picks as unknown as IProductDocument[];
+    if (picks.length > 0) {
+      if (picks.length >= 6) return picks as unknown as IProductDocument[];
+      const existingIds = new Set(picks.map((p) => String((p as { _id?: unknown })._id)));
+      const fallback = await Product.find({
+        _id: { $nin: Array.from(existingIds) },
+        status: { $in: ['ACTIVE', 'PUBLISHED'] },
+        deletedAt: null,
+      })
+        .sort({ featured: -1, createdAt: -1 })
+        .limit(6 - picks.length)
+        .lean({ virtuals: true });
+      return [...picks, ...fallback] as unknown as IProductDocument[];
     }
 
     // Fallback to newest featured if fewer than 4 explicitly tagged

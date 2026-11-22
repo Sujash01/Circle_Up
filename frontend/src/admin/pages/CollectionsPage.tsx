@@ -59,7 +59,7 @@ export default function CollectionsPage() {
     try {
       const [settings, prodsRes] = await Promise.all([
         adminApi.getSettings(),
-        adminApi.getProducts({ limit: 48 }),
+        adminApi.getProducts({ limit: 100 }),
       ]);
 
       if (settings?.categoryTiles && settings.categoryTiles.length === 4) {
@@ -104,6 +104,10 @@ export default function CollectionsPage() {
 
   const toggleChestPick = async (prod: Product) => {
     const nextStatus = !prod.chestPick;
+    if (nextStatus && chestPicks.length >= 6) {
+      showToast('error', 'Maximum 6 chest picks allowed for the 3D Hero. Please unpick one first.');
+      return;
+    }
     // optimistic update
     setProducts((prev) =>
       prev.map((p) => (p.id === prod.id ? { ...p, chestPick: nextStatus } : p)),

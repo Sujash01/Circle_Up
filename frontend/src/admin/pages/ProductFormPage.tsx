@@ -126,10 +126,10 @@ export function ProductFormPage() {
             setMeasurementsData(rawMeasData);
           } else if (found.measurements && typeof found.measurements === 'string') {
             // Best effort parse e.g. "Bust: 34 · Waist: 28"
-            const parts = found.measurements.split('·').map((p) => p.trim());
+            const parts = found.measurements.split('·').map((p: string) => p.trim());
             const parsed: Record<string, string> = {};
-            parts.forEach((part) => {
-              const [k, v] = part.split(':').map((s) => s.trim());
+            parts.forEach((part: string) => {
+              const [k, v] = part.split(':').map((s: string) => s.trim());
               if (k && v) parsed[k] = v.replace(/"/g, '');
             });
             if (Object.keys(parsed).length > 0) {
@@ -140,7 +140,7 @@ export function ProductFormPage() {
           if (found.sizes && found.sizes.length > 0) {
             setSelectedSizes(found.sizes);
             const stocks: Record<string, number> = {};
-            found.sizes.forEach((s) => {
+            found.sizes.forEach((s: string) => {
               stocks[s] = Math.max(1, Math.floor((found.stock ?? 1) / found.sizes.length));
             });
             setSizeStocks(stocks);
@@ -148,7 +148,7 @@ export function ProductFormPage() {
 
           if (found.images && found.images.length > 0) {
             setImages(
-              found.images.map((img, idx) => ({
+              found.images.map((img: string, idx: number) => ({
                 url: img,
                 altText: `${found.name} preview photo ${idx + 1}`,
                 isCover: idx === 0,

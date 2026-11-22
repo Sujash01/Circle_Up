@@ -340,11 +340,30 @@ export const supabaseCatalogService = {
     }
 
     const picks = (chestData || []).map(mapSupabaseRowToProductItem);
-    if (picks.length >= 4) {
-      return picks;
+    if (picks.length > 0) {
+      if (picks.length >= 6) {
+        return picks.slice(0, 6);
+      }
+      // If 1-5 products are picked, pad remaining slots with active products not already in picks
+      const existingIds = new Set(picks.map((p) => p.id));
+      const remainingSlots = 6 - picks.length;
+      const { data: fallbackData } = await client
+        .from('products')
+        .select('*')
+        .in('status', ['AVAILABLE', 'ACTIVE', 'PUBLISHED'])
+        .order('featured', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(remainingSlots + picks.length);
+
+      const extra = (fallbackData || [])
+        .map(mapSupabaseRowToProductItem)
+        .filter((p) => !existingIds.has(p.id))
+        .slice(0, remainingSlots);
+
+      return [...picks, ...extra];
     }
 
-    // 2. Fallback: featured active products if fewer than 4 explicitly tagged
+    // 2. Fallback: featured active products if zero explicitly tagged
     const { data: featuredData } = await client
       .from('products')
       .select('*')
