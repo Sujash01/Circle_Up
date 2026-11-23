@@ -298,5 +298,5 @@ All seven remediation phases covering P0-1 through P0-7, P1-1 through P1-12, P2-
    - Removed 17 redundant duplicate large JPG files from `frontend/src/assets/`.
    - Cleaned all React hook warnings (0 errors, 0 warnings in frontend lint).
    - Added secret scanning and npm audit steps to CI workflow.
-   - **Test Count Baseline Resolution (P3-6)**: Codex baseline was 278/279 tests. The current test suite contains **344 backend tests + 78 frontend tests = 422 total passing tests** with 0 failures and 0 skipped tests.
+   - **Test Count Baseline Resolution (P3-6)**: Codex baseline was 278/279 tests. The current test suite contains **337 backend tests + 78 frontend tests = 415 total passing tests** with 0 failures and 0 skipped tests.
 

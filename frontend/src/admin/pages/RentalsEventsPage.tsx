@@ -13,7 +13,7 @@ import {
 import { adminApi } from '../services/adminApi';
 import { useAdminToast } from '../context/AdminToastContext';
 import { AdminCardSkeleton } from '../components/AdminSkeleton';
-import { formatPrice } from '@circleup/shared';
+import { formatPrice, normalizePriceToPaise } from '@circleup/shared';
 
 interface RentalItem {
   id?: string;
@@ -95,10 +95,10 @@ export default function RentalsEventsPage() {
       const payload = {
         ...editingRental,
         slug,
-        rentalPrice3Days: Math.round(Number(editingRental.rentalPrice3Days || 0)),
-        rentalPrice7Days: Math.round(Number(editingRental.rentalPrice7Days || 0)),
-        rentalPrice14Days: Math.round(Number(editingRental.rentalPrice14Days || 0)),
-        securityDeposit: Math.round(Number(editingRental.securityDeposit || 0)),
+        rentalPrice3Days: normalizePriceToPaise(editingRental.rentalPrice3Days),
+        rentalPrice7Days: normalizePriceToPaise(editingRental.rentalPrice7Days),
+        rentalPrice14Days: normalizePriceToPaise(editingRental.rentalPrice14Days),
+        securityDeposit: normalizePriceToPaise(editingRental.securityDeposit),
       };
 
       if (rentalId && rentalId !== 'new') {

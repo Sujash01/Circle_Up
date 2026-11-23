@@ -1,4 +1,4 @@
-﻿# CircleUp Production Cutover Checklist
+# CircleUp Production Cutover Checklist
 
 This checklist outlines the production cutover procedure. It is a planning document only; no remote database or production environment was accessed during the local migration work.
 

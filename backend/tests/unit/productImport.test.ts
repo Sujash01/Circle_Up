@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { convertRupeesToPaise, formatPrice } from '@circleup/shared';
+import { convertRupeesToPaise, formatPrice, normalizePriceToPaise, parseRupeesToNumber } from '@circleup/shared';
 import { parseCircleUpCsv, reconcileCsvProduct } from '../../src/services/productImport.service.js';
 
 describe('Product CSV Import & Monetary Reconciliation (P0-1)', () => {
@@ -10,6 +10,49 @@ describe('Product CSV Import & Monetary Reconciliation (P0-1)', () => {
     expect(convertRupeesToPaise('350')).toBe(35000);
     expect(formatPrice(55000)).toBe('₹550');
     expect(formatPrice(35000)).toBe('₹350');
+  });
+
+  it('converts price strings like "700 (Rental)" and "₹700" cleanly into 70000 paise (₹700)', () => {
+    expect(parseRupeesToNumber('700 (Rental)')).toBe(700);
+    expect(parseRupeesToNumber('₹700 (Rental)')).toBe(700);
+    expect(parseRupeesToNumber('Rs. 700 (Rental)')).toBe(700);
+    expect(parseRupeesToNumber(700)).toBe(700);
+
+    expect(convertRupeesToPaise('700 (Rental)')).toBe(70000);
+    expect(convertRupeesToPaise('₹700 (Rental)')).toBe(70000);
+    expect(convertRupeesToPaise(700)).toBe(70000);
+
+    expect(formatPrice(70000)).toBe('₹700');
+    expect(formatPrice(convertRupeesToPaise('700 (Rental)'))).toBe('₹700');
+
+    expect(normalizePriceToPaise('700 (Rental)')).toBe(70000);
+    expect(normalizePriceToPaise(700)).toBe(70000);
+    expect(normalizePriceToPaise(70000)).toBe(70000);
+    expect(formatPrice(normalizePriceToPaise(700))).toBe('₹700');
+    expect(formatPrice(normalizePriceToPaise('700 (Rental)'))).toBe('₹700');
+  });
+
+  it('reconciles raw CSV row for serial 160 Latex bodysuit into 70000 paise (₹700)', () => {
+    const rawLatexRow = {
+      code: '160',
+      category_code: 'R',
+      name: 'Latex bodysuit',
+      size: "XS-S (bust-34', waist-28', shoulder-14', sleeve-21', length-55')",
+      retail_price: '700 (Rental)',
+      is_rental: 'true',
+      image_drive_url: 'https://drive.google.com/file/d/11IxtRfNJVu9s_GG2XmK3JYgVUFHFOy0R/view?usp=drivesdk',
+      category: 'Rental',
+      product_type: 'Rental',
+    };
+
+    const reconciled = reconcileCsvProduct(rawLatexRow);
+    expect(reconciled.code).toBe('160');
+    expect(reconciled.name).toBe('Latex bodysuit');
+    expect(reconciled.priceInRupees).toBe(700);
+    expect(reconciled.priceInPaise).toBe(70000);
+    expect(reconciled.formattedPrice).toBe('₹700');
+    expect(reconciled.isRental).toBe(true);
+    expect(formatPrice(reconciled.priceInPaise)).toBe('₹700');
   });
 
   it('reconciles raw CSV row into standardized paise product', () => {

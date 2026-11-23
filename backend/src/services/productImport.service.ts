@@ -1,4 +1,9 @@
-import { convertRupeesToPaise, formatPrice, moneyPaiseSchema } from '@circleup/shared';
+import {
+  convertRupeesToPaise,
+  formatPrice,
+  moneyPaiseSchema,
+  parseRupeesToNumber,
+} from '@circleup/shared';
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 
@@ -31,11 +36,12 @@ export interface ReconciledCsvProduct {
 /**
  * Parses and converts raw CSV records from circleup_final_45_products.csv into
  * standardized integer paise products.
+ * Handles strings like "700 (Rental)", "₹700", and raw numeric rupees like 700 cleanly into 70000 paise.
  */
 export function reconcileCsvProduct(row: CsvProductRow): ReconciledCsvProduct {
   const rawPrice = row.retail_price;
   const priceInPaise = convertRupeesToPaise(rawPrice);
-  const priceInRupees = typeof rawPrice === 'number' ? rawPrice : parseFloat(String(rawPrice).trim().replace(/[^0-9.]/g, ''));
+  const priceInRupees = typeof rawPrice === 'number' ? rawPrice : parseRupeesToNumber(rawPrice);
 
   // Double check canonical money schema
   moneyPaiseSchema.parse(priceInPaise);

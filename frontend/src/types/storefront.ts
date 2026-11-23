@@ -49,7 +49,7 @@ export interface Product {
   category: ProductCategorySlug;
   categoryLabel: string;
   subcategory: string;
-  productType: 'Pre-Loved' | 'Fresh Find' | 'Handcrafted';
+  productType: 'Pre-Loved' | 'Fresh Find' | 'Handcrafted' | 'Rental';
   condition: ProductCondition;
   gender: GenderTag;
   sizes: string[];

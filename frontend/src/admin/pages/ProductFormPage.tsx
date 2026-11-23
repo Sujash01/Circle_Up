@@ -19,6 +19,7 @@ import {
   SIZE_CHARTS,
   resolveSizeChartForCategory,
   extractCategoryCodeFromSerial,
+  convertRupeesToPaise,
 } from '@circleup/shared';
 
 interface ImageItem {
@@ -282,11 +283,14 @@ export function ProductFormPage() {
       showToast('Product name is required.', 'error');
       return;
     }
-    const priceNum = Number(priceRupees);
-    if (isNaN(priceNum) || priceNum <= 0) {
-      showToast('Please enter a valid price in rupees.', 'error');
+    let priceInPaise: number;
+    try {
+      priceInPaise = convertRupeesToPaise(priceRupees);
+    } catch {
+      showToast('Please enter a valid price in rupees (e.g. 700, ₹700, or 700 (Rental)).', 'error');
       return;
     }
+
     if (images.length === 0) {
       showToast('Please add at least one product photo.', 'error');
       return;
@@ -300,9 +304,23 @@ export function ProductFormPage() {
       }
     }
 
-    const priceInPaise = Math.round(priceNum * 100);
-    const originalPriceInPaise = originalPriceRupees ? Math.round(Number(originalPriceRupees) * 100) : undefined;
-    const compareAtPriceInPaise = compareAtPriceRupees ? Math.round(Number(compareAtPriceRupees) * 100) : undefined;
+    let originalPriceInPaise: number | undefined;
+    if (originalPriceRupees && originalPriceRupees.trim()) {
+      try {
+        originalPriceInPaise = convertRupeesToPaise(originalPriceRupees);
+      } catch {
+        originalPriceInPaise = undefined;
+      }
+    }
+
+    let compareAtPriceInPaise: number | undefined;
+    if (compareAtPriceRupees && compareAtPriceRupees.trim()) {
+      try {
+        compareAtPriceInPaise = convertRupeesToPaise(compareAtPriceRupees);
+      } catch {
+        compareAtPriceInPaise = undefined;
+      }
+    }
 
     // Arrange images so cover image is at index 0
     const sortedImages = [
@@ -584,11 +602,10 @@ export function ProductFormPage() {
                     key={sz}
                     type="button"
                     onClick={() => toggleSize(sz)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
-                      isSelected
-                        ? 'bg-[#1e2a1c] text-[#f8f4e2] shadow-xs'
-                        : 'bg-[#1e2a1c]/5 text-[#1e2a1c] hover:bg-[#1e2a1c]/10'
-                    }`}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${isSelected
+                      ? 'bg-[#1e2a1c] text-[#f8f4e2] shadow-xs'
+                      : 'bg-[#1e2a1c]/5 text-[#1e2a1c] hover:bg-[#1e2a1c]/10'
+                      }`}
                   >
                     {sz} {isSelected && '✓'}
                   </button>
@@ -700,9 +717,8 @@ export function ProductFormPage() {
               {images.map((img, idx) => (
                 <div
                   key={img.url + idx}
-                  className={`p-3 rounded-2xl border transition-all space-y-2 relative bg-[#fcfbf7] ${
-                    img.isCover ? 'border-[#1e2a1c] ring-2 ring-[#1e2a1c]/20' : 'border-[#1e2a1c]/15'
-                  }`}
+                  className={`p-3 rounded-2xl border transition-all space-y-2 relative bg-[#fcfbf7] ${img.isCover ? 'border-[#1e2a1c] ring-2 ring-[#1e2a1c]/20' : 'border-[#1e2a1c]/15'
+                    }`}
                 >
                   <div className="relative aspect-square rounded-xl overflow-hidden bg-stone-100 border border-[#1e2a1c]/10">
                     <img src={img.url} alt={img.altText} className="size-full object-cover" />

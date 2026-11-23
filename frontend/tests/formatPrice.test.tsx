@@ -242,4 +242,103 @@ describe('P0-1 Monetary Specification & Integer Paise Formatting', () => {
     expect(decodedUrl).toContain('• Price: ₹550');
     expect(decodedUrl).not.toContain('₹55,000');
   });
+
+  it('proves "Latex bodysuit" (serial 160, price 700 (Rental)) renders as ₹700 (never ₹7) across PDP, ProductCard, and WhatsApp text', () => {
+    const TEST_LATEX_BODYSUIT: Product = {
+      id: 'test-latex-160',
+      serialNumber: '160',
+      name: 'Latex bodysuit',
+      slug: 'latex-bodysuit-160',
+      category: 'womens-one-piece',
+      categoryLabel: "Women's One Piece",
+      subcategory: 'Bodysuits',
+      productType: 'Rental',
+      condition: 'Mint',
+      gender: 'Women',
+      price: 70000, // 70000 paise = ₹700 (converted from "700 (Rental)")
+      originalPrice: 150000,
+      images: ['/latex-bodysuit.jpg'],
+      sizes: ['XS-S'],
+      stock: 1,
+      featured: true,
+      isNewArrival: true,
+      availability: 'In Stock',
+      description: "XS-S (bust-34', waist-28', shoulder-14', sleeve-21', length-55')",
+      tags: ['latex', 'bodysuit', 'rental'],
+      variants: [{ id: 'var-latex-1', label: 'XS-S', size: 'XS-S', stock: 1 }],
+      createdAt: '2026-11-20T10:00:00Z',
+    };
+
+    // 1. Test ProductCard rendering
+    const root = createRoot(host);
+    act(() => {
+      root.render(
+        <Provider store={store}>
+          <StoreProvider>
+            <MemoryRouter>
+              <ProductCard product={TEST_LATEX_BODYSUIT} />
+            </MemoryRouter>
+          </StoreProvider>
+        </Provider>,
+      );
+    });
+
+    expect(host.textContent).toContain('Latex bodysuit');
+    expect(host.textContent).toContain('₹700');
+    expect(host.textContent).not.toContain('₹7 ');
+    expect(host.textContent).not.toContain('₹7.00');
+
+    act(() => {
+      root.unmount();
+    });
+
+    // 2. Test ProductDetailPage rendering with normalized price
+    productService.setProducts([TEST_LATEX_BODYSUIT]);
+    const pdpHost = document.createElement('div');
+    document.body.appendChild(pdpHost);
+    const pdpRoot = createRoot(pdpHost);
+
+    act(() => {
+      pdpRoot.render(
+        <Provider store={store}>
+          <StoreProvider>
+            <MemoryRouter initialEntries={['/product/latex-bodysuit-160']}>
+              <Routes>
+                <Route path="/product/:slug" element={<ProductDetailPage />} />
+              </Routes>
+            </MemoryRouter>
+          </StoreProvider>
+        </Provider>,
+      );
+    });
+
+    expect(pdpHost.textContent).toContain('Latex bodysuit');
+    expect(pdpHost.textContent).toContain('₹700');
+    expect(pdpHost.textContent).not.toContain('₹7\n');
+    expect(pdpHost.textContent).not.toContain('₹7 ');
+
+    act(() => {
+      pdpRoot.unmount();
+    });
+    pdpHost.remove();
+
+    // 3. Test WhatsApp Enquiry message
+    const waProduct = cartService.buildProductWhatsAppUrl(TEST_LATEX_BODYSUIT, 'XS-S');
+    const decodedUrl = decodeURIComponent(waProduct);
+    expect(decodedUrl).toContain('Latex bodysuit');
+    expect(decodedUrl).toContain('• Price: ₹700');
+    expect(decodedUrl).not.toContain('• Price: ₹7\n');
+
+    // 4. Test productService normalization when input is entered as raw rupee 700 or string "700 (Rental)"
+    const rawProductWithRupees: Product = {
+      ...TEST_LATEX_BODYSUIT,
+      slug: 'latex-bodysuit-raw',
+      price: 700, // unmultiplied rupees from catalog sheet
+    };
+    productService.setProducts([rawProductWithRupees]);
+    const normalized = productService.getProductBySlug('latex-bodysuit-raw');
+    expect(normalized).toBeDefined();
+    expect(normalized?.price).toBe(70000); // normalized to 70000 paise
+    expect(formatPrice(normalized!.price)).toBe('₹700');
+  });
 });

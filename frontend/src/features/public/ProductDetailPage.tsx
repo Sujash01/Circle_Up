@@ -400,11 +400,11 @@ export function ProductDetailPage() {
                       'organic-control px-4 py-2 text-xs font-medium border transition-colors',
                       soldOut && 'opacity-40 line-through cursor-not-allowed border-foreground/20',
                       !soldOut &&
-                        isSelected &&
-                        'bg-primary text-primary-foreground border-primary',
+                      isSelected &&
+                      'bg-primary text-primary-foreground border-primary',
                       !soldOut &&
-                        !isSelected &&
-                        'border-foreground/30 text-cocoa hover:border-primary',
+                      !isSelected &&
+                      'border-foreground/30 text-cocoa hover:border-primary',
                     )}
                   >
                     {variant.label}

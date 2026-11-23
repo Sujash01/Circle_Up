@@ -158,11 +158,11 @@ function createVinePath(width: number, height: number): string {
 const getScrollY = () =>
   typeof window !== 'undefined'
     ? (window.scrollY ??
-       window.pageYOffset ??
-       document.documentElement?.scrollTop ??
-       document.scrollingElement?.scrollTop ??
-       document.body?.scrollTop ??
-       0)
+      window.pageYOffset ??
+      document.documentElement?.scrollTop ??
+      document.scrollingElement?.scrollTop ??
+      document.body?.scrollTop ??
+      0)
     : 0;
 
 const getViewportHeight = () =>

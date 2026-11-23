@@ -1,4 +1,6 @@
-export const SEED_PRODUCTS = 
+import { normalizePriceToPaise } from '@circleup/shared';
+
+const RAW_SEED_PRODUCTS = 
 [
   // === HOME / FEATURED CO-ORDS & WOMEN'S ONE PIECE / UPPERWEAR ===
   {
@@ -1209,4 +1211,8 @@ export const SEED_PRODUCTS =
   },
 ];
 
-;
+export const SEED_PRODUCTS = RAW_SEED_PRODUCTS.map((p) => ({
+  ...p,
+  price: normalizePriceToPaise(p.price),
+  originalPrice: p.originalPrice ? normalizePriceToPaise(p.originalPrice) : undefined,
+}));

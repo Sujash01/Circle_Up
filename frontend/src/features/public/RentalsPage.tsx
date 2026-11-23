@@ -2,10 +2,40 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { EmptyState } from '@/components/storefront/EmptyState';
 import { cn } from '@/lib/utils';
-import { formatPrice } from '@circleup/shared';
+import { formatPrice, normalizePriceToPaise } from '@circleup/shared';
 import { rentalService } from '@/services/rentalService';
 import { storefrontApi } from '@/services/storefrontApi';
 import type { RentalProduct, SimulatedRentalRequest } from '@/types/storefront';
+
+function mapApiRentalToProduct(raw: unknown): RentalProduct {
+  const item = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const dailyRatePaise = item.dailyRate
+    ? normalizePriceToPaise(item.dailyRate)
+    : item.rentalPrice3Days
+      ? Math.round(normalizePriceToPaise(item.rentalPrice3Days) / 3)
+      : 40000;
+  const securityDepositPaise = item.securityDeposit != null
+    ? normalizePriceToPaise(item.securityDeposit)
+    : 150000;
+
+  return {
+    id: String(item.id || item.slug || 'rental-item'),
+    name: String(item.name || 'Rental Piece'),
+    slug: String(item.slug || 'rental-piece'),
+    description: String(item.description || ''),
+    images: Array.isArray(item.images) && item.images.length > 0 ? (item.images as string[]) : (item.image ? [String(item.image)] : ['/assets/rtw-3.jpg']),
+    categoryLabel: String(item.categoryLabel || 'Editorial Rental'),
+    condition: (item.condition as RentalProduct['condition']) || 'Mint',
+    sizes: Array.isArray(item.sizes) && item.sizes.length > 0 ? (item.sizes as string[]) : (item.size ? [String(item.size)] : ['One Size']),
+    dailyRate: dailyRatePaise,
+    securityDeposit: securityDepositPaise,
+    minDays: typeof item.minDays === 'number' ? item.minDays : 3,
+    maxDays: typeof item.maxDays === 'number' ? item.maxDays : 14,
+    unavailableDates: Array.isArray(item.unavailableDates) ? (item.unavailableDates as string[]) : [],
+    terms: Array.isArray(item.terms) ? (item.terms as string[]) : ['Dry-cleaned & steamed before dispatch', 'Return in prepaid protective garment bag'],
+    availabilityLabel: (item.availabilityLabel as RentalProduct['availabilityLabel']) || (item.isAvailable !== false ? 'Available' : 'Limited Dates'),
+  };
+}
 
 function addDaysIso(startIso: string, deltaDays: number): string {
   const [y, m, d] = startIso.split('-').map(Number);
@@ -24,7 +54,9 @@ export function RentalsPage() {
     storefrontApi
       .getRentals(ac.signal)
       .then((apiRentals) => {
-        setRentals(apiRentals as unknown as RentalProduct[]);
+        if (Array.isArray(apiRentals) && apiRentals.length > 0) {
+          setRentals(apiRentals.map(mapApiRentalToProduct));
+        }
       })
       .catch(() => setLoadError('Rental items could not be loaded. Please try again later.'));
     return () => ac.abort();

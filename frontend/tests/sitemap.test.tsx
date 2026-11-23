@@ -18,7 +18,7 @@ const MOCK_PRODUCTS: Product[] = [
     productType: 'Pre-Loved',
     condition: 'Vintage Wear',
     gender: 'Women',
-    price: 3500,
+    price: 350000, // 350000 paise = ₹3,500
     images: ['/mock-coord.jpg'],
     sizes: ['S', 'M'],
     stock: 1,
@@ -41,7 +41,7 @@ const MOCK_PRODUCTS: Product[] = [
     productType: 'Pre-Loved',
     condition: 'Mint',
     gender: 'Unisex',
-    price: 2400,
+    price: 240000, // 240000 paise = ₹2,400
     images: ['/mock-bag.jpg'],
     sizes: ['One Size'],
     stock: 1,

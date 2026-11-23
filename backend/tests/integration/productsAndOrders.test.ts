@@ -387,7 +387,7 @@ describe('Products & Orders API', () => {
       .set('Authorization', `Bearer ${staffSession}`);
     expect(listed.status).toBe(200);
     expect(listed.body.data[0].orderNumber).toBe(created.body.data.orderNumber);
-    expect(listed.body.data[0]).toMatchObject({ discount: 0, deliveryFee: 9000, status: 'CONFIRMED' });
+    expect(listed.body.data[0]).toMatchObject({ discount: 0, deliveryFee: 0, status: 'CONFIRMED' });
     expect(listed.body.data[0].items[0]).toHaveProperty('image', '/assets/rtw-1.jpg');
     expect(listed.body.data[0]).not.toHaveProperty('discountAmount');
     expect(listed.body.data[0]).not.toHaveProperty('shippingAmount');

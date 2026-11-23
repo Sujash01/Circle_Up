@@ -1,5 +1,5 @@
 import { logger } from '../config/logger.js';
-import { rentalCatalogItemSchema, type IProductItem } from '@circleup/shared';
+import { rentalCatalogItemSchema, normalizePriceToPaise, type IProductItem } from '@circleup/shared';
 import { rentalRepository } from '../repositories/rental.repository.js';
 import { eventRepository } from '../repositories/event.repository.js';
 import { settingsRepository } from '../repositories/settings.repository.js';
@@ -88,6 +88,9 @@ async function runSeed() {
   // 1. Seed Products into the authoritative PostgreSQL catalog.
   const seedProducts = (SEED_PRODUCTS as unknown as Array<Partial<IProductItem> & { chestPick?: boolean }>).map((item) => ({
     ...item,
+    price: normalizePriceToPaise(item.price),
+    originalPrice: item.originalPrice ? normalizePriceToPaise(item.originalPrice) : undefined,
+    compareAtPrice: item.compareAtPrice ? normalizePriceToPaise(item.compareAtPrice) : undefined,
     status: (item.stock ?? 1) > 0 ? 'ACTIVE' as const : 'SOLD_OUT' as const,
     chestPick: Boolean(item.chestPick || item.featured),
   }));

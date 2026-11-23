@@ -52,14 +52,17 @@ for (let i = 1; i < lines.length; i++) {
   parts.push(current.trim());
 
   if (parts.length >= 5) {
-    const priceRupees = parseFloat(parts[4]) || 0;
+    const rawPriceStr = parts[4].replace(/,/g, '').trim();
+    const match = rawPriceStr.match(/(\d+(?:\.\d+)?)/);
+    const priceRupees = match ? parseFloat(match[1]) : 0;
+    const priceInPaise = Math.round(priceRupees * 100);
     csvProducts.push({
       code: parts[0],
       categoryCode: parts[1],
       name: parts[2].replace(/^"|"$/g, ''),
       size: parts[3].replace(/^"|"$/g, ''),
       priceInRupees: priceRupees,
-      priceInPaise: Math.round(priceRupees * 100),
+      priceInPaise: priceInPaise,
       isRental: parts[5]?.toLowerCase() === 'true',
       category: parts[7] || '',
       productType: parts[8] || 'Pre-Loved',
@@ -85,6 +88,12 @@ console.log('    2. heritage-shawl-and-sheer-stockings (Accessory / Statement pi
 console.log('    3. curated-socks-keychain-nails (Small accessories drop bundle)');
 console.log('• Monetary Representation:');
 console.log('  All 45 CSV items have prices stored in integer paise (e.g. ₹550 -> 55000 paise).');
+const latexBodysuit = csvProducts.find((p) => p.code === '160');
+if (!latexBodysuit || latexBodysuit.priceInPaise !== 70000) {
+  console.error(`❌ Item 160 (Latex bodysuit) price error: expected 70000 paise, got ${latexBodysuit?.priceInPaise}`);
+  process.exit(1);
+}
+console.log(`  • Verified Serial 160 (${latexBodysuit.name}): ${latexBodysuit.priceInPaise} paise (₹${latexBodysuit.priceInRupees})`);
 console.log('  Monetary reconciliation gate (MONETARY_RECONCILIATION_VERIFIED) remains guarded.');
 console.log('='.repeat(70));
 console.log('✅ Catalog count discrepancy reconciled and verified successfully.\n');

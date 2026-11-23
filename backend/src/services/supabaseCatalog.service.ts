@@ -4,6 +4,7 @@ import { NotFoundError, ServiceUnavailableError, BadRequestError } from '../erro
 import { buildPaginationMeta, parsePagination } from '../utils/pagination.js';
 import {
   extractCategoryCodeFromSerial,
+  normalizePriceToPaise,
   type IProductItem,
   type ProductListQuery,
   type Product as ProductType,
@@ -50,9 +51,9 @@ function buildProductRow(
     name: data.name,
     slug,
     description: data.description || '',
-    price: data.price,
-    original_price: data.originalPrice ?? null,
-    compare_at_price: data.compareAtPrice ?? null,
+    price: data.price !== undefined ? normalizePriceToPaise(data.price) : 0,
+    original_price: data.originalPrice != null ? normalizePriceToPaise(data.originalPrice) : null,
+    compare_at_price: data.compareAtPrice != null ? normalizePriceToPaise(data.compareAtPrice) : null,
     stock: data.stock ?? 1,
     images: Array.isArray(data.images) && data.images.length > 0 ? data.images : ['/assets/rtw-1.jpg'],
     sizes: Array.isArray(data.sizes) ? data.sizes : [],
@@ -99,9 +100,9 @@ export function mapSupabaseRowToProductItem(row: Record<string, unknown>): IProd
     name: String(row.name || ''),
     slug: String(row.slug || ''),
     description: String(row.description || ''),
-    price: Number(row.price || 0),
-    originalPrice: row.original_price != null ? Number(row.original_price) : undefined,
-    compareAtPrice: row.compare_at_price != null ? Number(row.compare_at_price) : undefined,
+    price: normalizePriceToPaise(row.price),
+    originalPrice: row.original_price != null ? normalizePriceToPaise(row.original_price) : undefined,
+    compareAtPrice: row.compare_at_price != null ? normalizePriceToPaise(row.compare_at_price) : undefined,
     stock,
     images,
     sizes,
@@ -109,11 +110,11 @@ export function mapSupabaseRowToProductItem(row: Record<string, unknown>): IProd
       Array.isArray(row.variants) && row.variants.length > 0
         ? (row.variants as ProductType['variants'])
         : (sizes.length > 0 ? sizes : ['One Size']).map((sz, idx) => ({
-            id: `${rawSerial || 'var'}-${idx}-${sz.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
-            label: sz,
-            size: sz,
-            stock: Math.max(1, Math.floor(stock / (sizes.length || 1))),
-          })),
+          id: `${rawSerial || 'var'}-${idx}-${sz.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+          label: sz,
+          size: sz,
+          stock: Math.max(1, Math.floor(stock / (sizes.length || 1))),
+        })),
     category: String(row.category || ''),
     categoryLabel: (row.category_label as string) || undefined,
     subcategory: (row.subcategory as string) || undefined,
@@ -594,9 +595,9 @@ export const supabaseCatalogService = {
     if (updates.name !== undefined) rowUpdates.name = updates.name;
     if (updates.slug !== undefined) rowUpdates.slug = updates.slug;
     if (updates.description !== undefined) rowUpdates.description = updates.description;
-    if (updates.price !== undefined) rowUpdates.price = updates.price;
-    if (updates.originalPrice !== undefined) rowUpdates.original_price = updates.originalPrice;
-    if (updates.compareAtPrice !== undefined) rowUpdates.compare_at_price = updates.compareAtPrice;
+    if (updates.price !== undefined) rowUpdates.price = normalizePriceToPaise(updates.price);
+    if (updates.originalPrice !== undefined) rowUpdates.original_price = updates.originalPrice != null ? normalizePriceToPaise(updates.originalPrice) : null;
+    if (updates.compareAtPrice !== undefined) rowUpdates.compare_at_price = updates.compareAtPrice != null ? normalizePriceToPaise(updates.compareAtPrice) : null;
     if (updates.stock !== undefined) {
       rowUpdates.stock = updates.stock;
       if (updates.stock === 0) rowUpdates.status = 'SOLD_OUT';

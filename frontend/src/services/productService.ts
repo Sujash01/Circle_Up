@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { CATEGORIES, CATEGORY_MAP } from '@/data/categories';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { apiClient } from '@/services/apiClient';
-import { extractCategoryCodeFromSerial } from '@circleup/shared';
+import { extractCategoryCodeFromSerial, normalizePriceToPaise } from '@circleup/shared';
 import type {
   CategoryMeta,
   GenderTag,
@@ -169,11 +169,11 @@ function mapSupabaseRowToProduct(row: Record<string, unknown>): Product {
     name: (row.name as string) || 'Untitled Piece',
     slug: (row.slug as string) || normalizeToken((row.name as string) || 'untitled-piece'),
     description: (row.description as string) || '',
-    price: Number(row.price || 0),
-    originalPrice: row.original_price
-      ? Number(row.original_price)
+    price: normalizePriceToPaise(row.price),
+    originalPrice: row.original_price != null
+      ? normalizePriceToPaise(row.original_price)
       : undefined,
-    compareAtPrice: row.compare_at_price != null ? Number(row.compare_at_price) : undefined,
+    compareAtPrice: row.compare_at_price != null ? normalizePriceToPaise(row.compare_at_price) : undefined,
     stock,
     images,
     sizes: sizes.length > 0 ? sizes : ['One Size'],
@@ -219,9 +219,16 @@ export const productService = {
 
   /**
    * Directly sets the in-memory product cache (used for unit tests and local mock fixtures).
+   * Normalizes prices so that raw rupee values or price strings like "700 (Rental)" are
+   * converted to integer paise (* 100 -> 70000) before storage and rendering.
    */
   setProducts(products: Product[]): void {
-    productCache = [...products];
+    productCache = products.map((p) => ({
+      ...p,
+      price: normalizePriceToPaise(p.price),
+      originalPrice: p.originalPrice != null ? normalizePriceToPaise(p.originalPrice) : undefined,
+      compareAtPrice: p.compareAtPrice != null ? normalizePriceToPaise(p.compareAtPrice) : undefined,
+    }));
     liveDatabaseConnected = true;
     notifyListeners();
   },

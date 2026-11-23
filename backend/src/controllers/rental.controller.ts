@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
+import { normalizePriceToPaise } from '@circleup/shared';
 import { rentalRepository } from '../repositories/rental.repository.js';
 import { sendCreated, sendSuccess } from '../utils/apiResponse.js';
 import { getSupabaseAdminClient, isSupabaseConfigured } from '../services/supabase.service.js';
@@ -16,9 +17,9 @@ export const rentalBookingRequestSchema = z.object({
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Valid start date (YYYY-MM-DD) is required'),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Valid end date (YYYY-MM-DD) is required'),
   durationDays: z.coerce.number().int().positive(),
-  estimatedRentalFee: z.coerce.number().int().nonnegative(),
-  securityDeposit: z.coerce.number().int().nonnegative(),
-  estimatedTotal: z.coerce.number().int().nonnegative().optional(),
+  estimatedRentalFee: z.preprocess((val) => normalizePriceToPaise(val), z.number().int().nonnegative()),
+  securityDeposit: z.preprocess((val) => normalizePriceToPaise(val), z.number().int().nonnegative()),
+  estimatedTotal: z.preprocess((val) => (val != null ? normalizePriceToPaise(val) : undefined), z.number().int().nonnegative().optional()),
   notes: z.string().max(1000).optional(),
 });
 

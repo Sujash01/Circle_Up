@@ -48,6 +48,8 @@ Migrations in this directory are named in alphabetical / timestamp order. Supaba
     **User Submissions & Rate Limiting (P0-6, P0-7, P1-8)**: Persistent reviews, ThriftCrew submissions with moderation, rental bookings, and distributed rate limiting cache.
 22. `20261205000000_p2_hardening_and_features.sql`  
     **P2 Feature Hardening**: Atomic event registration with row locks, newsletter subscribers table, order refund RPC, and fulfillment tracking RPC.
+23. `20261206000000_reconcile_catalog_prices_to_paise.sql`  
+    **Catalog & Rental Price Reconciliation to Integer Paise**: Converts any catalog or rental items stored in raw rupees (e.g. `price < 5000`, such as serial 160 "Latex bodysuit" entered as `700`) by multiplying `* 100` into canonical integer paise (`70000` paise = ₹700).
 
 ## 20261115 Dependency Order Verification
 
