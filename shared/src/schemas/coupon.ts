@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { moneyPaiseSchema } from './money.js';
 
-export const couponTypeSchema = z.enum(['PERCENTAGE', 'FLAT', 'FREE_SHIPPING', 'BOGO']);
+export const couponTypeSchema = z.enum(['PERCENTAGE', 'FLAT']);
 export type CouponType = z.infer<typeof couponTypeSchema>;
 
 export const couponSchema = z.object({

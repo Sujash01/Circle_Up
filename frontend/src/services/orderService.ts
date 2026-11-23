@@ -1,6 +1,25 @@
 import { apiClient, ApiClientError } from '@/services/apiClient';
+import type { OrderStatus } from '@circleup/shared';
 
 export const ORDERS_STORAGE_KEY = 'circleup_customer_orders_v1';
+
+export function getOrderTrackingStep(status: string): number {
+  switch (status) {
+    case 'PENDING':
+    case 'CONFIRMED':
+      return 1;
+    case 'PACKED':
+      return 2;
+    case 'SHIPPED':
+    case 'IN_TRANSIT':
+    case 'OUT_FOR_DELIVERY':
+      return 3;
+    case 'DELIVERED':
+      return 4;
+    default:
+      return 1;
+  }
+}
 
 export function getCheckoutPaymentLabel(paymentMethod: string, paymentStatus: 'PENDING' | 'PAID'): string {
   const methodLabel = paymentMethod === 'CASH_ON_DELIVERY'
@@ -46,7 +65,7 @@ export interface OrderRecord {
   estimatedDelivery: string;
   courier: string;
   trackingNumber: string;
-  status: 'CONFIRMED' | 'IN_TRANSIT' | 'DELIVERED' | 'CANCELLED';
+  status: OrderStatus | 'IN_TRANSIT';
   step: number;
   shippingAddress: string;
   totalAmount: number; // in paise
@@ -105,6 +124,7 @@ export interface CreateOrderInput {
   promoCode?: string;
   notes?: string;
   customerId?: string;
+  marketingConsent?: boolean;
 }
 
 interface BackendOrderResponse {
@@ -114,7 +134,7 @@ interface BackendOrderResponse {
   deliveryFee?: number;
   totalAmount?: number;
   guestAccessToken?: string;
-  status?: 'CONFIRMED' | 'IN_TRANSIT' | 'DELIVERED' | 'CANCELLED';
+  status?: OrderStatus | 'IN_TRANSIT';
   createdAt?: string;
   customerId?: string;
   customer?: { name?: string; email?: string; phone?: string };
@@ -193,8 +213,8 @@ export const orderService = {
       estimatedDelivery: '',
       courier: '',
       trackingNumber: '',
-      status: serverOrder.status === 'DELIVERED' ? 'DELIVERED' : serverOrder.status === 'CANCELLED' ? 'CANCELLED' : 'CONFIRMED',
-      step: 2,
+      status: (serverOrder.status as OrderStatus) || 'CONFIRMED',
+      step: getOrderTrackingStep(serverOrder.status || 'CONFIRMED'),
       shippingAddress: fullAddress,
       totalAmount: serverOrder.totalAmount,
       subtotal: serverOrder.subtotal,
@@ -249,8 +269,8 @@ export const orderService = {
         estimatedDelivery: formatDate(new Date(createdAt.getTime() + 4 * 24 * 60 * 60 * 1000)),
         courier: row.courier || '',
         trackingNumber: row.trackingNumber || '',
-        status: row.status || 'CONFIRMED',
-        step: row.status === 'DELIVERED' ? 4 : row.status === 'IN_TRANSIT' ? 3 : 2,
+        status: (row.status as OrderStatus) || 'CONFIRMED',
+        step: getOrderTrackingStep(row.status || 'CONFIRMED'),
         shippingAddress: address,
         totalAmount: Number(row.totalAmount || 0),
         subtotal: Number(row.subtotal || 0),
@@ -323,8 +343,8 @@ export const orderService = {
       estimatedDelivery: formatDate(estDate),
       courier: row.courier || '',
       trackingNumber: row.trackingNumber || '',
-      status: row.status || 'CONFIRMED',
-      step: row.status === 'DELIVERED' ? 4 : row.status === 'IN_TRANSIT' ? 3 : 2,
+      status: (row.status as OrderStatus) || 'CONFIRMED',
+      step: getOrderTrackingStep(row.status || 'CONFIRMED'),
       shippingAddress: address,
       totalAmount: Number(row.totalAmount || 0),
       subtotal: Number(row.subtotal || 0),

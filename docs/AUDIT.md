@@ -1,8 +1,8 @@
-> **Historical audit — November 14, 2026.** This document records the pre-migration architecture and contains obsolete MongoDB recommendations. Do not use it as current setup or operational guidance. The active application uses Supabase PostgreSQL and Supabase Storage.
+> **Architecture audit.** The active CircleUp application uses Supabase PostgreSQL and Supabase Storage. Consult repository migrations and `backend/.env.example` for active operational setup.
 
-# CircleUp Architecture & Contract Audit (Historical)
+# CircleUp Architecture & Contract Audit
 
-**Date**: November 14, 2026  
+**Date**: November 14, 2026 (Updated for Supabase Architecture)  
 **Auditor**: Autonomous Senior Full-Stack Engineer  
 **Scope**: Full monorepo audit (`/frontend`, `/backend`, `/shared`, `/scripts`, `/docs`) for Session 1 Backend Rebuild.
 
@@ -33,16 +33,16 @@
 
 ## 2. Backend Inventory: Keep, Edit, or Replace
 
-### Database & ORM
-- **Database**: MongoDB.
-- **Driver/ORM**: Mongoose 8.x.
-- **Verdict**: **Keep**. Mongoose provides schema validation, middleware hooks, and aggregation pipelines, but must be paired with strict Zod validation on all controller inputs.
+### Database & Storage
+- **Database**: Supabase PostgreSQL.
+- **Client**: `@supabase/supabase-js` with strict Zod validation on all controller inputs.
+- **Verdict**: **Target Architecture**. Supabase provides PostgreSQL schema integrity, row-level security, RPCs, and storage.
 
 ### Existing Routes & Controllers
 - `GET /api/v1/health` -> **Keep & Edit**: Add DB ping latency, memory stats, and content version key.
 - `GET /api/v1/products` -> **Edit**: Refactor to controller-service-repository pattern, enforce published-only filter on public requests, support sorting, pagination (default 12, max 48), and slug lookup.
-- `GET /api/v1/products/:idOrSlug` -> **Edit**: Allow fetching either by MongoDB ObjectID or human-readable slug.
-- `POST /api/v1/orders` -> **Edit**: Enforce server-side price recomputation from DB products, validate promo code in DB, decrement size-specific stock inside a MongoDB session transaction.
+- `GET /api/v1/products/:idOrSlug` -> **Edit**: Allow fetching either by product UUID or human-readable slug.
+- `POST /api/v1/orders` -> **Edit**: Enforce server-side price recomputation from DB products, validate promo code in DB, decrement size-specific stock inside an atomic Supabase RPC transaction.
 - `POST /api/v1/contact` -> **Edit**: Resolve unused variable linter error; store inquiries in database.
 
 ### New Routes to Introduce
@@ -69,7 +69,8 @@
 ### Environment Variables
 - `NODE_ENV`: Keep.
 - `PORT`: Keep (default 5001).
-- `MONGODB_URI`: Keep.
+- `SUPABASE_URL`: Required.
+- `SUPABASE_SERVICE_ROLE_KEY`: Required.
 - `JWT_ACCESS_SECRET`: Replace with secure session cookie secret.
 - `CORS_ALLOWED_ORIGINS`: Keep.
 - `FRONTEND_URL`: Keep.
@@ -86,7 +87,7 @@
    - *Remedy*: Store and transmit **strictly integer paise** (e.g. `₹2,550` = `255000` paise) across DB, APIs, and shared schemas.
 2. **Product Identification**:
    - *Frontend*: Routes link to `/product/:slug` (e.g., `/product/denim-fit-and-flare-co-ord-set`).
-   - *Backend*: Historically looked up primarily by Mongo `_id` or `serialNumber`.
+   - *Backend*: Historically looked up primarily by UUID or `serialNumber`.
    - *Remedy*: Add unique indexed `slug` to Product schema and support `GET /api/products/:slug`.
 3. **Cart & Order Checkout**:
    - *Frontend*: Calculates discount and totals locally on client and passes `subtotal`, `totalAmount` in body.
@@ -116,6 +117,6 @@
 
 - **`backend/.env` Tracking**:
   - **Status**: **Tracked in Git** (added in commit `5fb76f6`).
-  - **Secret Exposure**: **NONE**. The file contains local defaults (`mongodb://127.0.0.1:27017/circleup_dev`) and generic placeholders (`replace-with-32-plus-char-customer-access-secret`).
+  - **Secret Exposure**: **NONE**. The file contains local dev defaults and generic placeholders (`replace-with-32-plus-char-customer-access-secret`).
   - **Action Required**: Run `git rm --cached backend/.env` in Phase 1, ensure `.gitignore` covers all `.env` files, and maintain `backend/.env.example`.
 

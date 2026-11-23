@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import crypto from 'node:crypto';
 import { adminAuthService, type AdminSessionData } from '../services/adminAuth.service.js';
 import { ForbiddenError, UnauthorizedError } from '../errors/AppError.js';
 
@@ -57,7 +58,19 @@ export function verifyAdminCsrf(req: Request, _res: Response, next: NextFunction
   const headerToken = req.headers['x-csrf-token'];
   const sessionToken = req.adminUser?.csrfToken;
 
-  if (!headerToken || !sessionToken || headerToken !== sessionToken) {
+  if (typeof headerToken !== 'string' || typeof sessionToken !== 'string') {
+    return next(
+      new ForbiddenError(
+        'Invalid or missing CSRF token. Include X-CSRF-Token header.',
+        'INVALID_CSRF_TOKEN',
+      ),
+    );
+  }
+
+  const headerBuf = Buffer.from(headerToken);
+  const sessionBuf = Buffer.from(sessionToken);
+
+  if (headerBuf.length !== sessionBuf.length || !crypto.timingSafeEqual(headerBuf, sessionBuf)) {
     return next(
       new ForbiddenError(
         'Invalid or missing CSRF token. Include X-CSRF-Token header.',

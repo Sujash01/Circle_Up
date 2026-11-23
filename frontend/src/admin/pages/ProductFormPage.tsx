@@ -66,7 +66,7 @@ export function ProductFormPage() {
 
   // Images with required alt text and cover flag
   const [images, setImages] = useState<ImageItem[]>([
-    { url: '/assets/rtw-1.jpg', altText: 'Front view flat lay of garment', isCover: true },
+    { url: '/assets/rtw-1.webp', altText: 'Front view flat lay of garment', isCover: true },
   ]);
   const [persistedImageUrls, setPersistedImageUrls] = useState<string[]>([]);
   const [newUploadUrls, setNewUploadUrls] = useState<string[]>([]);

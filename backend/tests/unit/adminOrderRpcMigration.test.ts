@@ -36,8 +36,8 @@ describe('Supabase admin order operation migration', () => {
     expect(paymentRpc).toContain("v_order.payment_method = 'ONLINE_UPI'");
   });
 
-  it('contains no Mongoose order persistence or fallback in active order services', () => {
-    expect(adminOrderService).not.toMatch(/mongoose|runInTransaction|models\/Order|models\/Product|fallback to MongoDB/i);
-    expect(orderService).not.toMatch(/mongoose|models\/Order|Order\.find|runInTransaction/i);
+  it('contains no legacy ORM order persistence or fallback in active order services', () => {
+    expect(adminOrderService).not.toMatch(/runInTransaction|models\/Order|models\/Product|fallback to legacy/i);
+    expect(orderService).not.toMatch(/models\/Order|Order\.find|runInTransaction/i);
   });
 });

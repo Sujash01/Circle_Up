@@ -9,6 +9,8 @@ import { adminCouponController } from '../../controllers/admin/adminCoupon.contr
 import { adminRentalController } from '../../controllers/admin/adminRental.controller.js';
 import { adminEventController } from '../../controllers/admin/adminEvent.controller.js';
 import { adminCustomerController } from '../../controllers/admin/adminCustomer.controller.js';
+import { adminOverviewController } from '../../controllers/admin/adminOverview.controller.js';
+import { adminInquiryController } from '../../controllers/admin/adminInquiry.controller.js';
 import { requireAdminAuth, verifyAdminCsrf } from '../../middleware/adminAuth.js';
 import { adminAuthRateLimiter } from '../../middleware/rateLimiter.js';
 import { noStoreCache } from '../../middleware/cacheControl.js';
@@ -23,6 +25,9 @@ const upload = multer({
 
 // Admin routes must never be cached by CDN or browser
 adminRouter.use(noStoreCache);
+
+// === DASHBOARD OVERVIEW & AGGREGATES (P1-6) ===
+adminRouter.get('/overview', requireAdminAuth(), adminOverviewController.getOverview);
 
 // === AUTHENTICATION ===
 adminRouter.post('/auth/login', adminAuthRateLimiter, adminAuthController.login);
@@ -70,6 +75,7 @@ adminRouter.delete(
 );
 
 // === ORDERS (LIST & STATUS TRANSITIONS) ===
+adminRouter.get('/orders/reconciliation', requireAdminAuth('owner'), adminOrderController.getReconciliation);
 adminRouter.get('/orders', requireAdminAuth(), adminOrderController.list);
 adminRouter.put(
   '/orders/:id/status',
@@ -83,6 +89,23 @@ adminRouter.put(
   verifyAdminCsrf,
   adminOrderController.markPaymentReceived,
 );
+adminRouter.post(
+  '/orders/:id/refunds',
+  requireAdminAuth('owner'),
+  verifyAdminCsrf,
+  adminOrderController.processRefund,
+);
+adminRouter.post(
+  '/orders/:id/fulfillments',
+  requireAdminAuth(),
+  verifyAdminCsrf,
+  adminOrderController.createFulfillment,
+);
+
+// === INQUIRIES (CONTACT INBOX) ===
+adminRouter.get('/inquiries', requireAdminAuth(), adminInquiryController.list);
+adminRouter.get('/inquiries/:id', requireAdminAuth(), adminInquiryController.getById);
+adminRouter.patch('/inquiries/:id', requireAdminAuth(), verifyAdminCsrf, adminInquiryController.update);
 
 // === CUSTOMERS (CRM) ===
 adminRouter.get('/customers', requireAdminAuth(), adminCustomerController.list);

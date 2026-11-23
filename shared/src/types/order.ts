@@ -1,3 +1,5 @@
+import type { OrderStatus, PaymentStatus } from '../constants/enums.js';
+
 export interface IOrderItem {
   serialNumber: string;
   name: string;
@@ -37,9 +39,13 @@ export interface IOrder {
   discount: number;
   deliveryFee: number;
   totalAmount: number;
-  status: 'PENDING' | 'CONFIRMED' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
+  status: OrderStatus;
   paymentMethod: 'WHATSAPP_UPI' | 'CASH_ON_DELIVERY' | 'ONLINE_UPI';
-  paymentStatus: 'PENDING' | 'PAID';
+  paymentStatus: PaymentStatus;
+  utrNumber?: string;
+  paymentProofUrl?: string;
+  marketingConsent?: boolean;
+  marketingConsentAt?: string;
   notes?: string;
   createdAt?: string;
   updatedAt?: string;

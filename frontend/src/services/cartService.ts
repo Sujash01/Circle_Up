@@ -1,3 +1,4 @@
+import { formatPrice } from '@circleup/shared';
 import type { CartItem, CartState, Product, ProductVariant } from '@/types/storefront';
 export type { CartItem, CartState };
 import { readStorage, writeStorage } from './storage';
@@ -9,13 +10,6 @@ const CART_STORAGE_KEY = 'circleup_cart_v1';
  */
 export const WHATSAPP_BUSINESS_NUMBER =
   import.meta.env.VITE_WHATSAPP_NUMBER || '910000000000';
-
-export function formatPrice(amount: number): string {
-  return `${String.fromCodePoint(0x20b9)}${amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
-}
-
-/** @deprecated Use formatPrice for all storefront price labels. */
-export const formatInr = formatPrice
 
 export function generateCartId(): string {
   const now = new Date();
@@ -167,7 +161,7 @@ export const cartService = {
     const totals = this.calculateTotals(state);
     const itemLines = state.items.map(
       (item, idx) =>
-        `${idx + 1}. ${item.name} (${item.variantLabel}) x${item.quantity} — ${formatInr(
+        `${idx + 1}. ${item.name} (${item.variantLabel}) x${item.quantity} — ${formatPrice(
           item.unitPrice * item.quantity,
         )}`,
     );
@@ -178,11 +172,11 @@ export const cartService = {
       '',
       ...itemLines,
       '',
-      `Subtotal: ${formatInr(totals.subtotal)}`,
+      `Subtotal: ${formatPrice(totals.subtotal)}`,
       ...(totals.discount > 0
-        ? [`Discount (${totals.discountLabel}): -${formatInr(totals.discount)}`]
+        ? [`Discount (${totals.discountLabel}): -${formatPrice(totals.discount)}`]
         : []),
-      `Estimated Total: ${formatInr(totals.estimatedTotal)}`,
+      `Estimated Total: ${formatPrice(totals.estimatedTotal)}`,
       ...(customerNote.trim() ? ['', `Note: ${customerNote.trim()}`] : []),
       '',
       '(Please confirm availability and payment details.)',

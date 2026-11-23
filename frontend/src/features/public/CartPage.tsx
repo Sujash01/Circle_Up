@@ -7,11 +7,11 @@ import { EmptyState } from '@/components/storefront/EmptyState';
 import { Blob } from '@/components/ui/Blob';
 import { useStore } from '@/context/StoreContext';
 import { cn } from '@/lib/utils';
-import { cartService, formatPrice } from '@/services/cartService';
+import { cartService } from '@/services/cartService';
 import { getCheckoutErrorMessage, getCheckoutPaymentLabel, orderService } from '@/services/orderService';
 import { storefrontApi } from '@/services/storefrontApi';
 
-import type { PaymentMethod } from '@circleup/shared';
+import { formatPrice, type PaymentMethod } from '@circleup/shared';
 
 function WhatsAppIcon({ className = 'size-4' }: { className?: string }) {
   return (
@@ -77,6 +77,7 @@ export function CartPage() {
   const [orderError, setOrderError] = useState('');
   const [placedOrder, setPlacedOrder] = useState<PlacedOrderDetails | null>(null);
   const [whatsappPaymentNumber, setWhatsappPaymentNumber] = useState('');
+  const [marketingConsent, setMarketingConsent] = useState(false);
 
   // Checkout Form State
   const [formData, setFormData] = useState({
@@ -93,6 +94,26 @@ export function CartPage() {
   const authUser = useSelector((state: RootState) => state.auth.user);
   const checkoutDeliveryFee = totals.subtotal - totals.discount >= 150000 ? 0 : 9000;
   const checkoutTotal = totals.estimatedTotal + checkoutDeliveryFee;
+
+  useEffect(() => {
+    document.title = 'Shopping Bag — CircleUp';
+    let metaRobots = document.querySelector('meta[name="robots"]');
+    if (!metaRobots) {
+      metaRobots = document.createElement('meta');
+      metaRobots.setAttribute('name', 'robots');
+      document.head.appendChild(metaRobots);
+    }
+    const previous = metaRobots.getAttribute('content');
+    metaRobots.setAttribute('content', 'noindex, nofollow, noarchive');
+
+    return () => {
+      if (previous) {
+        metaRobots?.setAttribute('content', previous);
+      } else {
+        metaRobots?.remove();
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!isCheckoutModalOpen || checkoutStep !== 2) return;
@@ -305,6 +326,7 @@ export function CartPage() {
         paymentMethod: formData.paymentMethod,
         notes: customerNote,
         customerId: authUser?.id,
+        marketingConsent,
       });
 
       setPlacedOrder({
@@ -505,12 +527,12 @@ export function CartPage() {
             <div className="flex justify-between">
               <span className="text-terracotta">Estimated Shipping</span>
               <span className="tabular-nums font-medium">
-                {totals.subtotal >= 1999 ? 'Complimentary' : 'Calculated at Checkout'}
+                {totals.subtotal - totals.discount >= 150000 ? 'Complimentary' : formatPrice(9000)}
               </span>
             </div>
-            {totals.subtotal < 1999 && (
+            {totals.subtotal - totals.discount < 150000 && (
               <p className="text-[0.68rem] text-muted-foreground">
-                Complimentary shipping on orders over ₹1,999.
+                Complimentary shipping on orders over {formatPrice(150000)}.
               </p>
             )}
             <div className="flex justify-between pt-2 border-t border-foreground/10 font-bold text-base text-cocoa">
@@ -859,6 +881,16 @@ export function CartPage() {
                 </div>
 
                 {/* Action buttons */}
+                <label className="flex items-start gap-2 pt-1 text-[0.72rem] text-cocoa/80 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={marketingConsent}
+                    onChange={(e) => setMarketingConsent(e.target.checked)}
+                    className="mt-0.5 rounded border-foreground/30 text-primary focus:ring-primary"
+                  />
+                  <span>Keep me updated on secret vintage drops, private curation sales, and sustainable fashion news.</span>
+                </label>
+
                 <div className="flex gap-3 pt-2">
                   <button
                     type="button"
@@ -877,6 +909,14 @@ export function CartPage() {
                       : `${formData.paymentMethod === 'CASH_ON_DELIVERY' ? 'Place COD Order' : 'Place WhatsApp / UPI Order'} · ${formatPrice(checkoutTotal)}`}
                   </button>
                 </div>
+
+                <p className="text-[0.68rem] text-muted-foreground text-center pt-2">
+                  By placing your order, you agree to our{' '}
+                  <Link to="/terms" className="text-primary hover:underline">Terms & Conditions</Link>,{' '}
+                  <Link to="/privacy-policy" className="text-primary hover:underline">Privacy Policy</Link>,{' '}
+                  <Link to="/returns-refunds" className="text-primary hover:underline">Returns & Refunds</Link>, and{' '}
+                  <Link to="/shipping-policy" className="text-primary hover:underline">Shipping Policy</Link>.
+                </p>
               </form>
             )}
           </div>

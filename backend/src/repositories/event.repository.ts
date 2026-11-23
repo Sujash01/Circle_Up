@@ -110,16 +110,58 @@ export const eventRepository = {
   async register(eventId: string, input: { name: string; email: string; phone: string; notes?: string }) {
     try {
       const client = getSupabaseServiceClient();
-      const { data: event, error: eventError } = await client.from('events').select('id,title,is_registration_open').eq('id', eventId).maybeSingle();
+      const normalizedEmail = input.email.trim().toLowerCase();
+
+      // Attempt atomic database registration with capacity check and exclusive row lock
+      const rpcResult = await client.rpc('register_for_event_atomic', {
+        p_event_id: eventId,
+        p_name: input.name.trim(),
+        p_email: normalizedEmail,
+        p_phone: input.phone.trim(),
+        p_notes: input.notes?.trim() || '',
+      });
+
+      if (!rpcResult.error && rpcResult.data) {
+        const data = rpcResult.data as Record<string, unknown>;
+        return {
+          id: String(data.id),
+          eventId: String(data.eventId),
+          eventTitle: String(data.eventTitle),
+          name: String(data.name),
+          email: String(data.email),
+          phone: String(data.phone),
+          notes: data.notes ? String(data.notes) : undefined,
+          createdAt: String(data.createdAt),
+        };
+      }
+
+      // If RPC failed due to domain business rule, translate error properly
+      if (rpcResult.error) {
+        const errMsg = rpcResult.error.message || '';
+        if (errMsg.includes('EVENT_NOT_FOUND')) throw new NotFoundError('Event not found.', 'EVENT_NOT_FOUND');
+        if (errMsg.includes('EVENT_REGISTRATION_CLOSED')) throw new ConflictError('Registration for this event is closed.', 'EVENT_REGISTRATION_CLOSED');
+        if (errMsg.includes('EVENT_CAPACITY_REACHED')) throw new ConflictError('This event has reached full capacity.', 'EVENT_CAPACITY_REACHED');
+        if (errMsg.includes('DUPLICATE_REGISTRATION') || rpcResult.error.code === '23505') {
+          throw new ConflictError('A registration for this email has already been received for this event.', 'DUPLICATE_REGISTRATION');
+        }
+        // If the RPC does not exist (e.g. in legacy tests), fall back to table-level operations
+      }
+
+      const { data: event, error: eventError } = await client.from('events').select('id,title,capacity,registered_count,is_registration_open').eq('id', eventId).maybeSingle();
       if (eventError) fail(eventError);
       if (!event) throw new NotFoundError('Event not found.', 'EVENT_NOT_FOUND');
       if (!event.is_registration_open) throw new ConflictError('Registration for this event is closed.', 'EVENT_REGISTRATION_CLOSED');
-      const normalizedEmail = input.email.trim().toLowerCase();
+      if (event.capacity && (event.registered_count || 0) >= event.capacity) {
+        throw new ConflictError('This event has reached full capacity.', 'EVENT_CAPACITY_REACHED');
+      }
       const { data: existing, error: duplicateError } = await client.from('event_registrations').select('id').eq('event_id', eventId).eq('email', normalizedEmail).limit(1);
       if (duplicateError) fail(duplicateError);
       if (existing?.length) throw new ConflictError('A registration for this email has already been received for this event.', 'DUPLICATE_REGISTRATION');
       const { data, error } = await client.from('event_registrations').insert({ event_id: eventId, name: input.name.trim(), email: normalizedEmail, phone: input.phone.trim(), notes: input.notes?.trim() || '' }).select('*').single();
-      if (error) fail(error);
+      if (error) {
+        if (error.code === '23505') throw new ConflictError('A registration for this email has already been received for this event.', 'DUPLICATE_REGISTRATION');
+        fail(error);
+      }
       return { id: data.id, eventId: data.event_id, eventTitle: event.title, name: data.name, email: data.email, phone: data.phone, notes: data.notes || undefined, createdAt: data.created_at };
     } catch (error) {
       if (error instanceof NotFoundError || error instanceof ConflictError) throw error;

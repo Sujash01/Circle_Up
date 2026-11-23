@@ -20,7 +20,7 @@ import { useAdminToast } from '../context/AdminToastContext';
 import { AdminTableSkeleton } from '../components/AdminSkeleton';
 import { PackingSlipModal } from '../components/PackingSlipModal';
 import type { Order, OrderStatus } from '@circleup/shared';
-import { formatPrice } from '@circleup/shared';
+import { formatPrice, ORDER_STATUS_TRANSITIONS } from '@circleup/shared';
 
 const STATUS_CONFIG: Record<
   OrderStatus,
@@ -88,18 +88,7 @@ const STATUS_CONFIG: Record<
   },
 };
 
-const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  PENDING: ['CONFIRMED', 'CANCELLED'],
-  CONFIRMED: ['PACKED', 'SHIPPED', 'CANCELLED'],
-  PACKED: ['SHIPPED', 'CANCELLED'],
-  SHIPPED: ['OUT_FOR_DELIVERY', 'DELIVERED'],
-  OUT_FOR_DELIVERY: ['DELIVERED'],
-  DELIVERED: ['RETURN_REQUESTED'],
-  RETURN_REQUESTED: ['RETURNED', 'REFUNDED'],
-  RETURNED: ['REFUNDED'],
-  REFUNDED: [],
-  CANCELLED: [],
-};
+const ALLOWED_TRANSITIONS = ORDER_STATUS_TRANSITIONS;
 
 export default function OrdersPage() {
   const { showToast } = useAdminToast();
@@ -110,6 +99,10 @@ export default function OrdersPage() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [packingSlipOrder, setPackingSlipOrder] = useState<Order | null>(null);
   const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [verifyPaymentOrder, setVerifyPaymentOrder] = useState<Order | null>(null);
+  const [utrInput, setUtrInput] = useState('');
+  const [paymentProofInput, setPaymentProofInput] = useState('');
+  const [verifyingPayment, setVerifyingPayment] = useState(false);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -151,6 +144,28 @@ export default function OrdersPage() {
       showToast('error', msg);
     } finally {
       setUpdatingStatus(false);
+    }
+  };
+
+  const handleConfirmPaymentVerification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!verifyPaymentOrder) return;
+    setVerifyingPayment(true);
+    try {
+      const updated = await adminApi.markOrderPaymentReceived(verifyPaymentOrder.id || '', {
+        utrNumber: utrInput.trim() || undefined,
+        paymentProofUrl: paymentProofInput.trim() || undefined,
+      });
+      showToast('success', `Payment verified and recorded for ${updated.orderNumber}`);
+      setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+      if (selectedOrder?.id === updated.id) {
+        setSelectedOrder(updated);
+      }
+      setVerifyPaymentOrder(null);
+    } catch (err: unknown) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to record payment verification.');
+    } finally {
+      setVerifyingPayment(false);
     }
   };
 
@@ -357,6 +372,49 @@ export default function OrdersPage() {
               )}
             </div>
 
+            {/* Payment Verification Status */}
+            <div className="rounded-xl border border-border/80 bg-background p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-cocoa">Payment:</span>
+                  <span className={`px-2 py-0.5 rounded text-[0.7rem] font-bold ${
+                    selectedOrder.paymentStatus === 'PAID'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-amber-100 text-amber-800'
+                  }`}>
+                    {selectedOrder.paymentStatus}
+                  </span>
+                  <span className="text-xs text-cocoa/70 font-medium">({selectedOrder.paymentMethod})</span>
+                </div>
+                {selectedOrder.utrNumber && (
+                  <p className="text-xs text-cocoa/80 font-mono">
+                    <span className="text-cocoa/60 font-sans">UTR / Ref:</span> {selectedOrder.utrNumber}
+                  </p>
+                )}
+                {selectedOrder.paymentProofUrl && (
+                  <p className="text-xs text-forest">
+                    <a href={selectedOrder.paymentProofUrl} target="_blank" rel="noreferrer" className="underline font-semibold">
+                      View Payment Proof
+                    </a>
+                  </p>
+                )}
+              </div>
+
+              {selectedOrder.paymentStatus !== 'PAID' && ['WHATSAPP_UPI', 'CASH_ON_DELIVERY'].includes(selectedOrder.paymentMethod) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setVerifyPaymentOrder(selectedOrder);
+                    setUtrInput(selectedOrder.utrNumber || '');
+                    setPaymentProofInput(selectedOrder.paymentProofUrl || '');
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 transition-colors shadow-sm"
+                >
+                  Verify Payment Receipt
+                </button>
+              )}
+            </div>
+
             {/* Customer & Shipping Information */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="rounded-xl border border-border/80 bg-background p-4 space-y-2">
@@ -474,6 +532,75 @@ export default function OrdersPage() {
           order={packingSlipOrder}
           onClose={() => setPackingSlipOrder(null)}
         />
+      )}
+
+      {/* Manual Payment Verification Modal (P2-8) */}
+      {verifyPaymentOrder && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
+          onClick={() => setVerifyPaymentOrder(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <h2 className="font-display text-lg font-bold text-cocoa">
+                Verify Manual Payment Receipt
+              </h2>
+              <p className="text-xs text-cocoa/70 mt-0.5">
+                Order {verifyPaymentOrder.orderNumber} • Total {formatPrice(verifyPaymentOrder.totalAmount)}
+              </p>
+            </div>
+
+            <form onSubmit={handleConfirmPaymentVerification} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-cocoa mb-1">
+                  UPI Reference / UTR Number
+                </label>
+                <input
+                  type="text"
+                  value={utrInput}
+                  onChange={(e) => setUtrInput(e.target.value)}
+                  placeholder="e.g. 432819284712 (12-digit UPI UTR)"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs font-mono text-cocoa focus:border-primary focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-cocoa mb-1">
+                  Payment Proof URL / Receipt Reference
+                </label>
+                <input
+                  type="text"
+                  value={paymentProofInput}
+                  onChange={(e) => setPaymentProofInput(e.target.value)}
+                  placeholder="https://... receipt image or payment notes"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs text-cocoa focus:border-primary focus:outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setVerifyPaymentOrder(null)}
+                  className="px-4 py-2 text-xs font-semibold text-cocoa/70 hover:text-cocoa border border-border rounded-lg bg-background"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={verifyingPayment}
+                  className="px-4 py-2 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg disabled:opacity-50 transition-colors"
+                >
+                  {verifyingPayment ? 'Verifying...' : 'Confirm Payment Received'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

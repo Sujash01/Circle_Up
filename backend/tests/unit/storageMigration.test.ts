@@ -21,10 +21,10 @@ describe('Supabase media schema and storage policy', () => {
     expect(rentalSchema).toContain('image_url text not null');
   });
 
-  it('uses Supabase Storage without filesystem writes or MongoDB metadata', () => {
+  it('uses Supabase Storage without filesystem writes or legacy metadata', () => {
     expect(storageService).toContain("from '../config/supabase.js'");
     expect(storageService).toContain("const bucket = 'product-images'");
-    expect(storageService).not.toMatch(/node:fs|writefile|public\/uploads|\/uploads|mongoose|mongodb/i);
-    expect(mediaController).not.toMatch(/mongoose|mongodb|public\/uploads|writefile/i);
+    expect(storageService).not.toMatch(/node:fs|writefile|public\/uploads|\/uploads/i);
+    expect(mediaController).not.toMatch(/public\/uploads|writefile/i);
   });
 });

@@ -1,5 +1,5 @@
 import { Star } from 'lucide-react';
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { reviewService } from '@/services/communityServices';
@@ -17,6 +17,21 @@ export function ReviewsPage() {
   const [comment, setComment] = useState('');
   const [error, setError] = useState('');
   const [submittedNotice, setSubmittedNotice] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    reviewService.getApprovedReviews().then((data) => {
+      if (active && Array.isArray(data)) {
+        setReviews(data);
+      }
+    }).catch(() => {
+      // Keep existing reviews
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const allProducts = productService.getAllProducts();
 
@@ -25,7 +40,7 @@ export function ReviewsPage() {
     [reviews, ratingFilter],
   );
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
     setSubmittedNotice(false);
@@ -44,22 +59,30 @@ export function ReviewsPage() {
     }
 
     const linkedProduct = productSlug ? productService.getProductBySlug(productSlug) : undefined;
-    reviewService.submitReview({
-      displayName,
-      rating,
-      title,
-      comment,
-      productSlug: linkedProduct?.slug,
-      productName: linkedProduct?.name,
-    });
+    setIsSubmitting(true);
+    try {
+      await reviewService.submitReview({
+        displayName,
+        rating,
+        title,
+        comment,
+        productSlug: linkedProduct?.slug,
+        productName: linkedProduct?.name,
+      });
 
-    setReviews(reviewService.getAllReviews());
-    setDisplayName('');
-    setTitle('');
-    setComment('');
-    setProductSlug('');
-    setRating(5);
-    setSubmittedNotice(true);
+      const updated = await reviewService.getApprovedReviews();
+      setReviews(updated);
+      setDisplayName('');
+      setTitle('');
+      setComment('');
+      setProductSlug('');
+      setRating(5);
+      setSubmittedNotice(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not submit review. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -244,14 +267,15 @@ export function ReviewsPage() {
 
           <button
             type="submit"
-            className="w-full bg-primary py-3 text-xs font-semibold uppercase tracking-widest text-primary-foreground hover:bg-forest-deep transition-colors"
+            disabled={isSubmitting}
+            className="w-full bg-primary py-3 text-xs font-semibold uppercase tracking-widest text-primary-foreground hover:bg-forest-deep transition-colors disabled:opacity-50"
           >
-            Submit Review
+            {isSubmitting ? 'Submitting Review...' : 'Submit Review'}
           </button>
 
           {submittedNotice && (
             <p className="text-xs text-primary font-medium">
-              Thank you! Your review has been submitted.
+              Thank you! Your review has been submitted for moderation and will appear once approved by our team.
             </p>
           )}
         </form>

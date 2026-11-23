@@ -11,11 +11,13 @@ export function ThriftedPage() {
   const [sort, setSort] = useState<ProductSortOption>('newest');
 
   const products = useMemo(
-    () =>
-      productService.getThriftedProducts({
+    () => {
+      void catalogVersion;
+      return productService.getThriftedProducts({
         category: selectedCategory,
         sort,
-      }),
+      });
+    },
     [selectedCategory, sort, catalogVersion],
   );
 

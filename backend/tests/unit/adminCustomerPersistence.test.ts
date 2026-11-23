@@ -11,7 +11,7 @@ const authOrder = {
   id: '8a175bf0-57b9-4c6f-9d4d-bae380d1d6a8', order_number: 'ORD-TEST-000001', customer_id: customerFixture.user_id,
   customer_name: 'Test Customer', customer_email: 'test@example.com', customer_phone: '+919876543210',
   total_amount: 12900, subtotal: 12900, discount_amount: 0, shipping_amount: 0, status: 'CONFIRMED',
-  payment_status: 'PENDING', payment_method: 'COD', promo_code: null, notes: null,
+  payment_status: 'PAID', payment_method: 'WHATSAPP_UPI', promo_code: null, notes: null,
   shipping_address: { addressLine: 'Latest Street', city: 'Mumbai', state: 'Maharashtra', postalCode: '400001' },
   created_at: '2026-02-01T00:00:00.000Z', updated_at: '2026-02-01T00:00:00.000Z',
   order_items: [{ id: 'item-1', serial_number: 'CU-1', name: 'Jacket', price: 12900, quantity: 1, image_url: '/jacket.jpg' }],
@@ -124,11 +124,50 @@ describe('Supabase-only customer CRM', () => {
     expect(detail.orders[0].orderNumber).toBe('ORD-GUEST-000001');
   });
 
-  it('fails closed when customer or order reads fail and never falls back to MongoDB', async () => {
+  it('fails closed when customer or order reads fail and never falls back to legacy databases', async () => {
     db.errors.add('customers');
     await expect(adminCustomerService.listCustomers({})).rejects.toMatchObject({ statusCode: 503, code: 'DATABASE_UNAVAILABLE' });
     db.errors.clear();
     db.errors.add('orders');
     await expect(adminCustomerService.listCustomers({})).rejects.toMatchObject({ statusCode: 503, code: 'DATABASE_UNAVAILABLE' });
+  });
+
+  it('Resolves P1-4: excludes unpaid COD, CANCELLED, and REFUNDED orders from customer lifetime spend', async () => {
+    // Add an unpaid COD order, a cancelled order, and a refunded order for guest customer
+    const unpaidOrder = {
+      ...guestOrder,
+      id: 'unpaid-order-01',
+      order_number: 'ORD-UNPAID-01',
+      total_amount: 50000,
+      payment_status: 'PENDING',
+      payment_method: 'CASH_ON_DELIVERY',
+      status: 'CONFIRMED',
+    };
+    const cancelledOrder = {
+      ...guestOrder,
+      id: 'cancelled-order-02',
+      order_number: 'ORD-CANCELLED-02',
+      total_amount: 90000,
+      payment_status: 'PAID',
+      status: 'CANCELLED',
+    };
+    const refundedOrder = {
+      ...guestOrder,
+      id: 'refunded-order-03',
+      order_number: 'ORD-REFUNDED-03',
+      total_amount: 80000,
+      payment_status: 'REFUNDED',
+      status: 'REFUNDED',
+    };
+    db.orders.push(unpaidOrder, cancelledOrder, refundedOrder);
+
+    const result = await adminCustomerService.listCustomers({ search: 'guest@example.com' });
+    const guest = result.customers[0];
+
+    // Only original paid guestOrder (12900 paise) counts towards spend!
+    // Unpaid (50000), Cancelled (90000), and Refunded (80000) are strictly excluded from spend
+    expect(guest.totalSpendInPaise).toBe(12900);
+    // Cancelled orders are excluded from active totalOrders count
+    expect(guest.totalOrders).toBe(3); // 1 original + 1 unpaid + 1 refunded (cancelled excluded)
   });
 });

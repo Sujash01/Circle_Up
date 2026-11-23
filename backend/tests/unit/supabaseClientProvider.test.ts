@@ -42,7 +42,7 @@ describe('Authoritative Supabase Client Provider - Unit & Security Tests', () =>
       expect(isConfigSupabaseConfigured()).toBe(true);
     });
 
-    it('uses validated service credentials without a selectable Mongo checkout provider', () => {
+    it('uses validated service credentials without selectable legacy checkout providers', () => {
       (env as any).SUPABASE_URL = 'https://valid-project.supabase.co';
       (env as any).SUPABASE_SERVICE_ROLE_KEY = 'valid-service-role-key-that-is-sufficiently-long';
 

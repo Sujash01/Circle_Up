@@ -14,6 +14,7 @@ import { BadRequestError } from '../../errors/AppError.js';
 export const orderRouter = Router();
 
 // Place new order (supports guest checkout or authenticated customer)
+orderRouter.post('/abandoned-checkout', noStoreCache, orderController.captureAbandonedCheckout);
 orderRouter.post('/', checkoutRateLimiter, noStoreCache, optionalCustomerAuth, (req, _res, next) => {
   const parsed = createOrderPayloadSchema.safeParse(req.body);
   if (!parsed.success) return next(new BadRequestError('Checkout request is invalid.', 'VALIDATION_ERROR', parsed.error.issues.map((issue) => ({ field: issue.path.join('.'), issue: issue.message }))));

@@ -5,7 +5,9 @@ import {
   eventService,
   reviewService,
 } from '../src/services/communityServices';
-import { cartService, formatInr, formatPrice } from '../src/services/cartService';
+import { SAMPLE_REVIEWS } from '../src/data/reviews';
+import { formatPrice } from '@circleup/shared';
+import { cartService } from '../src/services/cartService';
 import { productService } from '../src/services/productService';
 import { rentalService } from '../src/services/rentalService';
 import { wishlistService } from '../src/services/wishlistService';
@@ -21,8 +23,8 @@ const MOCK_PRODUCTS: Product[] = [
     categoryLabel: 'Women',
     subcategory: 'Corsets',
     productType: 'Pre-Loved',
-    price: 1850,
-    originalPrice: 2200,
+    price: 185000,
+    originalPrice: 220000,
     images: ['/test-corset.jpg'],
     condition: 'Vintage Wear',
     gender: 'Women',
@@ -47,8 +49,8 @@ const MOCK_PRODUCTS: Product[] = [
     categoryLabel: 'Women',
     subcategory: 'Jumpsuits',
     productType: 'Pre-Loved',
-    price: 4950,
-    originalPrice: 5500,
+    price: 495000,
+    originalPrice: 550000,
     images: ['/test-jumpsuit.jpg'],
     condition: 'Mint',
     gender: 'Women',
@@ -115,10 +117,9 @@ describe('CircleUp Storefront Services & LocalStorage Persistence', () => {
   });
 
   it('persists cart, enforces stock limits, and leaves coupon calculation to the server', () => {
-    expect(formatPrice(4000)).toBe('₹4,000');
-    expect(formatPrice(123456)).toBe('₹1,23,456');
-    expect(formatPrice(1950.5)).toBe('₹1,950.5');
-    expect(formatInr(4000)).toBe(formatPrice(4000));
+    expect(formatPrice(400000)).toBe('₹4,000');
+    expect(formatPrice(12345678)).toBe('₹1,23,456.78');
+    expect(formatPrice(195050)).toBe('₹1,950.50');
 
     const initial = cartService.loadCart();
     expect(initial.cartId).toMatch(/^CU-CART-\d{8}-[A-Z0-9]{4}$/);
@@ -143,9 +144,10 @@ describe('CircleUp Storefront Services & LocalStorage Persistence', () => {
     expect(reloaded.promoCode).toBe('CIRCLE20');
 
     const wa = cartService.buildWhatsAppCheckout(reloaded, 'Deliver to Bandra');
-    expect(wa.totals.subtotal).toBe(4950);
+    expect(wa.totals.subtotal).toBe(495000);
     expect(wa.totals.discount).toBe(0);
-    expect(wa.totals.estimatedTotal).toBe(4950);
+    expect(wa.totals.estimatedTotal).toBe(495000);
+    expect(wa.message).toContain('₹4,950');
     expect(wa.message).toContain(reloaded.cartId);
     expect(wa.message).toContain('Denim Jumpsuit Co-Ord Set');
     expect(wa.url).toContain('https://wa.me/');
@@ -191,6 +193,10 @@ describe('CircleUp Storefront Services & LocalStorage Persistence', () => {
   });
 
   it('persists reviews and #ThriftCrew previews, and stores event registration only after API success', async () => {
+    // P1-9: Verified removal of fabricated sample reviews from storefront
+    expect(SAMPLE_REVIEWS).toHaveLength(0);
+    expect(reviewService.getAllReviews()).toHaveLength(0);
+
     const review = reviewService.submitReview({
       displayName: 'Kavya',
       rating: 5,

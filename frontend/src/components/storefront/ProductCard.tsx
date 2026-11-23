@@ -4,9 +4,9 @@ import { Link } from 'react-router-dom';
 import { useStore } from '@/context/StoreContext';
 import { Blob } from '@/components/ui/Blob';
 import { cn } from '@/lib/utils';
-import { formatPrice } from '@/services/cartService';
 import type { Product } from '@/types/storefront';
 import {
+  formatPrice,
   INVENTORY_STATUSES,
   type InventoryStatusCode,
   extractCategoryCodeFromSerial,

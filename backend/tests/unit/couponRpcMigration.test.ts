@@ -6,9 +6,10 @@ const migrations = resolve(process.cwd(), '..', 'supabase', 'migrations');
 
 describe('coupon checkout migration validation', () => {
   it('preserves the existing atomic checkout RPC and only adds the per-customer limit check', () => {
-    const originalSql = readFileSync(resolve(migrations, '20261122_checkout_atomic_rpc.sql'), 'utf8');
+    const originalSql = readFileSync(resolve(migrations, '20261122_checkout_atomic_rpc.sql'), 'utf8').replace(/\r\n/g, '\n');
     const original = originalSql.slice(originalSql.indexOf('create or replace function public.process_storefront_checkout'));
     const replacement = readFileSync(resolve(migrations, '20261125_coupon_checkout_limits.sql'), 'utf8')
+      .replace(/\r\n/g, '\n')
       .replace('-- Enforces the existing per_customer_limit field in the atomic checkout transaction.\n', '')
       .replace('  v_coupon record;\n  v_coupon_customer_usage bigint := 0;', '  v_coupon record;');
     const perCustomerCheck = [

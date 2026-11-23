@@ -1,6 +1,6 @@
 # Offline monetary reconciliation
 
-This standalone Node.js utility compares explicitly supplied, sanitized Supabase and MongoDB exports. It has no database or network code and imports no CircleUp application modules. It does not convert, write back, migrate, or delete source values. Razorpay is unrelated and remains disabled.
+This standalone Node.js utility compares explicitly supplied, sanitized Supabase and legacy database exports. It has no database or network code and imports no CircleUp application modules. It does not convert, write back, migrate, or delete source values. Razorpay is unrelated and remains disabled.
 
 ## Usage
 
@@ -9,7 +9,7 @@ Requires Node.js 20 or later; no additional package install is needed.
 ```powershell
 node tools/monetary-reconciliation/reconcile.mjs `
   --supabase path/to/sanitized-supabase.json `
-  --mongodb path/to/sanitized-mongodb.csv `
+  --legacy path/to/sanitized-legacy.csv `
   --config path/to/classification-config.json `
   --output path/to/new-report.json
 ```
@@ -26,14 +26,14 @@ Example configuration:
 {
   "entities": {
     "products": {
-      "identifiers": { "supabase": "serial_number", "mongodb": "serialNumber" },
+      "identifiers": { "supabase": "serial_number", "legacy": "serialNumber" },
       "monetaryFields": {
         "price": {
           "supabase": "price",
-          "mongodb": "price",
+          "legacy": "price",
           "classification": {
             "supabase": "AMBIGUOUS",
-            "mongodb": "AMBIGUOUS"
+            "legacy": "AMBIGUOUS"
           }
         }
       }
@@ -52,7 +52,7 @@ The JSON report preserves numeric monetary values and numeric CSV strings as rec
 
 ## Safety and limitations
 
-- No MongoDB, Supabase, HTTP, or other external connection is made.
+- No remote, Supabase, HTTP, or other external connection is made.
 - No `.env` files or secrets are read.
 - Source exports are opened read-only; only the new report file is created.
 - The report never serializes whole source records and therefore excludes unrelated fields such as customer details. Missing identifiers are reported individually with source, entity, and row index, without inventing a match or including the source record. Numeric monetary values and accepted numeric strings are preserved; malformed free-text values are redacted to type and a fingerprint.

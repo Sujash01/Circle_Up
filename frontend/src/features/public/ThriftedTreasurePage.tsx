@@ -10,6 +10,7 @@ export function ThriftedTreasurePage() {
 
   // Show dedicated Thrifted Treasure items plus small one-of-a-kind tagged finds
   const treasures = useMemo(() => {
+    void catalogVersion;
     const base = productService.queryProducts({
       category: 'thrifted-treasure',
       sort,

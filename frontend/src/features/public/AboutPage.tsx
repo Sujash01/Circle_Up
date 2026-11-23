@@ -1,8 +1,8 @@
 import { Link } from 'react-router-dom';
-import heroStoreRack from '@/assets/hero-store-rack.jpg';
-import heroStoreCounter from '@/assets/hero-store-counter.jpg';
-import heroStoreLamp from '@/assets/hero-store-lamp.jpg';
-import bag1 from '@/assets/bag-1.jpg';
+import heroStoreRack from '@/assets/hero-store-rack.webp';
+import heroStoreCounter from '@/assets/hero-store-counter.webp';
+import heroStoreLamp from '@/assets/hero-store-lamp.webp';
+import bag1 from '@/assets/bag-1.webp';
 
 export function AboutPage() {
   return (

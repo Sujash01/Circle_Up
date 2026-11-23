@@ -356,7 +356,7 @@ export function ProductsPage() {
                       <td className="py-3 px-3">
                         <div className="flex items-center gap-3">
                           <img
-                            src={p.images[0] || '/assets/rtw-1.jpg'}
+                            src={p.images[0] || '/assets/rtw-1.webp'}
                             alt={p.name}
                             className="size-11 rounded-xl object-cover bg-stone-100 border border-[#1e2a1c]/10 shrink-0"
                             loading="lazy"

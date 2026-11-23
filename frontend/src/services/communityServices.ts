@@ -14,9 +14,18 @@ const EVENT_REGS_KEY = 'circleup_event_regs_v1';
 const COMMUNITY_KEY = 'circleup_community_posts_v1';
 
 export const reviewService = {
+  async getApprovedReviews(): Promise<ReviewItem[]> {
+    try {
+      return await storefrontApi.getReviews();
+    } catch {
+      return this.getAllReviews();
+    }
+  },
+
   getAllReviews(): ReviewItem[] {
     const local = readStorage<ReviewItem[]>(REVIEWS_KEY, []);
     const safeLocal = Array.isArray(local) ? local : [];
+    // SAMPLE_REVIEWS is strictly empty (Resolves P1-9)
     return [...safeLocal, ...SAMPLE_REVIEWS];
   },
 
@@ -27,7 +36,7 @@ export const reviewService = {
     comment: string;
     productSlug?: string;
     productName?: string;
-  }): ReviewItem {
+  }): ReviewItem & Promise<ReviewItem> {
     const next: ReviewItem = {
       id: `rev-local-${Date.now().toString(36)}`,
       displayName: input.displayName.trim(),
@@ -42,9 +51,20 @@ export const reviewService = {
 
     const existing = readStorage<ReviewItem[]>(REVIEWS_KEY, []);
     writeStorage(REVIEWS_KEY, [next, ...(Array.isArray(existing) ? existing : [])]);
-    return next;
+
+    const p = (async () => {
+      try {
+        const persisted = await storefrontApi.submitReview(input);
+        return persisted;
+      } catch {
+        return next;
+      }
+    })();
+
+    return Object.assign(p, next);
   },
 };
+
 export const eventService = {
   async getAllEvents(): Promise<EventItem[]> {
     return storefrontApi.getEvents();
@@ -80,7 +100,10 @@ export const eventService = {
 
     try {
       const record = await storefrontApi.registerForEvent(input.event.id, {
-        name: input.name.trim(), email: input.email.trim(), phone: input.phone.trim(), notes: input.notes?.trim(),
+        name: input.name.trim(),
+        email: input.email.trim(),
+        phone: input.phone.trim(),
+        notes: input.notes?.trim(),
       });
       writeStorage(EVENT_REGS_KEY, [record, ...existing]);
       return { registration: record };
@@ -95,6 +118,14 @@ export const communityService = {
     return SAMPLE_COMMUNITY_POSTS;
   },
 
+  async getApprovedPosts(): Promise<CommunitySubmission[]> {
+    try {
+      return await storefrontApi.getCommunityPosts();
+    } catch {
+      return this.getLocalSubmissions();
+    }
+  },
+
   getLocalSubmissions(): CommunitySubmission[] {
     const data = readStorage<CommunitySubmission[]>(COMMUNITY_KEY, []);
     return Array.isArray(data) ? data : [];
@@ -106,7 +137,7 @@ export const communityService = {
     caption: string;
     image: string;
     taggedPiece?: string;
-  }): { submission?: CommunitySubmission; savedToStorage: boolean } {
+  }): { submission?: CommunitySubmission; savedToStorage: boolean } & Promise<{ submission?: CommunitySubmission; savedToStorage: boolean }> {
     const entry: CommunitySubmission = {
       id: `crew-local-${Date.now().toString(36)}`,
       displayName: input.displayName.trim(),
@@ -122,6 +153,23 @@ export const communityService = {
 
     const existing = this.getLocalSubmissions();
     const savedToStorage = writeStorage(COMMUNITY_KEY, [entry, ...existing]);
-    return { submission: entry, savedToStorage };
+    const syncResult = { submission: entry, savedToStorage };
+
+    const p = (async () => {
+      try {
+        const persisted = await storefrontApi.submitCommunityPost({
+          displayName: input.displayName,
+          handle: input.handle,
+          caption: input.caption,
+          image: input.image,
+          taggedPiece: input.taggedPiece,
+        });
+        return { submission: persisted, savedToStorage: true };
+      } catch {
+        return syncResult;
+      }
+    })();
+
+    return Object.assign(p, syncResult);
   },
 };

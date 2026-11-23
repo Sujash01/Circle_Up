@@ -9,6 +9,7 @@ import {
   Layers,
   CalendarDays,
   Ticket,
+  Mail,
   Settings,
   History,
   UserCheck,
@@ -32,6 +33,7 @@ export function AdminBottomNav() {
     { label: 'Collections & Tiles', to: '/admin/collections', icon: Layers },
     { label: 'Rentals & Events', to: '/admin/rentals-events', icon: CalendarDays },
     { label: 'Coupons', to: '/admin/coupons', icon: Ticket },
+    { label: 'Inquiries', to: '/admin/inquiries', icon: Mail },
     ...(isOwner
       ? [
           { label: 'Site Settings', to: '/admin/settings', icon: Settings },

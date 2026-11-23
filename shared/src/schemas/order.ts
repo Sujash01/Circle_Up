@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { OrderStatus, PaymentStatus } from '../constants/enums.js';
 import { moneyPaiseSchema } from './money.js';
 
 export const cartItemSchema = z.object({
@@ -50,6 +51,7 @@ export const orderStatusSchema = z.enum([
   'CONFIRMED',
   'PACKED',
   'SHIPPED',
+  'OUT_FOR_DELIVERY',
   'DELIVERED',
   'CANCELLED',
   'RETURN_REQUESTED',
@@ -57,10 +59,37 @@ export const orderStatusSchema = z.enum([
   'REFUNDED',
 ]);
 
+export const ORDER_STATUS_TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {
+  PENDING: ['CONFIRMED', 'CANCELLED'],
+  CONFIRMED: ['PACKED', 'SHIPPED', 'CANCELLED'],
+  PACKED: ['SHIPPED', 'CANCELLED'],
+  SHIPPED: ['OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED'],
+  OUT_FOR_DELIVERY: ['DELIVERED', 'CANCELLED'],
+  DELIVERED: ['RETURN_REQUESTED'],
+  RETURN_REQUESTED: ['RETURNED', 'REFUNDED'],
+  RETURNED: ['REFUNDED'],
+  REFUNDED: [],
+  CANCELLED: [],
+} as const;
+
+export function canTransitionOrderStatus(currentStatus: OrderStatus, nextStatus: OrderStatus): boolean {
+  if (currentStatus === nextStatus) return true;
+  const allowed = ORDER_STATUS_TRANSITIONS[currentStatus];
+  return Boolean(allowed && (allowed as readonly string[]).includes(nextStatus));
+}
+
 export const paymentMethodSchema = z.enum([
   'WHATSAPP_UPI',
   'CASH_ON_DELIVERY',
   'ONLINE_UPI',
+]);
+
+export const paymentStatusSchema = z.enum([
+  'PENDING',
+  'PAID',
+  'PARTIALLY_REFUNDED',
+  'REFUNDED',
+  'FAILED',
 ]);
 
 export const orderSchema = z.object({
@@ -80,7 +109,11 @@ export const orderSchema = z.object({
   totalAmount: moneyPaiseSchema,
   status: orderStatusSchema.default('PENDING'),
   paymentMethod: paymentMethodSchema.default('WHATSAPP_UPI'),
-  paymentStatus: z.enum(['PENDING', 'PAID']).default('PENDING'),
+  paymentStatus: paymentStatusSchema.default('PENDING'),
+  utrNumber: z.string().optional(),
+  paymentProofUrl: z.string().optional(),
+  marketingConsent: z.boolean().optional(),
+  marketingConsentAt: z.string().optional(),
   promoCode: z.string().optional(),
   notes: z.string().optional(),
   createdAt: z.string().optional(),
@@ -102,6 +135,7 @@ export const createOrderPayloadSchema = z.object({
   ).min(1, 'Order must contain at least one item').max(20),
   promoCode: z.string().trim().max(64).optional(),
   paymentMethod: paymentMethodSchema.default('WHATSAPP_UPI'),
+  marketingConsent: z.boolean().optional(),
   notes: z.string().max(1000).optional(),
 }).strict();
 export type CreateOrderPayload = z.infer<typeof createOrderPayloadSchema>;

@@ -348,7 +348,7 @@ function indexById(records, idField, source, entity) {
   return { index, duplicates, missingIdentifiers };
 }
 
-export function reconcile({ supabaseRecords, mongodbRecords, config }) {
+export function reconcile({ supabaseRecords, legacyRecords, config }) {
   const identifierSalt = randomBytes(32);
 
   const token = (id) =>
@@ -366,14 +366,14 @@ export function reconcile({ supabaseRecords, mongodbRecords, config }) {
     },
   };
 
-  for (const source of ['supabase', 'mongodb']) {
+  for (const source of ['supabase', 'legacy']) {
     report.sources[source] = {};
 
     for (const [entityName, entity] of Object.entries(config.entities)) {
       const records =
         source === 'supabase'
           ? supabaseRecords[entityName] || []
-          : mongodbRecords[entityName] || [];
+          : (legacyRecords)[entityName] || [];
 
       const idField = entity.identifiers[source];
 
@@ -410,7 +410,7 @@ export function reconcile({ supabaseRecords, mongodbRecords, config }) {
         )) {
           const row = missing.record;
           const key =
-            source === 'supabase' ? field.supabase : field.mongodb;
+            source === 'supabase' ? field.supabase : (field.legacy);
           const value = row?.[key];
 
           report.classifications.unresolved.push({
@@ -443,7 +443,7 @@ export function reconcile({ supabaseRecords, mongodbRecords, config }) {
 
   for (const [entityName, entity] of Object.entries(config.entities)) {
     const leftRows = supabaseRecords[entityName] || [];
-    const rightRows = mongodbRecords[entityName] || [];
+    const rightRows = (legacyRecords)[entityName] || [];
 
     const left = indexById(
       leftRows,
@@ -454,8 +454,8 @@ export function reconcile({ supabaseRecords, mongodbRecords, config }) {
 
     const right = indexById(
       rightRows,
-      entity.identifiers.mongodb,
-      'mongodb',
+      (entity.identifiers.legacy),
+      'legacy',
       entityName,
     );
 
@@ -483,7 +483,7 @@ export function reconcile({ supabaseRecords, mongodbRecords, config }) {
       }
 
       if (!duplicated && !inRight) {
-        recordFindings.push({ type: 'MISSING_IN_MONGODB' });
+        recordFindings.push({ type: 'MISSING_IN_LEGACY' });
       }
 
       const leftGroup = left.index.get(id);
@@ -496,11 +496,11 @@ export function reconcile({ supabaseRecords, mongodbRecords, config }) {
         entity.monetaryFields,
       )) {
         const leftKey = field.supabase;
-        const rightKey = field.mongodb;
+        const rightKey = (field.legacy);
 
         for (const [source, row, key] of [
           ['supabase', leftRecord, leftKey],
-          ['mongodb', rightRecord, rightKey],
+          ['legacy', rightRecord, rightKey],
         ]) {
           if (row && !(key in row)) {
             recordFindings.push({
@@ -524,7 +524,7 @@ export function reconcile({ supabaseRecords, mongodbRecords, config }) {
         );
 
         const rClass = classificationFor(
-          field.classification?.mongodb,
+          field.classification?.legacy,
           rRaw,
           rPresent,
         );
@@ -540,7 +540,7 @@ export function reconcile({ supabaseRecords, mongodbRecords, config }) {
         if (rightRecord && rClass === 'INVALID') {
           recordFindings.push({
             type: 'INVALID_MONETARY_VALUE',
-            source: 'mongodb',
+            source: 'legacy',
             field: fieldName,
           });
         }
@@ -598,7 +598,7 @@ export function reconcile({ supabaseRecords, mongodbRecords, config }) {
                   )
                 : reportValue(lRaw, lPresent, identifierSalt),
 
-            mongodb:
+            legacy:
               duplicated && right.duplicates.has(id)
                 ? rightGroup.map((row) =>
                     reportValue(
@@ -622,7 +622,7 @@ export function reconcile({ supabaseRecords, mongodbRecords, config }) {
 
           classification: {
             supabase: effectiveLeft,
-            mongodb: effectiveRight,
+            legacy: effectiveRight,
           },
 
           // Invalid values always require an owner decision.
@@ -672,17 +672,17 @@ function parseArgs(args) {
     const name = args[i];
 
     if (
-      !['--supabase', '--mongodb', '--config', '--output'].includes(name) ||
+      !['--supabase', '--legacy', '--config', '--output'].includes(name) ||
       !args[i + 1] ||
       args[i + 1].startsWith('--')
     ) {
       throw new Error(`Invalid or incomplete argument: ${name}`);
     }
 
-    result[name.slice(2)] = args[++i];
+    const parsedKey = name.slice(2); result[parsedKey] = args[++i]; 
   }
 
-  for (const required of ['supabase', 'mongodb', 'config', 'output']) {
+  for (const required of ['supabase', 'legacy', 'config', 'output']) {
     if (!result[required]) {
       throw new Error(`Required argument missing: --${required}`);
     }
@@ -709,7 +709,7 @@ export async function runCli(args) {
   const outputPath = path.resolve(options.output);
 
   if (
-    [options.supabase, options.mongodb, options.config].some(
+    [options.supabase, (options.legacy), options.config].some(
       (input) => outputPath === path.resolve(input),
     )
   ) {
@@ -718,9 +718,9 @@ export async function runCli(args) {
     );
   }
 
-  const [supabaseRecords, mongodbRecords, configText] = await Promise.all([
+  const [supabaseRecords, legacyRecords, configText] = await Promise.all([
     readInput(options.supabase, 'Supabase export'),
-    readInput(options.mongodb, 'MongoDB export'),
+    readInput(options.legacy, 'Legacy export'),
     readFile(options.config, 'utf8'),
   ]);
 
@@ -752,22 +752,22 @@ export async function runCli(args) {
     for (const [fieldName, field] of Object.entries(
       entity.monetaryFields,
     )) {
-      if (!field?.supabase || !field?.mongodb) {
+      if (!field?.supabase || !(field.legacy)) {
         throw new Error(
-          `Field ${entityName}.${fieldName} requires Supabase and MongoDB field names.`,
+          `Field ${entityName}.${fieldName} requires Supabase and legacy field names.`,
         );
       }
 
       if (
         PII_FIELD.test(field.supabase) ||
-        PII_FIELD.test(field.mongodb)
+        PII_FIELD.test((field.legacy))
       ) {
         throw new Error(
           `Unsafe personal-data field configured as monetary data: ${entityName}.${fieldName}.`,
         );
       }
 
-      for (const source of ['supabase', 'mongodb']) {
+      for (const source of ['supabase', 'legacy']) {
         const classification = field.classification?.[source];
 
         if (classification && !CLASSIFICATIONS.has(classification)) {
@@ -811,7 +811,7 @@ export async function runCli(args) {
 
   const report = reconcile({
     supabaseRecords: normalize(supabaseRecords, 'Supabase'),
-    mongodbRecords: normalize(mongodbRecords, 'MongoDB'),
+    legacyRecords: normalize(legacyRecords, 'Legacy export'),
     config,
   });
 

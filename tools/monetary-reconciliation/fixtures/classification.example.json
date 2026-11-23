@@ -1,14 +1,14 @@
 {
   "entities": {
     "products": {
-      "identifiers": { "supabase": "serial_number", "mongodb": "serialNumber" },
+      "identifiers": { "supabase": "serial_number", "legacy": "serialNumber" },
       "monetaryFields": {
         "price": {
           "supabase": "price",
-          "mongodb": "price",
-          "classification": { "supabase": "AMBIGUOUS", "mongodb": "AMBIGUOUS" }
+          "legacy": "price",
+          "classification": { "supabase": "AMBIGUOUS", "legacy": "AMBIGUOUS" }
         },
-        "originalPrice": { "supabase": "original_price", "mongodb": "originalPrice" }
+        "originalPrice": { "supabase": "original_price", "legacy": "originalPrice" }
       }
     }
   }

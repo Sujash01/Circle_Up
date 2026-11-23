@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { adminApi } from '../services/adminApi';
 import { AdminCardSkeleton, AdminTableSkeleton } from '../components/AdminSkeleton';
-import { formatPrice, type Order, type Product } from '@circleup/shared';
+import { formatPrice, type Order } from '@circleup/shared';
 import {
   Package,
   AlertTriangle,
@@ -15,8 +15,14 @@ import {
 } from 'lucide-react';
 
 export function OverviewPage() {
-  const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [metrics, setMetrics] = useState({
+    liveProductsCount: 0,
+    lowStockCount: 0,
+    activeOrdersCount: 0,
+    totalRevenuePaise: 0,
+    totalOrdersCount: 0,
+  });
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -24,16 +30,32 @@ export function OverviewPage() {
     async function loadOverview() {
       try {
         setIsLoading(true);
-        const [prodData, orderData] = await Promise.all([
-          adminApi.getProducts({ limit: 48 }),
-          adminApi.getOrders({ limit: 10 }),
-        ]);
+        // Load true database aggregates via /api/admin/overview (Resolves P1-6)
+        const overview = await adminApi.getOverview();
         if (mounted) {
-          setProducts(prodData.data);
-          setOrders(orderData.data);
+          setMetrics(overview.metrics);
+          setOrders(overview.recentOrders || []);
         }
       } catch {
-        // Fallback gracefully
+        // Fallback gracefully to direct paginated lists if overview endpoint is unavailable
+        try {
+          const [prodData, orderData] = await Promise.all([
+            adminApi.getProducts({ limit: 48 }),
+            adminApi.getOrders({ limit: 10 }),
+          ]);
+          if (mounted) {
+            setOrders(orderData.data || []);
+            setMetrics({
+              liveProductsCount: (prodData.data || []).filter((p) => p.status === 'PUBLISHED' || p.status === 'ACTIVE').length,
+              lowStockCount: (prodData.data || []).filter((p) => p.stock > 0 && p.stock <= 2).length,
+              activeOrdersCount: (orderData.data || []).filter((o) => o.status === 'PENDING' || o.status === 'CONFIRMED').length,
+              totalRevenuePaise: (orderData.data || []).reduce((sum, o) => sum + (o.paymentStatus === 'PAID' && o.status !== 'CANCELLED' && o.status !== 'REFUNDED' ? o.totalAmount : 0), 0),
+              totalOrdersCount: orderData.meta?.total || orderData.data?.length || 0,
+            });
+          }
+        } catch {
+          // Keep empty defaults
+        }
       } finally {
         if (mounted) setIsLoading(false);
       }
@@ -44,10 +66,10 @@ export function OverviewPage() {
     };
   }, []);
 
-  const publishedCount = products.filter((p) => p.status === 'PUBLISHED' || p.status === 'ACTIVE').length;
-  const lowStockCount = products.filter((p) => p.stock > 0 && p.stock <= 2).length;
-  const newOrdersCount = orders.filter((o) => o.status === 'PENDING' || o.status === 'CONFIRMED').length;
-  const totalRevenuePaise = orders.reduce((sum, o) => sum + (o.status !== 'CANCELLED' ? o.totalAmount : 0), 0);
+  const publishedCount = metrics.liveProductsCount;
+  const lowStockCount = metrics.lowStockCount;
+  const newOrdersCount = metrics.activeOrdersCount;
+  const totalRevenuePaise = metrics.totalRevenuePaise;
 
   if (isLoading) {
     return (

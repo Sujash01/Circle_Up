@@ -85,6 +85,10 @@ const SITEMAP_SECTIONS: SitemapSection[] = [
     links: [
       { name: 'About CircleUp', path: '/about', description: 'The brand story: a little bit thrift store, a little bit treasure hunt' },
       { name: 'Contact Studio', path: '/contact', description: 'Get in touch for sizing, returns, or consignment questions' },
+      { name: 'Privacy Policy', path: '/privacy-policy', description: 'Data privacy, security, and customer rights' },
+      { name: 'Terms of Service', path: '/terms', description: 'Terms of use, vintage sales policies, and community guidelines' },
+      { name: 'Returns & Refunds', path: '/returns-refunds', description: '7-day inspection window, reverse pickup, and store credits' },
+      { name: 'Shipping Policy', path: '/shipping-policy', description: 'Eco-conscious delivery timelines, tracking, and fees' },
       { name: 'XML Sitemap', path: '/sitemap.xml', description: 'Machine-readable search engine index file', isExternal: true },
       { name: 'Admin Workspace', path: '/admin', description: 'Curator CRM, inventory manager, orders, and coupon settings' },
     ],

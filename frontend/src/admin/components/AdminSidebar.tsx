@@ -12,6 +12,7 @@ import {
   History,
   UserCheck,
   Users,
+  Mail,
   ExternalLink,
   LogOut,
 } from 'lucide-react';
@@ -26,6 +27,7 @@ export function AdminSidebar() {
     { label: 'Collections', to: '/admin/collections', icon: Layers },
     { label: 'Orders', to: '/admin/orders', icon: ShoppingBag },
     { label: 'Customers', to: '/admin/customers', icon: Users },
+    { label: 'Inquiries', to: '/admin/inquiries', icon: Mail },
     { label: 'Rentals & Events', to: '/admin/rentals-events', icon: CalendarDays },
     { label: 'Coupons', to: '/admin/coupons', icon: Ticket },
     ...(isOwner

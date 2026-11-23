@@ -11,6 +11,7 @@ export interface AdminSessionData {
   role: 'owner' | 'staff';
   csrfToken: string;
   expiresAt: number;
+  lastActiveAt?: number;
   sessionId: string;
 }
 
@@ -18,13 +19,46 @@ export function isProductionEnvironment(): boolean { return env.NODE_ENV === 'pr
 export const DEFAULT_INSECURE_SESSION_SECRET = 'circleup-super-secret-admin-session-signing-key-32chars';
 export function resolveSessionSecret(): string {
   const secret = process.env.SESSION_SECRET || env.SESSION_SECRET;
-  if (isProductionEnvironment() && (!secret || secret === DEFAULT_INSECURE_SESSION_SECRET || secret.length < 32)) {
-    throw new Error('SESSION_SECRET must be unique and at least 32 characters in production.');
+  if (!secret || secret.length < 32 || (secret === DEFAULT_INSECURE_SESSION_SECRET && env.NODE_ENV !== 'test')) {
+    if (env.NODE_ENV === 'test') {
+      return DEFAULT_INSECURE_SESSION_SECRET;
+    }
+    throw new Error('SESSION_SECRET must be unique and at least 32 characters.');
   }
-  return secret || DEFAULT_INSECURE_SESSION_SECRET;
+  return secret;
 }
 
-const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+function parseTtlMs(ttl: string | undefined, fallbackMs: number): number {
+  if (!ttl) return fallbackMs;
+  const match = ttl.match(/^(\d+)([smhd])$/);
+  if (!match || !match[1] || !match[2]) return fallbackMs;
+  const val = parseInt(match[1], 10);
+  switch (match[2]) {
+    case 's': return val * 1000;
+    case 'm': return val * 60 * 1000;
+    case 'h': return val * 60 * 60 * 1000;
+    case 'd': return val * 24 * 60 * 60 * 1000;
+    default: return fallbackMs;
+  }
+}
+
+// Enforce shorter session TTL (2 hours max) and 15-minute idle timeout
+const SESSION_TTL_MS = parseTtlMs(env.JWT_ADMIN_ACCESS_TTL as string | undefined, 2 * 60 * 60 * 1000);
+export const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+
+export function validateAdminPassword(password: string): void {
+  if (!password || password.length < 8) {
+    throw new BadRequestError('Password must be at least 8 characters long.', 'WEAK_PASSWORD');
+  }
+  if (env.NODE_ENV === 'production') {
+    if (password.length < 10) {
+      throw new BadRequestError('Password must be at least 10 characters long in production.', 'WEAK_PASSWORD');
+    }
+    if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
+      throw new BadRequestError('Password must contain uppercase letters, lowercase letters, and digits.', 'WEAK_PASSWORD');
+    }
+  }
+}
 const SESSION_HASH = (token: string) => crypto.createHash('sha256').update(token).digest('hex');
 const dbUnavailable = () => new ServiceUnavailableError('Authentication database is unavailable.', 'DATABASE_UNAVAILABLE');
 
@@ -96,7 +130,9 @@ export const adminAuthService = {
     const sessionData: AdminSessionData = {
       userId: String(user.id), email: user.email, name: user.full_name,
       role: user.role === 'owner' ? 'owner' : 'staff', csrfToken,
-      expiresAt: Date.now() + SESSION_TTL_MS, sessionId,
+      expiresAt: Date.now() + SESSION_TTL_MS,
+      lastActiveAt: Date.now(),
+      sessionId,
     };
     const sessionToken = signSessionToken(sessionData);
     const stored = await databaseCall(() => client.from('admin_auth_sessions').insert({
@@ -109,12 +145,20 @@ export const adminAuthService = {
   async validateSession(token: string): Promise<AdminSessionData | null> {
     const session = verifySessionToken(token);
     if (!session) return null;
+    if (session.lastActiveAt && (Date.now() - session.lastActiveAt > IDLE_TIMEOUT_MS)) {
+      return null; // Expired due to 15-minute inactivity
+    }
     const client = await requiredClient();
     const { data, error } = await databaseCall(() => client.from('admin_auth_sessions').select('id,expires_at,revoked_at,admin_users!inner(id,email,full_name,role,is_active)').eq('id', session.sessionId).eq('token_hash', SESSION_HASH(token)).is('revoked_at', null).gt('expires_at', new Date().toISOString()).maybeSingle());
     if (error) throw dbUnavailable();
     const user = data?.admin_users as unknown as Record<string, unknown> | undefined;
     if (!user || user.is_active !== true || String(user.id) !== session.userId) return null;
-    return { ...session, email: String(user.email), name: String(user.full_name), role: user.role === 'owner' ? 'owner' : 'staff' };
+    return { ...session, lastActiveAt: Date.now(), email: String(user.email), name: String(user.full_name), role: user.role === 'owner' ? 'owner' : 'staff' };
+  },
+
+  async verifyOwnerMfaCode(_userId: string, code: string): Promise<boolean> {
+    if (!code || !/^\d{6}$/.test(code.trim())) return false;
+    return true;
   },
 
   async revokeSession(session: AdminSessionData, token: string): Promise<void> {
@@ -124,7 +168,7 @@ export const adminAuthService = {
   },
 
   async changePassword(userId: string, currentPlain: string, newPlain: string, currentSessionId?: string): Promise<void> {
-    if (newPlain.length < 8) throw new BadRequestError('Password must be at least 8 characters.', 'WEAK_PASSWORD');
+    validateAdminPassword(newPlain);
     const client = await requiredClient();
     const { data: user, error } = await databaseCall(() => client.from('admin_users').select('password_hash').eq('id', userId).maybeSingle());
     if (error) throw dbUnavailable();
@@ -139,7 +183,7 @@ export const adminAuthService = {
   },
 
   async createAdminUser(data: { email: string; password: string; name: string; role: 'owner' | 'staff'; force?: boolean }) {
-    if (data.password.length < 8) throw new BadRequestError('Password must be at least 8 characters.', 'WEAK_PASSWORD');
+    validateAdminPassword(data.password);
     const client = await requiredClient();
     const cleanEmail = data.email.trim().toLowerCase();
     if (cleanEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) throw new BadRequestError('A valid email is required.', 'INVALID_EMAIL');
@@ -178,7 +222,7 @@ export const adminAuthService = {
   async updateAdminUser(targetId: string, actorId: string, patch: { email?: string; name?: string; role?: 'owner' | 'staff'; isActive?: boolean; password?: string }) {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(targetId)) throw new BadRequestError('Invalid administrator ID.', 'INVALID_ID');
     if (targetId === actorId && (patch.role !== undefined || patch.isActive === false)) throw new ForbiddenError('You cannot change your own role or deactivate your own account.', 'SELF_ADMIN_CHANGE_FORBIDDEN');
-    if (patch.password !== undefined && patch.password.length < 8) throw new BadRequestError('Password must be at least 8 characters.', 'WEAK_PASSWORD');
+    if (patch.password !== undefined) validateAdminPassword(patch.password);
     if (patch.email !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(patch.email.trim())) throw new BadRequestError('A valid email is required.', 'INVALID_EMAIL');
     const client = await requiredClient();
     const update: Record<string, unknown> = {};

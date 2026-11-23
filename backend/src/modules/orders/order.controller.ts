@@ -1,7 +1,9 @@
 import type { Request, Response, NextFunction } from 'express';
+import { z } from 'zod';
 import { orderService } from './order.service.js';
+import { marketingService } from '../../services/marketing.service.js';
 import { sendCreated, sendSuccess } from '../../utils/apiResponse.js';
-import { ForbiddenError, UnauthorizedError } from '../../errors/AppError.js';
+import { BadRequestError, ForbiddenError, UnauthorizedError } from '../../errors/AppError.js';
 
 function withoutGuestCredential(order: Record<string, unknown>): Record<string, unknown> {
   const { guestAccessToken: _token, guestAccessTokenHash: _hash, ...safeOrder } = order;
@@ -62,6 +64,7 @@ export const orderController = {
       const orderNumber = String(req.params.orderNumber || '');
       const order = await orderService.getOrderByNumber(orderNumber);
       const orderRecord = order as {
+        orderNumber?: string | null;
         customerId?: string | null;
         guestAccessTokenHash?: string | null;
         guestAccessToken?: string | null;
@@ -94,6 +97,7 @@ export const orderController = {
           providedToken,
           (orderRecord.guestAccessTokenHash || orderRecord.guestAccessToken) as string | null | undefined,
           orderRecord.guestAccessExpiresAt as Date | null | undefined,
+          orderRecord.orderNumber,
         )
       ) {
         return sendSuccess(res, withoutGuestCredential(orderRecord));
@@ -104,6 +108,25 @@ export const orderController = {
         'You are not authorized to view this order. Valid customer authentication or x-guest-order-token header required.',
         'FORBIDDEN_ORDER_ACCESS',
       );
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async captureAbandonedCheckout(req: Request, res: Response, next: NextFunction) {
+    try {
+      const schema = z.object({
+        cartId: z.string().min(1),
+        customerEmail: z.string().email().optional(),
+        customerPhone: z.string().optional(),
+        items: z.array(z.any()).default([]),
+        subtotalPaise: z.number().int().nonnegative().default(0),
+        suggestedCouponCode: z.string().optional(),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) throw new BadRequestError('Abandoned cart payload is invalid.', 'VALIDATION_ERROR');
+      const result = await marketingService.captureAbandonedCheckout(parsed.data);
+      return sendSuccess(res, result);
     } catch (error) {
       next(error);
     }

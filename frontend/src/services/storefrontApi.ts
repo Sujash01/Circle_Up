@@ -286,6 +286,57 @@ export const storefrontApi = {
     const res = await axios.post<{ data: Order }>('/api/orders', orderPayload);
     return res.data.data;
   },
+
+  /**
+   * Reviews endpoints backed by Supabase with moderation (Resolves P1-8 & P1-9).
+   */
+  async getReviews(signal?: AbortSignal): Promise<import('@/types/storefront').ReviewItem[]> {
+    return fetchWithSwr<import('@/types/storefront').ReviewItem[]>('/api/reviews', {
+      signal,
+      maxAgeMs: 60_000,
+    });
+  },
+
+  async submitReview(body: {
+    displayName: string;
+    rating: number;
+    title: string;
+    comment: string;
+    productSlug?: string;
+    productName?: string;
+  }): Promise<import('@/types/storefront').ReviewItem> {
+    const res = await axios.post<{ data: import('@/types/storefront').ReviewItem }>('/api/reviews', body);
+    return res.data.data;
+  },
+
+  /**
+   * Community looks / ThriftCrew posts backed by Supabase with moderation (Resolves P1-8).
+   */
+  async getCommunityPosts(signal?: AbortSignal): Promise<import('@/types/storefront').CommunitySubmission[]> {
+    return fetchWithSwr<import('@/types/storefront').CommunitySubmission[]>('/api/community', {
+      signal,
+      maxAgeMs: 60_000,
+    });
+  },
+
+  async submitCommunityPost(body: {
+    displayName: string;
+    handle: string;
+    caption: string;
+    image: string;
+    taggedPiece?: string;
+  }): Promise<import('@/types/storefront').CommunitySubmission> {
+    const res = await axios.post<{ data: import('@/types/storefront').CommunitySubmission }>('/api/community', body);
+    return res.data.data;
+  },
+
+  /**
+   * Rental Booking Request submission backed by Supabase with moderation (Resolves P1-8).
+   */
+  async submitRentalRequest(body: Record<string, unknown>): Promise<import('@/types/storefront').SimulatedRentalRequest> {
+    const res = await axios.post<{ data: import('@/types/storefront').SimulatedRentalRequest }>('/api/rentals/requests', body);
+    return res.data.data;
+  },
 };
 
 function mapEventForStorefront(row: Record<string, unknown>): import('@/types/storefront').EventItem {

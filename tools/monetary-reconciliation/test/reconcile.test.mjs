@@ -13,22 +13,22 @@ const config = {
     products: {
       identifiers: {
         supabase: 'sku',
-        mongodb: 'sku',
+        legacy: 'sku',
       },
       monetaryFields: {
         price: {
           supabase: 'price',
-          mongodb: 'price',
+          legacy: 'price',
         },
       },
     },
   },
 };
 
-const run = (supabaseRecords, mongodbRecords, cfg = config) =>
+const run = (supabaseRecords, legacyRecords, cfg = config) =>
   reconcile({
     supabaseRecords: { products: supabaseRecords },
-    mongodbRecords: { products: mongodbRecords },
+    legacyRecords: { products: legacyRecords },
     config: cfg,
   });
 
@@ -64,7 +64,7 @@ test('different matching values are reported as conflicting without conversion',
     'DIFFERENT_RAW_VALUE',
   );
   assert.equal(
-    report.classifications.unresolved[0].classification.mongodb,
+    report.classifications.unresolved[0].classification.legacy,
     'DUPLICATE_OR_CONFLICTING',
   );
   assert.ok(
@@ -82,7 +82,7 @@ test('missing records are identified by hashed stable identifiers', () => {
 
   assert.ok(
     report.findings[0].findings.some(
-      (finding) => finding.type === 'MISSING_IN_MONGODB',
+      (finding) => finding.type === 'MISSING_IN_LEGACY',
     ),
   );
   assert.equal(
@@ -134,13 +134,13 @@ test('missing identifiers in both sources and blank identifiers are unresolved w
         reason: 'BLANK_IDENTIFIER',
       },
       {
-        source: 'mongodb',
+        source: 'legacy',
         entity: 'products',
         sourceRowIndex: 1,
         reason: 'MISSING_IDENTIFIER',
       },
       {
-        source: 'mongodb',
+        source: 'legacy',
         entity: 'products',
         sourceRowIndex: 2,
         reason: 'BLANK_IDENTIFIER',
@@ -318,7 +318,7 @@ test('explicit classifications are honored but values are never inferred from ma
 
   cfg.entities.products.monetaryFields.price.classification = {
     supabase: 'CONFIRMED_RUPEES',
-    mongodb: 'CONFIRMED_PAISE',
+    legacy: 'CONFIRMED_PAISE',
   };
 
   const report = run(
@@ -333,7 +333,7 @@ test('explicit classifications are honored but values are never inferred from ma
   );
 
   assert.equal(
-    report.classifications.unresolved[0].classification.mongodb,
+    report.classifications.unresolved[0].classification.legacy,
     'CONFIRMED_PAISE',
   );
 
@@ -348,7 +348,7 @@ test('confirmed equal values are separated from unresolved records and CSV numer
 
   cfg.entities.products.monetaryFields.price.classification = {
     supabase: 'CONFIRMED_PAISE',
-    mongodb: 'CONFIRMED_PAISE',
+    legacy: 'CONFIRMED_PAISE',
   };
 
   const report = run(
@@ -366,7 +366,7 @@ test('confirmed equal values are separated from unresolved records and CSV numer
   );
 
   assert.equal(
-    report.classifications.confirmed[0].values.mongodb,
+    report.classifications.confirmed[0].values.legacy,
     '4000',
   );
 });
@@ -391,12 +391,12 @@ test('missing fields are reported and source raw values remain unchanged', async
         products: {
           identifiers: {
             supabase: 'serial_number',
-            mongodb: 'serialNumber',
+            legacy: 'serialNumber',
           },
           monetaryFields: {
             compareAt: {
               supabase: 'compare_at_price',
-              mongodb: 'compareAtPrice',
+              legacy: 'compareAtPrice',
             },
           },
         },
@@ -435,15 +435,15 @@ test('JSON rejects null, primitive, and array record entries with source/entity/
     '[[1,2]]',
   ]) {
     assert.throws(
-      () => loadRecords(bad, 'json', 'MongoDB export'),
-      /MongoDB export entity "records" record 1 must be a plain record object/,
+      () => loadRecords(bad, 'json', 'Legacy export'),
+      /Legacy export entity "records" record 1 must be a plain record object/,
     );
   }
 
   for (const bad of ['null', '7']) {
     assert.throws(
-      () => loadRecords(bad, 'json', 'MongoDB export'),
-      /MongoDB export JSON must be/,
+      () => loadRecords(bad, 'json', 'Legacy export'),
+      /Legacy export JSON must be/,
     );
   }
 
@@ -535,7 +535,7 @@ test('both sources containing null require an owner decision', () => {
   assert.ok(entry);
   assert.equal(entry.ownerDecisionRequired, true);
   assert.equal(entry.classification.supabase, 'INVALID');
-  assert.equal(entry.classification.mongodb, 'INVALID');
+  assert.equal(entry.classification.legacy, 'INVALID');
   assert.equal(report.classifications.confirmed.length, 0);
 });
 
@@ -551,7 +551,7 @@ test('both sources containing malformed monetary strings require an owner decisi
   assert.ok(entry);
   assert.equal(entry.ownerDecisionRequired, true);
   assert.equal(entry.classification.supabase, 'INVALID');
-  assert.equal(entry.classification.mongodb, 'INVALID');
+  assert.equal(entry.classification.legacy, 'INVALID');
 
   assert.doesNotMatch(serialized, /private-malformed-value/);
   assert.doesNotMatch(serialized, /another-private-value/);
@@ -572,7 +572,7 @@ test('one invalid source and one valid source require an owner decision', () => 
   assert.ok(entry);
   assert.equal(entry.ownerDecisionRequired, true);
   assert.equal(entry.classification.supabase, 'INVALID');
-  assert.equal(entry.classification.mongodb, 'AMBIGUOUS');
+  assert.equal(entry.classification.legacy, 'AMBIGUOUS');
 
   assert.doesNotMatch(serialized, /not-a-number/);
   assert.equal(report.classifications.confirmed.length, 0);

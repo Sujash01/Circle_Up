@@ -8,7 +8,8 @@ import { SizeGuideModal } from '@/components/storefront/SizeGuideModal';
 import { Blob } from '@/components/ui/Blob';
 import { useStore } from '@/context/StoreContext';
 import { cn } from '@/lib/utils';
-import { cartService, formatPrice } from '@/services/cartService';
+import { formatPrice } from '@circleup/shared';
+import { cartService } from '@/services/cartService';
 import { productService, useCatalogVersion } from '@/services/productService';
 import { storefrontApi } from '@/services/storefrontApi';
 import {
@@ -29,7 +30,10 @@ function WhatsAppIcon({ className = 'size-4' }: { className?: string }) {
 export function ProductDetailPage() {
   const { slug = '' } = useParams();
   const catalogVersion = useCatalogVersion();
-  const product: Product | undefined = useMemo(() => productService.getProductBySlug(slug), [slug, catalogVersion]);
+  const product: Product | undefined = useMemo(() => {
+    void catalogVersion;
+    return productService.getProductBySlug(slug);
+  }, [slug, catalogVersion]);
   const { addToCart, isWishlisted, toggleWishlist } = useStore();
 
   useEffect(() => {
@@ -86,6 +90,54 @@ export function ProductDetailPage() {
     }
   }, [slug, availableVariants]);
 
+  useEffect(() => {
+    if (product) {
+      document.title = `${product.name} — CircleUp`;
+      const descMeta = document.querySelector('meta[name="description"]');
+      if (descMeta) {
+        descMeta.setAttribute(
+          'content',
+          product.description || `Buy ${product.name} on CircleUp.`,
+        );
+      }
+    }
+  }, [product]);
+
+  const productJsonLd = useMemo(() => {
+    if (!product) return null;
+    const priceInRupees = (product.price / 100).toFixed(2);
+    const imageUrl = product.images?.[0]
+      ? product.images[0].startsWith('http')
+        ? product.images[0]
+        : `https://circleuponline.com${product.images[0]}`
+      : 'https://circleuponline.com/og-circleup.png';
+
+    return {
+      '@context': 'https://schema.org',
+      '@type': 'Product',
+      name: product.name,
+      description: product.description || `${product.name} from CircleUp curated catalog.`,
+      image: product.images?.map((img) =>
+        img.startsWith('http') ? img : `https://circleuponline.com${img}`
+      ) || [imageUrl],
+      sku: product.serialNumber || product.id,
+      brand: {
+        '@type': 'Brand',
+        name: 'CircleUp',
+      },
+      offers: {
+        '@type': 'Offer',
+        price: priceInRupees,
+        priceCurrency: 'INR',
+        availability: isPurchasable ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+        url: `https://circleuponline.com/product/${product.slug}`,
+        itemCondition: product.condition === 'New With Tags' || product.productType === 'Fresh Find'
+          ? 'https://schema.org/NewCondition'
+          : 'https://schema.org/UsedCondition',
+      },
+    };
+  }, [product, isPurchasable]);
+
   if (!product) {
     return (
       <EmptyState
@@ -133,6 +185,12 @@ export function ProductDetailPage() {
 
   return (
     <div className="space-y-16">
+      {productJsonLd && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }}
+        />
+      )}
       {/* Breadcrumb navigation */}
       <nav aria-label="Breadcrumb" className="text-xs text-terracotta flex flex-wrap items-center gap-2">
         <Link to="/" className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center hover:text-primary">

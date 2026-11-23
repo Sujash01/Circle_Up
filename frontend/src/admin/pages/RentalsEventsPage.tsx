@@ -194,7 +194,7 @@ export default function RentalsEventsPage() {
                   id: 'new',
                   name: '',
                   category: 'rentals',
-                  image: '/assets/rtw-3.jpg',
+                  image: '/assets/rtw-3.webp',
                   rentalPrice3Days: 100000,
                   rentalPrice7Days: 180000,
                   rentalPrice14Days: 280000,

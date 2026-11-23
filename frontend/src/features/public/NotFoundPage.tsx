@@ -1,7 +1,7 @@
 import { Search } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import lookbook from '@/assets/lookbook.jpg';
+import lookbook from '@/assets/lookbook.webp';
 import story2 from '@/assets/story-2.jpg';
 
 const SUGGESTED_RAILS = [

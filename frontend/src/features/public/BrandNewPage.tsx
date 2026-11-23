@@ -11,11 +11,13 @@ export function BrandNewPage() {
   const [sort, setSort] = useState<ProductSortOption>('newest');
 
   const products = useMemo(
-    () =>
-      productService.getBrandNewProducts({
+    () => {
+      void catalogVersion;
+      return productService.getBrandNewProducts({
         category: selectedCategory,
         sort,
-      }),
+      });
+    },
     [selectedCategory, sort, catalogVersion],
   );
 

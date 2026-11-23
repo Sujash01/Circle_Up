@@ -755,7 +755,7 @@ describe('Milestone 1, Step 2: Atomic Checkout RPC Unit & Verification Test Suit
   });
 
   // 32. Elimination of Automatic Fallback: Missing Supabase Credentials Fails Closed
-  it('32. [MOCKED / UNIT] Fails closed with 503 DATABASE_UNAVAILABLE when Supabase credentials are missing (no MongoDB fallback)', async () => {
+  it('32. [MOCKED / UNIT] Fails closed with 503 DATABASE_UNAVAILABLE when Supabase credentials are missing (no legacy fallback)', async () => {
     const originalEnv = env.NODE_ENV;
     const originalUrl = env.SUPABASE_URL;
     const originalKey = env.SUPABASE_SERVICE_ROLE_KEY;
@@ -774,7 +774,7 @@ describe('Milestone 1, Step 2: Atomic Checkout RPC Unit & Verification Test Suit
       };
 
       // In the target architecture, missing Supabase credentials MUST throw 503 DATABASE_UNAVAILABLE.
-      // It must NEVER silently fall back to MongoDB.
+      // It must NEVER silently fall back to legacy database.
       await expect(orderService.createOrder(payload)).rejects.toThrow(ServiceUnavailableError);
       await expect(orderService.createOrder(payload)).rejects.toMatchObject({
         code: 'DATABASE_UNAVAILABLE',
@@ -788,7 +788,7 @@ describe('Milestone 1, Step 2: Atomic Checkout RPC Unit & Verification Test Suit
   });
 
   // 33. Elimination of Automatic Fallback: Unverified Monetary Gate Fails Closed
-  it('33. [MOCKED / UNIT] Fails closed with 503 MONETARY_RECONCILIATION_REQUIRED in production (no MongoDB fallback)', async () => {
+  it('33. [MOCKED / UNIT] Fails closed with 503 MONETARY_RECONCILIATION_REQUIRED in production (no legacy fallback)', async () => {
     const originalEnv = env.NODE_ENV;
     const originalGate = env.MONETARY_RECONCILIATION_VERIFIED;
 
@@ -805,7 +805,7 @@ describe('Milestone 1, Step 2: Atomic Checkout RPC Unit & Verification Test Suit
       };
 
       // In production with unverified monetary units, createOrder MUST throw 503 MONETARY_RECONCILIATION_REQUIRED.
-      // It must NEVER invoke MongoDB checkout.
+      // It must NEVER invoke legacy checkout.
       await expect(orderService.createOrder(payload)).rejects.toThrow(ServiceUnavailableError);
       await expect(orderService.createOrder(payload)).rejects.toMatchObject({
         code: 'MONETARY_RECONCILIATION_REQUIRED',
@@ -817,8 +817,8 @@ describe('Milestone 1, Step 2: Atomic Checkout RPC Unit & Verification Test Suit
     }
   });
 
-  // 34. Elimination of Automatic Fallback: Supabase RPC Failure Does NOT Fall Back to MongoDB
-  it('34. [MOCKED / UNIT] Re-throws Supabase RPC error directly without attempting MongoDB checkout fallback', async () => {
+  // 34. Elimination of Automatic Fallback: Supabase RPC Failure Does NOT Fall Back
+  it('34. [MOCKED / UNIT] Re-throws Supabase RPC error directly without attempting legacy checkout fallback', async () => {
     const originalEnv = env.NODE_ENV;
     const originalUrl = env.SUPABASE_URL;
     const originalKey = env.SUPABASE_SERVICE_ROLE_KEY;
@@ -878,12 +878,12 @@ describe('Milestone 1, Step 2: Atomic Checkout RPC Unit & Verification Test Suit
   });
 
   // 36. Server startup is independent of legacy database environment configuration.
-  it('36. [MOCKED / UNIT] Starts without MongoDB environment variables', async () => {
+  it('36. [MOCKED / UNIT] Starts without legacy database environment variables', async () => {
     const originalEnv = env.NODE_ENV;
 
     try {
       (env as any).NODE_ENV = 'production';
-      expect('MONGODB_URI' in env).toBe(false);
+      expect('LEGACY_DB_URI' in env).toBe(false);
       const listenSpy = vi
         .spyOn(app, 'listen')
         .mockImplementation((_port: any, cb?: any) => {

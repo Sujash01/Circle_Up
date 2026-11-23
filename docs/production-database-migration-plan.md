@@ -1,13 +1,13 @@
 ﻿# CircleUp Production Cutover Checklist
 
-This checklist replaces the retired MongoDB migration instructions. It is a planning document only; no remote database or production environment was accessed during the local migration work.
+This checklist outlines the production cutover procedure. It is a planning document only; no remote database or production environment was accessed during the local migration work.
 
 ## Current application architecture
 
 - Supabase PostgreSQL is the only application database.
 - Supabase Storage is the only application-managed media provider.
 - Express owns privileged database and storage operations; the service-role key must remain server-side.
-- MongoDB connection configuration, startup, health checks, and runtime dependencies have been removed from the application.
+- Legacy database connection configuration, startup, health checks, and runtime dependencies have been removed from the application.
 
 ## Before production cutover
 
@@ -22,7 +22,7 @@ This checklist replaces the retired MongoDB migration instructions. It is a plan
 ## Completion criteria
 
 - All pending migrations have been reviewed and applied by an authorized operator.
-- Production environment has no MongoDB variables or Atlas dependency.
+- Production environment has no legacy database variables or obsolete provider dependency.
 - Production image records resolve to Supabase Storage or another explicitly retained static asset source.
 - Monetary reconciliation is independently complete before enabling production checkout.
 - End-to-end smoke tests pass and operational ownership is documented.

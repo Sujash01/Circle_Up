@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { EmptyState } from '@/components/storefront/EmptyState';
 import { cn } from '@/lib/utils';
-import { formatPrice } from '@/services/cartService';
+import { formatPrice } from '@circleup/shared';
 import { rentalService } from '@/services/rentalService';
 import { storefrontApi } from '@/services/storefrontApi';
 import type { RentalProduct, SimulatedRentalRequest } from '@/types/storefront';
@@ -92,7 +92,7 @@ export function RentalsPage() {
     setEndDate(addDaysIso(base, Math.max(0, days - 1)));
   };
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setFormError('');
     setLatestRequest(null);
@@ -106,7 +106,7 @@ export function RentalsPage() {
       return;
     }
 
-    const res = rentalService.submitSimulatedRequest({
+    const res = await rentalService.submitSimulatedRequest({
       product: selectedProduct,
       size,
       startDate,

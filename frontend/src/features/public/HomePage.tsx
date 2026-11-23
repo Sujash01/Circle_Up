@@ -4,19 +4,19 @@ import { Heart } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { clearStorefrontCache, storefrontApi, type HomepagePayload } from '@/services/storefrontApi';
 
-import bag1 from '@/assets/bag-1.jpg';
-import bag3 from '@/assets/bag-3.jpg';
+import bag1 from '@/assets/bag-1.webp';
+import bag3 from '@/assets/bag-3.webp';
 import communityVignette from '@/assets/community-vignette.svg';
 import crumpledPaper from '@/assets/crumpled-paper.webp';
-import heroDetail1 from '@/assets/hero-detail-1.jpg';
-import heroDetail2 from '@/assets/hero-detail-2.jpg';
-import lookbook from '@/assets/lookbook.jpg';
-import rtw1 from '@/assets/rtw-1.jpg';
-import rtw3 from '@/assets/rtw-3.jpg';
+import heroDetail1 from '@/assets/hero-detail-1.webp';
+import heroDetail2 from '@/assets/hero-detail-2.webp';
+import lookbook from '@/assets/lookbook.webp';
+import rtw1 from '@/assets/rtw-1.webp';
+import rtw3 from '@/assets/rtw-3.webp';
 import storyInset from '@/assets/story-inset.webp';
 import storyInsetSmall from '@/assets/story-inset-480.webp';
 import story2 from '@/assets/story-2.jpg';
-import winter1 from '@/assets/winter-1.jpg';
+import winter1 from '@/assets/winter-1.webp';
 import worldSocial from '@/assets/world-social-circle.webp';
 import worldSocialSmall from '@/assets/world-social-circle-480.webp';
 import { Reveal } from '@/components/landing/Reveal';
@@ -33,7 +33,7 @@ import {
 import { useStore } from '@/context/StoreContext';
 import { cn } from '@/lib/utils';
 import { subscribeToScrollFrames } from '@/lib/scrollScheduler';
-import { formatPrice } from '@/services/cartService';
+import { formatPrice } from '@circleup/shared';
 import { productService, useCatalogVersion } from '@/services/productService';
 
 interface ProductPreview {
@@ -563,7 +563,10 @@ export function HomePage() {
   const belowHeroRef = useRef<HTMLDivElement>(null);
   const vineTrailRef = useRef<HTMLDivElement>(null);
   const catalogVersion = useCatalogVersion();
-  const allProducts: Product[] = useMemo(() => productService.getAllProducts(), [catalogVersion]);
+  const allProducts: Product[] = useMemo(() => {
+    void catalogVersion;
+    return productService.getAllProducts();
+  }, [catalogVersion]);
 
   useEffect(() => {
     const root = belowHeroRef.current;

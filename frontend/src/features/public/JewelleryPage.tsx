@@ -9,11 +9,13 @@ export function JewelleryPage() {
   const [sort, setSort] = useState<ProductSortOption>('newest');
 
   const products = useMemo(
-    () =>
-      productService.queryProducts({
+    () => {
+      void catalogVersion;
+      return productService.queryProducts({
         category: 'jewellery',
         sort,
-      }),
+      });
+    },
     [sort, catalogVersion],
   );
 

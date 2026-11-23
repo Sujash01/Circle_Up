@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { EmptyState } from '@/components/storefront/EmptyState';
 import { ProductCard } from '@/components/storefront/ProductCard';
 import { cn } from '@/lib/utils';
-import { formatPrice } from '@/services/cartService';
+import { formatPrice } from '@circleup/shared';
 import { productService, useCatalogVersion, type ProductSortOption } from '@/services/productService';
 import type { ProductCategorySlug } from '@/types/storefront';
 
@@ -14,6 +14,7 @@ export function NewArrivalsPage() {
 
   const categories = productService.getCategories();
   const products = useMemo(() => {
+    void catalogVersion;
     const fresh = productService.queryProducts({
       newArrivalsOnly: true,
       category: selectedCategory,

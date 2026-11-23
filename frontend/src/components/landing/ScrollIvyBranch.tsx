@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { cn } from '@/lib/utils';
 import { subscribeToScrollFrames } from '@/lib/scrollScheduler';
 import { createIvyLeafVariation, IvyLeafArtwork, type IvyLeafKind } from './chest/ivy';
@@ -191,7 +191,7 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
   const [leaves, setLeaves] = useState<LeafSpec[]>([]);
   const pathData = useMemo(() => createVinePath(size.width, size.height), [size]);
 
-  const getContainer = () => containerRef.current ?? wrapperRef.current?.parentElement ?? null;
+  const getContainer = useCallback(() => containerRef.current ?? wrapperRef.current?.parentElement ?? null, [containerRef]);
 
   const updatePageYLookup = () => {
     const metrics = metricsRef.current;
@@ -202,7 +202,7 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
     }));
   };
 
-  const measure = () => {
+  const measure = useCallback(() => {
     const wrapper = wrapperRef.current;
     const container = getContainer();
     if (!wrapper || !container) return;
@@ -232,7 +232,7 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
         ? current
         : { width, height },
     );
-  };
+  }, [getContainer]);
 
   useLayoutEffect(() => {
     const wrapper = wrapperRef.current;
@@ -265,7 +265,7 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
       window.removeEventListener('load', measure);
       fonts?.removeEventListener('loadingdone', measure);
     };
-  }, [containerRef]);
+  }, [getContainer, measure]);
 
   useLayoutEffect(() => {
     const path = measurePathRef.current;
@@ -456,7 +456,7 @@ export function ScrollIvyBranch({ containerRef, className }: ScrollIvyBranchProp
       stop();
       motionQuery?.removeEventListener?.('change', handleMotionChange);
     };
-  }, [containerRef, leaves]);
+  }, [containerRef, leaves, measure]);
 
   return (
     <div

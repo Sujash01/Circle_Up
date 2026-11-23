@@ -162,8 +162,20 @@ async function loadData() {
   for (const order of orders) {
     const key = orderIdentity(order);
     const summary = summaries.get(key) || { count: 0, spend: 0, rows: [] };
-    summary.count += 1;
-    summary.spend += Number(order.total_amount || 0);
+    const isPaid = order.payment_status === 'PAID';
+    const isCancelledOrRefunded =
+      order.status === 'CANCELLED' ||
+      order.status === 'REFUNDED' ||
+      order.payment_status === 'REFUNDED';
+    const isEligiblePaidSpend = isPaid && !isCancelledOrRefunded;
+    const isEligibleOrder = order.status !== 'CANCELLED';
+
+    if (isEligibleOrder) {
+      summary.count += 1;
+    }
+    if (isEligiblePaidSpend) {
+      summary.spend += Number(order.total_amount || 0);
+    }
     summary.rows.push(order);
     if (!summary.firstOrderAt || order.created_at < summary.firstOrderAt) summary.firstOrderAt = order.created_at;
     if (!summary.lastOrderAt || order.created_at >= summary.lastOrderAt) {
@@ -208,8 +220,41 @@ function mapOrder(order: OrderRow): IOrder {
   };
 }
 
+interface CustomerListMeta {
+  page: number;
+  limit: number;
+  totalPages: number;
+  total?: number;
+  totalItems?: number;
+  hasNext?: boolean;
+  hasNextPage?: boolean;
+  hasPrevPage?: boolean;
+}
+
 export const adminCustomerService = {
   async listCustomers(query: { page?: unknown; limit?: unknown; search?: string; tier?: string }) {
+    const { page, limit } = parsePagination(query);
+    const client = getSupabaseServiceClient();
+
+    // Prefer server-side SQL aggregation and pagination via admin_get_crm_customers RPC (Resolves P1-5)
+    try {
+      const rpcResult = await (client as unknown as { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data?: { customers?: unknown[]; meta?: CustomerListMeta }; error?: unknown }> }).rpc('admin_get_crm_customers', {
+        p_page: page,
+        p_limit: limit,
+        p_search: query.search?.trim() || null,
+        p_tier: query.tier && query.tier !== 'all' ? query.tier : null,
+      });
+
+      if (!rpcResult?.error && rpcResult?.data && Array.isArray(rpcResult.data.customers) && rpcResult.data.meta) {
+        return {
+          customers: rpcResult.data.customers,
+          meta: rpcResult.data.meta,
+        };
+      }
+    } catch {
+      // Fall through to database row loader for test mocks
+    }
+
     const { customers, summaries } = await loadData();
     const registeredIdentities = new Set<string>();
     const mapped = customers.map((row) => {

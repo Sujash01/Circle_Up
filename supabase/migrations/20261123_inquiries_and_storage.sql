@@ -1,11 +1,11 @@
 -- ==============================================================================
 -- CircleUp Supabase Migration: Inquiries Schema & Storage Infrastructure
--- Phase 1 of MongoDB Retirement Plan
+-- Supabase Schema & Storage Infrastructure
 -- ==============================================================================
 
 -- ------------------------------------------------------------------------------
 -- 1. PUBLIC.INQUIRIES TABLE
--- Replaces Mongoose Inquiry model for public contact submissions
+-- Stores public contact submissions in Supabase
 -- ------------------------------------------------------------------------------
 create table if not exists public.inquiries (
   id uuid primary key default gen_random_uuid(),

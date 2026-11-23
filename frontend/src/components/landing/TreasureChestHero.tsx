@@ -10,7 +10,7 @@ import heroStoreRack from '@/assets/hero-store-rack.webp';
 import heroStoreCounter from '@/assets/hero-store-counter.webp';
 import heroStoreLamp from '@/assets/hero-store-lamp.webp';
 import { ChestModel } from './chest/ChestModel';
-import { formatPrice } from '@/services/cartService';
+import { formatPrice } from '@circleup/shared';
 import {
   clamp,
   easeInOut,
@@ -36,7 +36,7 @@ export interface ChestProduct {
 const CHEST_PRODUCTS: ChestProduct[] = [
   {
     name: 'Winter Cardigan Coat',
-    price: formatPrice(1890),
+    price: formatPrice(189000),
     tag: 'Curated find',
     bg: ['#c9d3b0', '#9fae80'],
     img: lookbook,
@@ -44,7 +44,7 @@ const CHEST_PRODUCTS: ChestProduct[] = [
   },
   {
     name: 'Top & Skirt Co-Ord Set',
-    price: formatPrice(4000),
+    price: formatPrice(400000),
     tag: 'Pre-loved',
     bg: ['#e7e1ce', '#c8d3b0'],
     img: heroDetail1,
@@ -52,7 +52,7 @@ const CHEST_PRODUCTS: ChestProduct[] = [
   },
   {
     name: 'Denim Fit & Flare Set',
-    price: formatPrice(1950),
+    price: formatPrice(195000),
     tag: 'Size XS/S',
     bg: ['#bfd0dc', '#8aa6bc'],
     img: rtw2,
@@ -60,7 +60,7 @@ const CHEST_PRODUCTS: ChestProduct[] = [
   },
   {
     name: 'Textured Bowling Sling Bag',
-    price: formatPrice(1850),
+    price: formatPrice(185000),
     tag: 'One size',
     bg: ['#e7e1ce', '#c8d3b0'],
     img: bag2,
@@ -68,7 +68,7 @@ const CHEST_PRODUCTS: ChestProduct[] = [
   },
   {
     name: 'Blazer With Skirt Co-Ord Set',
-    price: formatPrice(3550),
+    price: formatPrice(355000),
     tag: 'Archival set',
     bg: ['#e7e1ce', '#c8d3b0'],
     img: rtw3,
@@ -76,7 +76,7 @@ const CHEST_PRODUCTS: ChestProduct[] = [
   },
   {
     name: 'Textured Handheld Bag',
-    price: formatPrice(2550),
+    price: formatPrice(255000),
     tag: 'One Size',
     bg: ['#d9cdb5', '#a89572'],
     img: bag1,

@@ -21,13 +21,17 @@ declare global {
 
 /**
  * Resolves the secret used to verify customer/Supabase JWTs.
- * Enforces strict environment secret in production with no insecure fallbacks.
+ * Uses SUPABASE_JWT_SECRET strictly; never falls back to JWT_ACCESS_SECRET or hardcoded dev secrets.
+ * In automated test environments only, allows test fixtures.
  */
 function getCustomerJwtSecret(): string | null {
-  if (env.SUPABASE_JWT_SECRET) return env.SUPABASE_JWT_SECRET;
-  if (env.JWT_ACCESS_SECRET) return env.JWT_ACCESS_SECRET;
-  if (env.NODE_ENV === 'production') return null;
-  return 'circleup-customer-jwt-secret-at-least-32-chars';
+  if (env.SUPABASE_JWT_SECRET && env.SUPABASE_JWT_SECRET.length >= 32) {
+    return env.SUPABASE_JWT_SECRET;
+  }
+  if (env.NODE_ENV === 'test') {
+    return 'circleup-test-customer-jwt-secret-at-least-32-chars';
+  }
+  return null;
 }
 
 /**

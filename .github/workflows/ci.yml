@@ -13,6 +13,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -26,6 +28,15 @@ jobs:
       - name: Build shared contracts
         run: npm run build --workspace=@circleup/shared
 
+      - name: Security audit dependencies
+        run: npm audit --omit=dev --audit-level=high || true
+
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
       - name: Typecheck all workspaces
         run: npm run typecheck
 
@@ -37,4 +48,3 @@ jobs:
 
       - name: Build all workspaces
         run: npm run build
-

@@ -803,7 +803,7 @@ describe('Products & Orders API', () => {
     expect(checkoutState.orders.size).toBe(before + 1);
   });
 
-  it('fails checkout when Supabase is unavailable without falling back to MongoDB', async () => {
+  it('fails checkout when Supabase is unavailable without falling back to legacy databases', async () => {
     checkoutState.setEnabled(false);
     try {
       const res = await checkoutRequest().set('Idempotency-Key', 'offline-checkout-key-0004').send({

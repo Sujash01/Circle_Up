@@ -42,6 +42,10 @@ const ThriftCrewPage = lazy(() => import('@/features/public/ThriftCrewPage').the
 const ThriftedPage = lazy(() => import('@/features/public/ThriftedPage').then((m) => ({ default: m.ThriftedPage })));
 const ThriftedTreasurePage = lazy(() => import('@/features/public/ThriftedTreasurePage').then((m) => ({ default: m.ThriftedTreasurePage })));
 const WishlistPage = lazy(() => import('@/features/public/WishlistPage').then((m) => ({ default: m.WishlistPage })));
+const PrivacyPolicyPage = lazy(() => import('@/features/public/PrivacyPolicyPage').then((m) => ({ default: m.PrivacyPolicyPage })));
+const TermsPage = lazy(() => import('@/features/public/TermsPage').then((m) => ({ default: m.TermsPage })));
+const ReturnsRefundsPage = lazy(() => import('@/features/public/ReturnsRefundsPage').then((m) => ({ default: m.ReturnsRefundsPage })));
+const ShippingPolicyPage = lazy(() => import('@/features/public/ShippingPolicyPage').then((m) => ({ default: m.ShippingPolicyPage })));
 const AdminApp = lazy(() => import('@/admin/AdminApp'));
 
 function RootScrollWrapper() {
@@ -168,6 +172,10 @@ export const router = createBrowserRouter([
           { path: 'contact', element: <ContactPage /> },
           { path: 'sitemap', element: <SitemapPage /> },
           { path: 'reviews', element: <ReviewsPage /> },
+          { path: 'privacy-policy', element: <PrivacyPolicyPage /> },
+          { path: 'terms', element: <TermsPage /> },
+          { path: 'returns-refunds', element: <ReturnsRefundsPage /> },
+          { path: 'shipping-policy', element: <ShippingPolicyPage /> },
           { path: 'events', element: <EventsPage /> },
           { path: 'events/:id', element: <EventDetailPage /> },
           { path: 'thriftcrew', element: <ThriftCrewPage /> },

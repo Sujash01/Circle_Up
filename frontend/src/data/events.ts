@@ -1,6 +1,6 @@
 import community1 from '@/assets/community-1.webp';
 import community2 from '@/assets/community-1.webp';
-import lookbook from '@/assets/lookbook.jpg';
+import lookbook from '@/assets/lookbook.webp';
 import type { EventItem } from '@/types/storefront';
 
 export const SAMPLE_EVENTS: EventItem[] = [

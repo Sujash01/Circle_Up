@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { EmptyState } from '@/components/storefront/EmptyState';
 import { Blob } from '@/components/ui/Blob';
 import { useStore } from '@/context/StoreContext';
-import { formatPrice } from '@/services/cartService';
+import { formatPrice } from '@circleup/shared';
 import type { Product } from '@/types/storefront';
 
 export function WishlistPage() {

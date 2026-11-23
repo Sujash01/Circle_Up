@@ -96,8 +96,7 @@ beforeAll(async () => {
 
 const CUSTOMER_SECRET =
   process.env.SUPABASE_JWT_SECRET ||
-  process.env.JWT_ACCESS_SECRET ||
-  'circleup-customer-jwt-secret-at-least-32-chars';
+  'circleup-test-customer-jwt-secret-at-least-32-chars';
 
 function createCustomerToken(
   payload: { sub: string; email?: string; phone?: string; role?: string; aud?: string },
@@ -318,7 +317,7 @@ describe('Order & Admin Security Remediation Suite', () => {
       expect(res.body.data).toHaveProperty('orderNumber');
       expect(res.body.data).toHaveProperty('guestAccessToken');
       expect(typeof res.body.data.guestAccessToken).toBe('string');
-      expect(res.body.data.guestAccessToken.length).toBe(64); // 32 bytes hex = 64 chars
+      expect(res.body.data.guestAccessToken.length).toBeGreaterThanOrEqual(64);
 
       guestOrderNumber = res.body.data.orderNumber;
       rawGuestToken = res.body.data.guestAccessToken;
@@ -365,34 +364,37 @@ describe('Order & Admin Security Remediation Suite', () => {
       expect(res.body.error.code).toBe('FORBIDDEN_ORDER_ACCESS');
     });
 
-    it('Handles legacy existing guest orders stored with plaintext tokens safely (backward compatibility)', () => {
-      const legacyRawToken = 'legacy_plaintext_guest_token_12345678901234567890123456789012';
+    it('Directly providing the stored SHA-256 hash in x-guest-order-token is strictly REJECTED (P0-5 hardening)', async () => {
+      const storedHash = hashGuestToken(rawGuestToken);
+
+      // 1. Attempting to access order with storedHash header fails (403) because hash(storedHash) !== storedHash
+      const res = await request(app)
+        .get(`/api/v1/orders/${guestOrderNumber}`)
+        .set('x-guest-order-token', storedHash);
+
+      expect(res.status).toBe(403);
+      expect(res.body.error.code).toBe('FORBIDDEN_ORDER_ACCESS');
+
+      // 2. Direct verifyGuestAccessToken call passing storedHash as providedToken returns false
       const expiresAt = new Date(Date.now() + 86400000);
+      expect(
+        orderService.verifyGuestAccessToken(
+          storedHash,
+          storedHash,
+          expiresAt,
+          guestOrderNumber,
+        ),
+      ).toBe(false);
 
-      // Verify that verifyGuestAccessToken succeeds when stored value was the plaintext token
-      const legacyValid = orderService.verifyGuestAccessToken(
-        legacyRawToken,
-        legacyRawToken, // stored as plaintext before migration
-        expiresAt,
-      );
-      expect(legacyValid).toBe(true);
-
-      // Verify that verifyGuestAccessToken succeeds when stored value was hashed
-      const hashedStored = hashGuestToken(legacyRawToken);
-      const hashedValid = orderService.verifyGuestAccessToken(
-        legacyRawToken,
-        hashedStored,
-        expiresAt,
-      );
-      expect(hashedValid).toBe(true);
-
-      // Verify that wrong token fails against legacy order
-      const wrongLegacy = orderService.verifyGuestAccessToken(
-        'wrong_token',
-        legacyRawToken,
-        expiresAt,
-      );
-      expect(wrongLegacy).toBe(false);
+      // 3. Legitimate signed token verifies successfully
+      expect(
+        orderService.verifyGuestAccessToken(
+          rawGuestToken,
+          storedHash,
+          expiresAt,
+          guestOrderNumber,
+        ),
+      ).toBe(true);
     });
 
     it('Supports guest token rotation and revocation', async () => {

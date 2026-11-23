@@ -1,20 +1,20 @@
 {
   "entities": {
     "products": {
-      "identifiers": { "supabase": "serial_number", "mongodb": "serialNumber" },
+      "identifiers": { "supabase": "serial_number", "legacy": "serialNumber" },
       "monetaryFields": {
-        "price": { "supabase": "price", "mongodb": "price" },
-        "originalPrice": { "supabase": "original_price", "mongodb": "originalPrice" },
-        "compareAtPrice": { "supabase": "compare_at_price", "mongodb": "compareAtPrice" }
+        "price": { "supabase": "price", "legacy": "price" },
+        "originalPrice": { "supabase": "original_price", "legacy": "originalPrice" },
+        "compareAtPrice": { "supabase": "compare_at_price", "legacy": "compareAtPrice" }
       }
     },
     "orders": {
-      "identifiers": { "supabase": "order_number", "mongodb": "orderNumber" },
+      "identifiers": { "supabase": "order_number", "legacy": "orderNumber" },
       "monetaryFields": {
-        "subtotal": { "supabase": "subtotal", "mongodb": "subtotal" },
-        "discount": { "supabase": "discount_amount", "mongodb": "discount" },
-        "delivery": { "supabase": "shipping_amount", "mongodb": "deliveryFee" },
-        "total": { "supabase": "total_amount", "mongodb": "totalAmount" }
+        "subtotal": { "supabase": "subtotal", "legacy": "subtotal" },
+        "discount": { "supabase": "discount_amount", "legacy": "discount" },
+        "delivery": { "supabase": "shipping_amount", "legacy": "deliveryFee" },
+        "total": { "supabase": "total_amount", "legacy": "totalAmount" }
       }
     }
   }

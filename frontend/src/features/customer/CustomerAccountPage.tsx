@@ -96,6 +96,26 @@ export function CustomerAccountPage() {
   const [isLoadingOrders, setIsLoadingOrders] = useState(false);
 
   useEffect(() => {
+    document.title = 'My Account — CircleUp';
+    let metaRobots = document.querySelector('meta[name="robots"]');
+    if (!metaRobots) {
+      metaRobots = document.createElement('meta');
+      metaRobots.setAttribute('name', 'robots');
+      document.head.appendChild(metaRobots);
+    }
+    const previous = metaRobots.getAttribute('content');
+    metaRobots.setAttribute('content', 'noindex, nofollow, noarchive');
+
+    return () => {
+      if (previous) {
+        metaRobots?.setAttribute('content', previous);
+      } else {
+        metaRobots?.remove();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     let mounted = true;
 
     async function loadUserOrders() {
@@ -194,7 +214,7 @@ export function CustomerAccountPage() {
   };
 
   const filteredOrders = orders.filter((ord) => {
-    if (orderFilter === 'in_transit') return ord.status === 'IN_TRANSIT' || ord.status === 'CONFIRMED';
+    if (orderFilter === 'in_transit') return ord.status === 'SHIPPED' || ord.status === 'OUT_FOR_DELIVERY' || ord.status === 'IN_TRANSIT' || ord.status === 'PACKED' || ord.status === 'CONFIRMED';
     if (orderFilter === 'delivered') return ord.status === 'DELIVERED';
     return true;
   });
@@ -581,10 +601,20 @@ export function CustomerAccountPage() {
                         className={`px-2.5 py-0.5 rounded-full text-[0.65rem] font-bold uppercase tracking-wider ${
                           ord.status === 'DELIVERED'
                             ? 'bg-emerald-100 text-emerald-900 border border-emerald-200'
-                            : 'bg-amber-100 text-amber-900 border border-amber-200'
+                            : ord.status === 'SHIPPED' || ord.status === 'OUT_FOR_DELIVERY' || ord.status === 'IN_TRANSIT'
+                              ? 'bg-purple-100 text-purple-900 border border-purple-200'
+                              : ord.status === 'PACKED'
+                                ? 'bg-indigo-100 text-indigo-900 border border-indigo-200'
+                                : ord.status === 'CANCELLED' || ord.status === 'REFUNDED'
+                                  ? 'bg-red-100 text-red-900 border border-red-200'
+                                  : 'bg-amber-100 text-amber-900 border border-amber-200'
                         }`}
                       >
-                        {ord.status === 'IN_TRANSIT' ? 'In Transit / On the Way' : ord.status}
+                        {ord.status === 'SHIPPED' || ord.status === 'OUT_FOR_DELIVERY' || ord.status === 'IN_TRANSIT'
+                          ? 'In Transit / Dispatched'
+                          : ord.status === 'PACKED'
+                            ? 'Packaging / Prepared'
+                            : ord.status}
                       </span>
                     </div>
                     <p className="text-xs text-foreground/60">

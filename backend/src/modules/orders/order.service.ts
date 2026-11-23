@@ -4,14 +4,16 @@ import { BadRequestError, NotFoundError, ServiceUnavailableError } from '../../e
 import { buildPaginationMeta, parsePagination } from '../../utils/pagination.js';
 import type { CreateOrderPayload } from '@circleup/shared';
 import { env } from '../../config/env.js';
+import { emailService } from '../../services/email.service.js';
 import { getConfiguredWhatsappNumber, settingsRepository } from '../../repositories/settings.repository.js';
 import {
   isSupabaseCheckoutConfigured,
+  isSupabaseConfigured,
   executeStorefrontCheckoutRpc,
   getSupabaseAdminClient,
 } from '../../services/supabase.service.js';
 
-type SupabaseOrderRow = Record<string, any>;
+type SupabaseOrderRow = Record<string, unknown>;
 
 function mapSupabaseOrder(row: SupabaseOrderRow): Record<string, unknown> {
   const address = row.shipping_address && typeof row.shipping_address === 'object'
@@ -84,13 +86,38 @@ export function generateOrderNumber(date: Date = new Date()): string {
   return `ORD-${dateStr}-${cryptoSuffix}`;
 }
 
-function deriveGuestAccessToken(orderNumber: string): string {
-  const secret = env.GUEST_ORDER_TOKEN_SECRET || env.SESSION_SECRET;
-  return crypto.createHmac('sha256', secret).update(`circleup:guest-order:${orderNumber}`).digest('hex');
+const ephemeralGuestTokens = new Map<string, { token: string; createdAt: number }>();
+
+function cacheEphemeralGuestToken(keyHash: string, token: string) {
+  const now = Date.now();
+  if (ephemeralGuestTokens.size > 1000) {
+    for (const [key, val] of ephemeralGuestTokens.entries()) {
+      if (now - val.createdAt > 24 * 60 * 60 * 1000) {
+        ephemeralGuestTokens.delete(key);
+      }
+    }
+  }
+  ephemeralGuestTokens.set(keyHash, { token, createdAt: now });
 }
 
-function generateGuestAccessToken(): string {
-  return crypto.randomBytes(32).toString('hex');
+function getGuestTokenSecret(): string {
+  const secret = env.GUEST_ORDER_TOKEN_SECRET;
+  if (!secret || secret.length < 32) {
+    if (env.NODE_ENV === 'test') {
+      return 'circleup-test-guest-token-secret-at-least-32';
+    }
+    throw new Error('GUEST_ORDER_TOKEN_SECRET must be configured with at least 32 characters.');
+  }
+  return secret;
+}
+
+export function issueGuestAccessToken(orderNumber?: string): string {
+  const secret = getGuestTokenSecret();
+  // 32 cryptographically secure random bytes (256 bits of entropy)
+  const randomEntropy = crypto.randomBytes(32).toString('hex');
+  const payload = orderNumber ? `${orderNumber.trim().toUpperCase()}:${randomEntropy}` : randomEntropy;
+  const signature = crypto.createHmac('sha256', secret).update(`circleup:guest-token:${payload}`).digest('hex');
+  return `${payload}.${signature}`;
 }
 
 export function hashGuestToken(token: string): string {
@@ -99,20 +126,50 @@ export function hashGuestToken(token: string): string {
 
 export const orderService = {
   generateOrderNumber,
+  issueGuestAccessToken,
   verifyGuestAccessToken(
     providedToken: string,
     storedTokenOrHash?: string | null,
     expiresAt?: Date | null,
+    orderNumber?: string | null,
   ): boolean {
     if (!providedToken || !storedTokenOrHash) return false;
     if (expiresAt && new Date() > new Date(expiresAt)) return false;
     try {
       const cleanProvided = providedToken.trim();
-      const providedHash = hashGuestToken(cleanProvided);
-      const bufStored = Buffer.from(storedTokenOrHash.trim());
+      const cleanStored = storedTokenOrHash.trim();
 
-      // 1. Primary path: stored value is SHA-256 hash of provided token
+      // 1. Verify cryptographic HMAC signature if token format is payload.signature
+      const dotIndex = cleanProvided.lastIndexOf('.');
+      if (dotIndex > 0) {
+        const payload = cleanProvided.substring(0, dotIndex);
+        const signature = cleanProvided.substring(dotIndex + 1);
+        const secret = getGuestTokenSecret();
+        const expectedSig = crypto
+          .createHmac('sha256', secret)
+          .update(`circleup:guest-token:${payload}`)
+          .digest('hex');
+
+        const bufSig = Buffer.from(signature);
+        const bufExpected = Buffer.from(expectedSig);
+        if (bufSig.length !== bufExpected.length || !crypto.timingSafeEqual(bufSig, bufExpected)) {
+          return false;
+        }
+
+        // If orderNumber is specified, ensure the payload matches the target order
+        if (orderNumber && payload.includes(':')) {
+          const [tokenOrderNumber] = payload.split(':');
+          if (tokenOrderNumber !== orderNumber.trim().toUpperCase()) {
+            return false;
+          }
+        }
+      }
+
+      // 2. Authoritative check: stored value MUST match the SHA-256 hash of the provided token
+      const providedHash = hashGuestToken(cleanProvided);
       const bufProvidedHash = Buffer.from(providedHash);
+      const bufStored = Buffer.from(cleanStored);
+
       if (
         bufProvidedHash.length === bufStored.length &&
         crypto.timingSafeEqual(bufProvidedHash, bufStored)
@@ -120,15 +177,7 @@ export const orderService = {
         return true;
       }
 
-      // 2. Backward compatibility path: legacy orders that stored raw token directly
-      const bufProvidedRaw = Buffer.from(cleanProvided);
-      if (
-        bufProvidedRaw.length === bufStored.length &&
-        crypto.timingSafeEqual(bufProvidedRaw, bufStored)
-      ) {
-        return true;
-      }
-
+      // 3. Stored hash is NEVER accepted as a direct token (legacy direct match branch removed)
       return false;
     } catch {
       return false;
@@ -149,7 +198,7 @@ export const orderService = {
 
   async rotateGuestAccessToken(orderNumber: string): Promise<string> {
     const cleanNum = orderNumber.trim().toUpperCase();
-    const newRawToken = generateGuestAccessToken();
+    const newRawToken = issueGuestAccessToken(cleanNum);
     const newHash = hashGuestToken(newRawToken);
     const newExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     const { data, error } = await getSupabaseAdminClient()
@@ -184,6 +233,26 @@ export const orderService = {
         throw new ServiceUnavailableError(
           'WhatsApp / UPI payment is temporarily unavailable because store contact details have not been verified.',
           'PAYMENT_METHOD_UNAVAILABLE',
+        );
+      }
+    }
+
+    // COD Contact Verification Gate (Resolves P0-7):
+    // Require a verifiable, non-dummy phone number and valid email to prevent stock denial-of-service
+    if (paymentMethod === 'CASH_ON_DELIVERY') {
+      const rawPhone = customer?.phone ? String(customer.phone).trim() : '';
+      const phoneDigits = rawPhone.replace(/[^0-9]/g, '');
+      const isDummyPhone =
+        phoneDigits.length < 10 ||
+        /^0+$/.test(phoneDigits) ||
+        /^1234567890$/.test(phoneDigits) ||
+        /^(\d)\1{9,}$/.test(phoneDigits);
+      const isEmailValid = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(customer?.email?.trim() || '');
+
+      if (!rawPhone || isDummyPhone || !isEmailValid) {
+        throw new BadRequestError(
+          'A verifiable phone number and contact email are required to reserve inventory for Cash on Delivery orders.',
+          'COD_VERIFICATION_REQUIRED',
         );
       }
     }
@@ -226,14 +295,23 @@ export const orderService = {
     const fingerprint = createHash('sha256').update(JSON.stringify({ customer, shippingAddress, items, promoCode, paymentMethod, notes, customerId })).digest('hex');
 
     const orderNumber = generateOrderNumber();
-    const rawGuestToken = customerId ? undefined : deriveGuestAccessToken(orderNumber);
+    let rawGuestToken: string | undefined;
+    if (!customerId) {
+      const cached = ephemeralGuestTokens.get(keyHash);
+      if (cached) {
+        rawGuestToken = cached.token;
+      } else {
+        rawGuestToken = issueGuestAccessToken(orderNumber);
+        cacheEphemeralGuestToken(keyHash, rawGuestToken);
+      }
+    }
     const guestAccessTokenHash = rawGuestToken ? hashGuestToken(rawGuestToken) : null;
     const guestAccessExpiresAt = customerId
       ? null
       : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
     // 3. Authoritative Supabase atomic RPC execution path
-    // Zero catch-and-fallback to MongoDB: all RPC errors or database failures throw directly
+    // Zero catch-and-fallback to legacy databases: all RPC errors or database failures throw directly
     const rpcResult = await executeStorefrontCheckoutRpc({
       p_key_hash: keyHash,
       p_fingerprint: fingerprint,
@@ -258,14 +336,47 @@ export const orderService = {
     });
 
     // Ephemeral guest token attached strictly in memory (never stored in response_payload or DB)
-    const ephemeralGuestToken = rpcResult.customerId
-      ? undefined
-      : deriveGuestAccessToken(rpcResult.orderNumber);
-
-    return {
+    const finalResponse = {
       ...rpcResult,
-      guestAccessToken: ephemeralGuestToken,
+      guestAccessToken: rpcResult.customerId ? undefined : (ephemeralGuestTokens.get(keyHash)?.token || rawGuestToken),
     };
+
+    // Trigger transactional order confirmation and owner alert (non-blocking)
+    void emailService.sendOrderConfirmation(
+      {
+        orderNumber: rpcResult.orderNumber,
+        customerEmail: customer.email,
+        customerName: customer.name,
+        totalInPaise: rpcResult.totalAmount,
+        subtotalInPaise: rpcResult.subtotal,
+        deliveryFeeInPaise: rpcResult.deliveryFee,
+        discountInPaise: rpcResult.discount,
+        shippingAddress,
+      },
+      (rpcResult.items || []).map((it) => ({
+        title: it.name || 'Vintage Find',
+        size: it.size,
+        priceInPaise: it.price || 0,
+        quantity: it.quantity || 1,
+      }))
+    ).catch(() => { });
+
+    void emailService.sendOwnerOrderAlert(
+      {
+        orderNumber: rpcResult.orderNumber,
+        customerName: customer.name,
+        customerEmail: customer.email,
+        customerPhone: customer.phone,
+        paymentMethod: paymentMethod || 'WHATSAPP_UPI',
+        totalInPaise: rpcResult.totalAmount,
+      },
+      (rpcResult.items || []).map((it) => ({
+        title: it.name || 'Vintage Find',
+        quantity: it.quantity || 1,
+      }))
+    ).catch(() => { });
+
+    return finalResponse;
   },
 
   async listCustomerOrders(customerId: string, query: { page?: unknown; limit?: unknown }) {
@@ -334,5 +445,31 @@ export const orderService = {
       throw new NotFoundError(`Order ${orderNumber} not found`, 'ORDER_NOT_FOUND');
     }
     return order;
+  },
+
+  async expireStaleReservations(expiryHours: number = env.RESERVATION_EXPIRY_HOURS) {
+    if (isSupabaseConfigured()) {
+      const client = getSupabaseAdminClient();
+      const { data, error } = await client.rpc('admin_release_expired_reservations', {
+        p_expiry_hours: expiryHours,
+      });
+      if (error) {
+        throw new ServiceUnavailableError(
+          `Failed to release expired reservations: ${error.message}`,
+          'DATABASE_UNAVAILABLE',
+        );
+      }
+      return data as {
+        expiredOrdersCount: number;
+        restoredItemsCount: number;
+        expiryHours: number;
+      };
+    }
+
+    return {
+      expiredOrdersCount: 0,
+      restoredItemsCount: 0,
+      expiryHours,
+    };
   },
 };

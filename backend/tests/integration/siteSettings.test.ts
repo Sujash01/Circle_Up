@@ -178,7 +178,7 @@ describe('Site settings persistence and API contract', () => {
     expect(mockState.upsert).not.toHaveBeenCalled();
   });
 
-  it('returns a storage error without MongoDB or synthetic fallback when Supabase fails', async () => {
+  it('returns a storage error without synthetic fallback when Supabase fails', async () => {
     mockState.setError({ message: 'database unavailable' });
     const response = await request(app).get('/api/admin/settings').set('Authorization', `Bearer ${ownerToken}`);
 

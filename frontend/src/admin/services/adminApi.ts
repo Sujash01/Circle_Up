@@ -95,6 +95,19 @@ export interface AdminProductFormValues {
   variants?: Array<{ id: string; label: string; size: string; stock: number }>;
 }
 
+export interface OverviewMetricsData {
+  liveProductsCount: number;
+  lowStockCount: number;
+  activeOrdersCount: number;
+  totalRevenuePaise: number;
+  totalOrdersCount: number;
+}
+
+export interface OverviewResponse {
+  metrics: OverviewMetricsData;
+  recentOrders: Order[];
+}
+
 export interface MediaUploadResult {
   original: string;
   w400: string;
@@ -287,9 +300,78 @@ export const adminApi = {
     }
   },
 
-  async markOrderPaymentReceived(id: string) {
+  async markOrderPaymentReceived(id: string, options?: { utrNumber?: string; paymentProofUrl?: string }) {
     try {
-      const res = await adminClient.put<{ data: Order }>(`/orders/${id}/payment-status`, { paymentStatus: 'PAID' });
+      const res = await adminClient.put<{ data: Order }>(`/orders/${id}/payment-status`, {
+        paymentStatus: 'PAID',
+        utrNumber: options?.utrNumber,
+        paymentProofUrl: options?.paymentProofUrl,
+      });
+      return res.data.data;
+    } catch (err) {
+      throw normalizeApiError(err);
+    }
+  },
+
+  async processOrderRefund(id: string, payload: { amountPaise: number; reason: string; routingAction?: string }) {
+    try {
+      const res = await adminClient.post<{ data: { order: Order; refund: unknown } }>(`/orders/${id}/refunds`, payload);
+      return res.data.data;
+    } catch (err) {
+      throw normalizeApiError(err);
+    }
+  },
+
+  async createOrderFulfillment(id: string, payload: { trackingNumber: string; carrier: string; notes?: string }) {
+    try {
+      const res = await adminClient.post<{ data: { order: Order; fulfillment: unknown } }>(`/orders/${id}/fulfillments`, payload);
+      return res.data.data;
+    } catch (err) {
+      throw normalizeApiError(err);
+    }
+  },
+
+  async getDailyReconciliation(days = 30) {
+    try {
+      const res = await adminClient.get<{ data: unknown[] }>('/orders/reconciliation', { params: { days } });
+      return res.data.data;
+    } catch (err) {
+      throw normalizeApiError(err);
+    }
+  },
+
+  // === INQUIRIES (CONTACT INBOX) ===
+  async getInquiries(params?: { status?: string; search?: string; page?: number; limit?: number }) {
+    try {
+      const res = await adminClient.get<{ data: unknown[]; meta: unknown }>('/inquiries', { params });
+      return res.data;
+    } catch (err) {
+      throw normalizeApiError(err);
+    }
+  },
+
+  async getInquiry(id: string) {
+    try {
+      const res = await adminClient.get<{ data: unknown }>(`/inquiries/${id}`);
+      return res.data.data;
+    } catch (err) {
+      throw normalizeApiError(err);
+    }
+  },
+
+  async updateInquiry(id: string, patch: { status?: string; notes?: string; reply?: string }) {
+    try {
+      const res = await adminClient.patch<{ data: unknown }>(`/inquiries/${id}`, patch);
+      return res.data.data;
+    } catch (err) {
+      throw normalizeApiError(err);
+    }
+  },
+
+  // === DASHBOARD OVERVIEW (METRICS & RECENT ORDERS) ===
+  async getOverview(): Promise<OverviewResponse> {
+    try {
+      const res = await adminClient.get<{ data: OverviewResponse }>('/overview');
       return res.data.data;
     } catch (err) {
       throw normalizeApiError(err);

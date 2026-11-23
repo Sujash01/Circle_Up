@@ -1,15 +1,9 @@
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError, ServiceUnavailableError } from '../errors/AppError.js';
 import { parsePagination, buildPaginationMeta } from '../utils/pagination.js';
 import type { AdminSessionData } from './adminAuth.service.js';
+import { emailService } from './email.service.js';
 import { getSupabaseAdminClient, isSupabaseConfigured } from './supabase.service.js';
-
-const VALID_TRANSITIONS: Record<string, string[]> = {
-  PENDING: ['CONFIRMED', 'CANCELLED'],
-  CONFIRMED: ['SHIPPED', 'CANCELLED'],
-  SHIPPED: ['DELIVERED', 'CANCELLED'],
-  DELIVERED: [],
-  CANCELLED: [],
-};
+import { ORDER_STATUS_TRANSITIONS, type OrderStatus } from '@circleup/shared';
 
 type OrderRow = Record<string, unknown>;
 
@@ -133,11 +127,13 @@ export const adminOrderService = {
 
   async updateOrderStatus(
     orderRef: string,
-    newStatus: 'PENDING' | 'CONFIRMED' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED',
+    newStatus: OrderStatus,
     actor: AdminSessionData,
     auditContext: { ipAddress?: string; userAgent?: string },
   ) {
-    if (!(newStatus in VALID_TRANSITIONS)) throw new BadRequestError('Order status is invalid.', 'VALIDATION_ERROR');
+    if (!ORDER_STATUS_TRANSITIONS[newStatus] && newStatus !== 'PENDING') {
+      throw new BadRequestError('Order status is invalid.', 'VALIDATION_ERROR');
+    }
     const result = await callOrderRpc('admin_update_order_status', {
       p_order_ref: normalizeOrderRef(orderRef),
       p_new_status: newStatus,
@@ -145,20 +141,110 @@ export const adminOrderService = {
     });
     const order = result.order as OrderRow | undefined;
     if (!order) throw unavailable('Supabase did not return the updated order.');
-    return mapOrder({ ...order, order_items: result.order_items });
+    const mapped = mapOrder({ ...order, order_items: result.order_items });
+    if (newStatus === 'SHIPPED') {
+      const cust = mapped.customer as unknown as { email?: string; name?: string };
+      void emailService.sendShippingUpdate({
+        orderNumber: mapped.orderNumber,
+        customerEmail: cust?.email,
+        customerName: cust?.name,
+      }).catch(() => { });
+    }
+    return mapped;
   },
 
   async markPaymentReceived(
     orderRef: string,
     actor: AdminSessionData,
     auditContext: { ipAddress?: string; userAgent?: string },
+    options?: { utrNumber?: string; paymentProofUrl?: string },
   ) {
     const result = await callOrderRpc('admin_mark_order_payment_received', {
       p_order_ref: normalizeOrderRef(orderRef),
+      p_utr_number: options?.utrNumber || null,
+      p_payment_proof_url: options?.paymentProofUrl || null,
       ...auditArgs(actor, auditContext),
     });
     const order = result.order as OrderRow | undefined;
     if (!order) throw unavailable('Supabase did not return the payment update.');
     return mapOrder({ ...order, order_items: result.order_items });
+  },
+
+  async processRefund(
+    orderRef: string,
+    amountPaise: number,
+    reason: string,
+    routingAction: 'RESTOCK' | 'DRY_CLEAN' | 'ALTERATION' | 'DISCARD',
+    actor: AdminSessionData,
+    auditContext: { ipAddress?: string; userAgent?: string },
+  ) {
+    const result = await callOrderRpc('admin_process_order_refund', {
+      p_order_ref: normalizeOrderRef(orderRef),
+      p_amount_paise: amountPaise,
+      p_reason: reason,
+      p_routing_action: routingAction,
+      ...auditArgs(actor, auditContext),
+    });
+    const order = result.order as OrderRow | undefined;
+    if (!order) throw unavailable('Supabase did not return the refund result.');
+    const mapped = mapOrder({ ...order, order_items: result.order_items });
+
+    const cust = mapped.customer as unknown as { email?: string; name?: string };
+    void emailService.sendRefundConfirmation(
+      {
+        orderNumber: mapped.orderNumber,
+        customerEmail: cust?.email,
+        customerName: cust?.name,
+      },
+      amountPaise,
+      reason
+    ).catch(() => { });
+
+    return { order: mapped, refund: result.refund };
+  },
+
+  async createFulfillment(
+    orderRef: string,
+    trackingNumber: string,
+    carrier: string,
+    notes: string | undefined,
+    actor: AdminSessionData,
+    auditContext: { ipAddress?: string; userAgent?: string },
+  ) {
+    const result = await callOrderRpc('admin_create_order_fulfillment', {
+      p_order_ref: normalizeOrderRef(orderRef),
+      p_tracking_number: trackingNumber,
+      p_carrier: carrier,
+      p_notes: notes || null,
+      ...auditArgs(actor, auditContext),
+    });
+    const order = result.order as OrderRow | undefined;
+    if (!order) throw unavailable('Supabase did not return the fulfillment result.');
+    const mapped = mapOrder({ ...order, order_items: result.order_items });
+
+    const cust = mapped.customer as unknown as { email?: string; name?: string };
+    void emailService.sendShippingUpdate(
+      {
+        orderNumber: mapped.orderNumber,
+        customerEmail: cust?.email,
+        customerName: cust?.name,
+      },
+      trackingNumber,
+      carrier
+    ).catch(() => { });
+
+    return { order: mapped, fulfillment: result.fulfillment };
+  },
+
+  async getDailyReconciliation(days = 30) {
+    if (!isSupabaseConfigured()) throw unavailable('Supabase order storage is not configured.');
+    let result;
+    try {
+      result = await getSupabaseAdminClient().rpc('admin_get_daily_reconciliation', { p_days: days });
+    } catch {
+      throw unavailable('Failed to retrieve reconciliation data from Supabase.');
+    }
+    if (result.error) throw unavailable(`Failed to retrieve reconciliation data: ${result.error.message}`);
+    return result.data || [];
   },
 };

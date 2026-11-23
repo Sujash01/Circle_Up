@@ -42,7 +42,7 @@ export function ThriftCrewPage() {
     reader.readAsDataURL(file);
   };
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
     setStatusMessage('');
@@ -64,7 +64,7 @@ export function ThriftCrewPage() {
       return;
     }
 
-    const result = communityService.submitPost({
+    const result = await communityService.submitPost({
       displayName,
       handle: handle || displayName.toLowerCase().replace(/\s+/g, '.'),
       caption,
@@ -81,8 +81,8 @@ export function ThriftCrewPage() {
     setConsentChecked(false);
     setStatusMessage(
       result.savedToStorage
-        ? 'Your look has been saved as a browser-local preview (not uploaded or published publicly).'
-        : 'Preview created, though browser LocalStorage quota was full — clearing older previews may be required.',
+        ? 'Your look has been submitted for community moderation and saved to your local previews.'
+        : 'Your look has been submitted for community moderation.',
     );
   };
 

@@ -27,6 +27,22 @@ export const strictBooleanEnvSchema = z
     return false;
   });
 
+const INSECURE_SECRET_PLACEHOLDERS = new Set([
+  'circleup-super-secret-admin-session-signing-key-32chars',
+  'circleup-guest-order-token-secret-at-least-32-chars',
+  'circleup-customer-jwt-secret-at-least-32-chars',
+  'replace-with-a-secure-random-secret-at-least-32-chars',
+  'replace-with-32-plus-char-customer-access-secret',
+  'replace-with-32-plus-char-admin-access-secret',
+  'replace-with-32-plus-char-admin-session-signing-key',
+  'replace-with-32-plus-char-guest-order-token-secret',
+  'replace-with-cron-secret',
+  'replace-with-supabase-jwt-secret-from-dashboard',
+  'replace-with-supabase-anon-key',
+  'replace-with-supabase-service-role-key',
+  'default-secret-do-not-use-in-production',
+]);
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'staging', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(5001),
@@ -34,8 +50,8 @@ const envSchema = z.object({
   JWT_ADMIN_ACCESS_SECRET: z.string().default(''),
   JWT_ACCESS_TTL: z.string().default('15m'),
   JWT_ADMIN_ACCESS_TTL: z.string().default('10m'),
-  SESSION_SECRET: z.string().default('circleup-super-secret-admin-session-signing-key-32chars'),
-  GUEST_ORDER_TOKEN_SECRET: z.string().optional(),
+  SESSION_SECRET: z.string().default(''),
+  GUEST_ORDER_TOKEN_SECRET: z.string().default(''),
   SUPABASE_JWT_SECRET: z.string().optional(),
   SUPABASE_URL: z.string().optional(),
   SUPABASE_ANON_KEY: z.string().optional(),
@@ -64,42 +80,87 @@ const envSchema = z.object({
   RAZORPAY_KEY_SECRET: z.string().optional(),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
   CRON_SECRET: z.string().optional(),
+  RESERVATION_EXPIRY_HOURS: z.coerce.number().int().min(1).max(720).default(24),
+  UPSTASH_REDIS_REST_URL: z.string().optional(),
+  UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   SENTRY_DSN: z.string().optional(),
 }).superRefine((data, ctx) => {
-  if (data.NODE_ENV === 'production') {
-    const defaultInsecure = 'circleup-super-secret-admin-session-signing-key-32chars';
-    if (!data.SESSION_SECRET || data.SESSION_SECRET === defaultInsecure) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['SESSION_SECRET'],
-        message: 'SESSION_SECRET must be explicitly set to a unique, non-default secret in production.',
-      });
-    } else if (data.SESSION_SECRET.length < 32) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['SESSION_SECRET'],
-        message: 'SESSION_SECRET must be at least 32 characters in production.',
-      });
-    }
+  // In automated test environments only, supply safe fixtures if secrets were omitted
+  if (data.NODE_ENV === 'test') {
+    if (!data.SESSION_SECRET) data.SESSION_SECRET = 'circleup-test-session-secret-at-least-32-characters';
+    if (!data.JWT_ACCESS_SECRET) data.JWT_ACCESS_SECRET = 'circleup-test-jwt-access-secret-at-least-32-chars';
+    if (!data.JWT_ADMIN_ACCESS_SECRET) data.JWT_ADMIN_ACCESS_SECRET = 'circleup-test-jwt-admin-access-secret-32-chars';
+    if (!data.GUEST_ORDER_TOKEN_SECRET) data.GUEST_ORDER_TOKEN_SECRET = 'circleup-test-guest-token-secret-at-least-32';
+    if (!data.CRON_SECRET) data.CRON_SECRET = 'circleup-test-cron-secret-at-least-16';
+    return;
+  }
 
-    if (data.GUEST_ORDER_TOKEN_SECRET) {
-      const defaultGuestSecret = 'circleup-guest-order-token-secret-at-least-32-chars';
-      if (data.GUEST_ORDER_TOKEN_SECRET === defaultGuestSecret) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['GUEST_ORDER_TOKEN_SECRET'],
-          message: 'GUEST_ORDER_TOKEN_SECRET must be explicitly set to a unique, non-default secret in production.',
-        });
-      } else if (data.GUEST_ORDER_TOKEN_SECRET.length < 32) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['GUEST_ORDER_TOKEN_SECRET'],
-          message: 'GUEST_ORDER_TOKEN_SECRET must be at least 32 characters in production.',
-        });
-      }
-    }
+  // Strict enforcement for all non-test environments (development, staging, production):
+  // 1. SESSION_SECRET
+  if (!data.SESSION_SECRET || INSECURE_SECRET_PLACEHOLDERS.has(data.SESSION_SECRET.trim().toLowerCase())) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['SESSION_SECRET'],
+      message: 'SESSION_SECRET is required and must not be an insecure placeholder outside test environments.',
+    });
+  } else if (data.SESSION_SECRET.length < 32) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['SESSION_SECRET'],
+      message: 'SESSION_SECRET must be at least 32 characters outside test environments.',
+    });
+  }
 
+  // 2. JWT_ACCESS_SECRET
+  if (!data.JWT_ACCESS_SECRET || INSECURE_SECRET_PLACEHOLDERS.has(data.JWT_ACCESS_SECRET.trim().toLowerCase())) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['JWT_ACCESS_SECRET'],
+      message: 'JWT_ACCESS_SECRET is required and must not be an insecure placeholder outside test environments.',
+    });
+  } else if (data.JWT_ACCESS_SECRET.length < 32) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['JWT_ACCESS_SECRET'],
+      message: 'JWT_ACCESS_SECRET must be at least 32 characters outside test environments.',
+    });
+  }
+
+  // 3. JWT_ADMIN_ACCESS_SECRET
+  if (!data.JWT_ADMIN_ACCESS_SECRET || INSECURE_SECRET_PLACEHOLDERS.has(data.JWT_ADMIN_ACCESS_SECRET.trim().toLowerCase())) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['JWT_ADMIN_ACCESS_SECRET'],
+      message: 'JWT_ADMIN_ACCESS_SECRET is required and must not be an insecure placeholder outside test environments.',
+    });
+  } else if (data.JWT_ADMIN_ACCESS_SECRET.length < 32) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['JWT_ADMIN_ACCESS_SECRET'],
+      message: 'JWT_ADMIN_ACCESS_SECRET must be at least 32 characters outside test environments.',
+    });
+  }
+
+  // 4. GUEST_ORDER_TOKEN_SECRET
+  if (!data.GUEST_ORDER_TOKEN_SECRET || INSECURE_SECRET_PLACEHOLDERS.has(data.GUEST_ORDER_TOKEN_SECRET.trim().toLowerCase())) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['GUEST_ORDER_TOKEN_SECRET'],
+      message: 'GUEST_ORDER_TOKEN_SECRET is required and must not be an insecure placeholder outside test environments.',
+    });
+  } else if (data.GUEST_ORDER_TOKEN_SECRET.length < 32) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['GUEST_ORDER_TOKEN_SECRET'],
+      message: 'GUEST_ORDER_TOKEN_SECRET must be at least 32 characters outside test environments.',
+    });
+  } else if (data.GUEST_ORDER_TOKEN_SECRET === data.SESSION_SECRET) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['GUEST_ORDER_TOKEN_SECRET'],
+      message: 'GUEST_ORDER_TOKEN_SECRET must be distinct from SESSION_SECRET.',
+    });
   }
 });
 

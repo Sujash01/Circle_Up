@@ -1,9 +1,9 @@
-> **Historical architecture archive.** This document describes a superseded MongoDB Atlas/Mongoose design and is retained for historical context only. It is not current implementation or deployment guidance. CircleUp's active database and application-managed media storage use Supabase. Consult repository migrations and `backend/.env.example` for current configuration.
+> **Historical architecture archive.** This document describes a superseded Supabase PostgreSQL/Supabase design and is retained for historical context only. It is not current implementation or deployment guidance. CircleUp's active database and application-managed media storage use Supabase. Consult repository migrations and `backend/.env.example` for current configuration.
 
 # CIRCLEUP — MASTER SYSTEM DESIGN DOCUMENT (Historical)
 
 **Version:** 1.0 (Engineering Blueprint)  
-**Target Stack:** React + TypeScript (Vite) · Node.js + Express + TypeScript · MongoDB Atlas (Mongoose) · Cloudinary · Vercel + Render  
+**Target Stack:** React + TypeScript (Vite) · Node.js + Express + TypeScript · Supabase (PostgreSQL) · Cloudinary · Vercel + Render  
 **Architecture Style:** Modular Monolith with Shared Domain Contracts & Three Decoupled Frontend Portals  
 **Status:** Pre-Implementation Architectural Blueprint (Zero Application Code Written)
 
@@ -16,7 +16,7 @@
 3. [High-Level, Low-Level & Integration Architecture](#3-high-level-low-level--integration-architecture)
 4. [Frontend Architecture](#4-frontend-architecture)
 5. [Backend Architecture](#5-backend-architecture)
-6. [Database System Design (MongoDB & Mongoose)](#6-database-system-design-mongodb--mongoose)
+6. [Database System Design (Supabase & PostgreSQL)](#6-database-system-design-supabase--supabase)
 7. [Authentication & Authorization Architecture](#7-authentication--authorization-architecture)
 8. [Product & Inventory System](#8-product--inventory-system)
 9. [Cart & WhatsApp Checkout System](#9-cart--whatsapp-checkout-system)
@@ -40,7 +40,7 @@
 
 ## 1. System Overview & Core Boundaries
 
-**CircleUp** is a centralized thrift-commerce, fashion rental, and community platform uniting three user-facing applications over a single REST API and MongoDB database:
+**CircleUp** is a centralized thrift-commerce, fashion rental, and community platform uniting three user-facing applications over a single REST API and Supabase PostgreSQL database:
 
 1. **Public Customer Website:** SEO-friendly storefront for discovering Pre-Loved, Fresh Finds, Handcrafted, and Rental inventory, browsing category collections, managing carts, initiating WhatsApp checkout requests, exploring community events (*The Social Circle*), reading reviews, and viewing approved *#ThriftCrew* posts.
 2. **Customer CRM (`/account/*`):** Authenticated customer portal for profile & address book management, tracking orders, monitoring active rentals & return deadlines, managing wishlists, viewing in-app notifications, submitting verified product reviews, registering for events, and uploading *#ThriftCrew* content.
@@ -48,8 +48,8 @@
 
 ### Core Domain Boundaries
 - **Sales vs. Rentals Separation:** Purchase orders (`carts` -> `checkoutRequests` -> `orders` -> `orderItems`) and rental bookings (`rentals` -> `rentalTransactions` + `rentalDateLocks`) are completely separated modules and collections. Rentals cannot be added to ordinary purchase carts because they carry date intervals, turnaround cleaning buffers, refundable deposits, and inspection penalties.
-- **Pre-Persisted WhatsApp Checkout:** Clicking "Proceed to WhatsApp" never skips persistence or fakes confirmation. Every WhatsApp enquiry is written as a `CheckoutRequest` in MongoDB with a deterministic `cartCode` first, and only transitions to a confirmed `Order` when the Owner manually verifies payment/intent inside the Owner CRM.
-- **Zero-Oversell Inventory Guarantee:** Single-unit thrift items (`stock: 1`) and multi-unit fresh/handcrafted items share a unified atomic stock reservation/deduction engine backed by MongoDB conditional updates and multi-document ACID transactions.
+- **Pre-Persisted WhatsApp Checkout:** Clicking "Proceed to WhatsApp" never skips persistence or fakes confirmation. Every WhatsApp enquiry is written as a `CheckoutRequest` in Supabase with a deterministic `cartCode` first, and only transitions to a confirmed `Order` when the Owner manually verifies payment/intent inside the Owner CRM.
+- **Zero-Oversell Inventory Guarantee:** Single-unit thrift items (`stock: 1`) and multi-unit fresh/handcrafted items share a unified atomic stock reservation/deduction engine backed by PostgreSQL conditional updates and multi-document ACID transactions.
 
 ---
 
@@ -59,7 +59,7 @@
 | Dimension | Decision |
 | :--- | :--- |
 | **Proposal** | **TypeScript (strict mode)** across the React Frontend and Node.js/Express Backend, with a shared contracts folder/package (`shared/types` & enums). |
-| **Why Needed** | CircleUp manages complex domain unions (`pre_loved \| fresh_finds \| rental \| handcrafted`, `single_unit \| multi_unit`), multi-step status machines (orders, checkout requests, rentals), and three portals consuming one API. Static typing eliminates API payload drift, typo bugs in status strings, and unsafe `any` accesses on nested Mongoose snapshots. |
+| **Why Needed** | CircleUp manages complex domain unions (`pre_loved \| fresh_finds \| rental \| handcrafted`, `single_unit \| multi_unit`), multi-step status machines (orders, checkout requests, rentals), and three portals consuming one API. Static typing eliminates API payload drift, typo bugs in status strings, and unsafe `any` accesses on nested Supabase snapshots. |
 | **Alternatives Considered** | 1. **Plain JavaScript (ESM) everywhere:** Zero compile step, faster initial setup, but prone to runtime shape mismatches across 22 collections and 80+ endpoints.<br>2. **TypeScript on Frontend + JavaScript on Backend:** Avoids backend compilation, but sacrifices shared DTO/enum safety between Express validators and React forms. |
 | **Trade-offs** | Adds `tsc` compilation (`tsx` in dev, `tsc` build for prod) and minor upfront type-authoring overhead in exchange for long-term refactoring confidence and safer team collaboration. |
 | **Dependencies** | Node.js LTS (v20/v22), `typescript`, `tsx`, `@types/express`, `@types/node`, `zod` (for runtime + static type inference via `z.infer`). |
@@ -76,9 +76,9 @@
 ### ADR-03: Authentication Strategy — Short-Lived In-Memory JWT + Rotating HttpOnly Refresh Cookie + DB Session Store
 | Dimension | Decision |
 | :--- | :--- |
-| **Proposal** | **Dual-token hybrid session architecture:** 15-minute JWT Access Token (10 min for Admins) stored strictly in **React/Redux memory** (sent via `Authorization: Bearer`) + 7-day (12h for Admins) opaque **Refresh Token** in an `HttpOnly`, `Secure`, `SameSite=Lax` cookie backed by an `authSessions` MongoDB collection with token rotation and reuse detection. |
-| **Why Needed** | Storing JWTs in `localStorage` exposes accounts to XSS theft. Pure stateless JWTs cannot revoke compromised sessions or enforce immediate logout/suspension. Pure server-side `express-session` hits MongoDB on every read request. Hybrid dual-token gives fast stateless access verification on read endpoints while guaranteeing instant revocation on logout, password reset, suspension, or suspicious refresh reuse. |
-| **Alternatives Considered** | 1. **Pure Stateless JWT in `localStorage`:** Vulnerable to XSS and impossible to revoke before expiry.<br>2. **Stateful `express-session` (`connect-mongo`):** Simpler mental model, but causes extra DB lookup per request and requires CSRF tokens on every single mutating endpoint. |
+| **Proposal** | **Dual-token hybrid session architecture:** 15-minute JWT Access Token (10 min for Admins) stored strictly in **React/Redux memory** (sent via `Authorization: Bearer`) + 7-day (12h for Admins) opaque **Refresh Token** in an `HttpOnly`, `Secure`, `SameSite=Lax` cookie backed by an `authSessions` Supabase table with token rotation and reuse detection. |
+| **Why Needed** | Storing JWTs in `localStorage` exposes accounts to XSS theft. Pure stateless JWTs cannot revoke compromised sessions or enforce immediate logout/suspension. Pure server-side `express-session` hits Supabase on every read request. Hybrid dual-token gives fast stateless access verification on read endpoints while guaranteeing instant revocation on logout, password reset, suspension, or suspicious refresh reuse. |
+| **Alternatives Considered** | 1. **Pure Stateless JWT in `localStorage`:** Vulnerable to XSS and impossible to revoke before expiry.<br>2. **Stateful `express-session` (`server session store`):** Simpler mental model, but causes extra DB lookup per request and requires CSRF tokens on every single mutating endpoint. |
 | **Trade-offs** | Requires a refresh-token rotation endpoint and a queued 401 retry interceptor in Axios; also requires first-party cookie alignment (`circleup.in` + `api.circleup.in` or Vercel API rewrite proxy) in staging/prod. |
 | **Dependencies** | `jsonwebtoken`, `bcrypt`, `cookie-parser`, `crypto` (Node built-in), custom domain or Vercel rewrite proxy. |
 
@@ -104,8 +104,8 @@
 | Dimension | Decision |
 | :--- | :--- |
 | **Proposal** | **Domain-Modular Monolith** (single Express deployment organized into strictly isolated domain modules: `auth`, `catalog`, `inventory`, `cart`, `checkout`, `orders`, `rentals`, `community`, `crm`, `notifications`, `analytics`). |
-| **Why Needed** | A small engineering team building a startup thrift/rental platform needs transactional integrity across inventory, orders, rentals, and audit logs (single MongoDB replica set transactions), fast local setup, and one CI/CD pipeline. Microservices would introduce distributed Saga failure modes, network latency, duplicated auth logic, and DevOps bloat with zero near-term gain. |
-| **Alternatives Considered** | **Microservices (Catalog Service, Order Service, Rental Service, Auth Service):** Premature complexity; breaks ACID MongoDB transactions across inventory and orders. |
+| **Why Needed** | A small engineering team building a startup thrift/rental platform needs transactional integrity across inventory, orders, rentals, and audit logs (single Supabase PostgreSQL atomic RPC transactions), fast local setup, and one CI/CD pipeline. Microservices would introduce distributed Saga failure modes, network latency, duplicated auth logic, and DevOps bloat with zero near-term gain. |
+| **Alternatives Considered** | **Microservices (Catalog Service, Order Service, Rental Service, Auth Service):** Premature complexity; breaks ACID Supabase transactions across inventory and orders. |
 | **Trade-offs** | All domains scale together vertically/horizontally; mitigated by keeping modules decoupled via explicit service interfaces so heavy modules (e.g., analytics or image/notification workers) can be extracted later if traffic justifies it. |
 | **Dependencies** | Strict lint/import boundaries between backend domain folders (`services/` communicate only via public module methods, never cross-importing internal helpers). |
 
@@ -116,7 +116,7 @@
 | **Why Needed** | Because WhatsApp Click-to-Chat offers no send-receipt webhook, users frequently open WhatsApp and abandon the chat without sending the message. Hard-locking a unique 1-of-1 thrift garment at button-click would let idle tabs or bots freeze store inventory. Meanwhile, atomic conditional locking at Owner confirmation (`availableStock >= qty` inside a transaction) guarantees two competing enquiries can never oversell the same unique piece. |
 | **Alternatives Considered** | **Immediate 15-Minute TTL Hold on WhatsApp Click:** Reduces owner rejection of competing enquiries, but in manual WhatsApp workflows owners often reply after 15–120 minutes, causing holds to silently expire anyway while hurting conversion from false "Out of Stock" errors during browsing. |
 | **Trade-offs** | Two customers may simultaneously submit WhatsApp enquiries for the last item; Owner CRM solves this cleanly by displaying a **"Competing Enquiries"** badge and letting the Owner click "Confirm" on the paying buyer while auto-flagging rival enquiries for one-click rejection. |
-| **Dependencies** | MongoDB Replica Set transactions, `inventoryLogs`, Owner CRM checkout queue UI. |
+| **Dependencies** | Supabase PostgreSQL atomic RPC transactions, `inventoryLogs`, Owner CRM checkout queue UI. |
 
 ---
 
@@ -125,7 +125,7 @@
 ### 3.1 How the System Works End-to-End
 - **React Frontend <-> Express API:** All three UI portals live within a unified Vite + React TypeScript SPA (or split routes with code-splitting by portal) deployed on Vercel, communicating over HTTPS JSON REST APIs (`/api/v1/*`) via Axios. Vercel rewrite proxies (or same-site custom domain `api.circleup.in`) keep authentication cookies first-party.
 - **Separation of Public, Customer CRM & Owner CRM:** Separated at three tiers: (1) Router & lazy-loaded UI bundle boundaries (`/`, `/account/*`, `/admin/*`), (2) Dedicated API namespace & auth endpoints (`/api/v1/auth/*` for customers vs. `/api/v1/admin/auth/*` for Owner/Staff), and (3) Separate collections (`users` vs. `admins`) with backend RBAC + ownership guards.
-- **Backend <-> MongoDB Atlas:** Express connects at startup using a single managed Mongoose connection pool (`minPoolSize: 5`, `maxPoolSize: 20` tuned to PaaS tier) against a MongoDB Atlas Replica Set, enabling multi-document ACID transactions for orders, rentals, and inventory ledger updates.
+- **Backend <-> Supabase PostgreSQL:** Express connects at startup using a single managed Supabase connection pool (`minPoolSize: 5`, `maxPoolSize: 20` tuned to PaaS tier) against a Supabase PostgreSQL Replica Set, enabling multi-document ACID transactions for orders, rentals, and inventory ledger updates.
 - **Image Uploads:** Clients request a signed upload signature from Express -> upload directly to Cloudinary -> receive secure URL + `public_id` -> submit form to Express -> Express validates `public_id` prefix and persists references.
 - **WhatsApp Checkout:** Client calls `POST /api/v1/checkout/requests` -> Express validates stock/prices, persists `CheckoutRequest` (`PENDING_REVIEW`), generates formatted WhatsApp message + `wa.me` URI -> Frontend redirects to WhatsApp -> Owner processes enquiry in Owner CRM -> Confirmation atomically creates `Order` + `OrderItem`s + deducts inventory.
 - **Inventory, Orders & Rentals Interaction:** `InventoryService` is the sole mutator of `products.variants[].stock` / `reservedStock` and writes immutable `inventoryLogs`. `OrderService` invokes `InventoryService` inside transactions. `RentalService` is completely independent and uses `rentalDateLocks` + transactions instead of sales stock deduction.
@@ -152,7 +152,7 @@ flowchart TB
     end
 
     subgraph Data["Data & External Services"]
-        MDB[("MongoDB Atlas\nReplica Set\n(22 Collections + ACID Tx)")]
+        MDB[("Supabase PostgreSQL\nReplica Set\n(22 Collections + ACID Tx)")]
         CLD["Cloudinary\n(Media Storage & CDN Transforms)"]
         WA["WhatsApp Click-to-Chat\n(wa.me Deep Link)"]
         MAIL["Transactional Email API\n(Resend / Brevo SMTP)"]
@@ -167,7 +167,7 @@ flowchart TB
     GW --> MODS
     CRON -->|"Internal Job Trigger"| MODS
 
-    MODS -->|"Mongoose Pool & Tx"| MDB
+    MODS -->|"Supabase Client & RPC"| MDB
     MODS -->|"Signed Upload Token"| CLD
     Clients -->|"Direct Signed Image Upload"| CLD
     Clients -->|"Redirect with Order Ref"| WA
@@ -189,7 +189,7 @@ flowchart LR
     VAL --> CTRL["Thin Controller\n(Extract DTO, Call Service)"]
     CTRL --> SVC["Domain Service\n(Business Rules & Tx Orchestration)"]
     SVC --> INV["Inventory / Rental Lock Engine\n(Atomic Conditional Update)"]
-    SVC --> DB[("MongoDB Mongoose Models")]
+    SVC --> DB[("Supabase Supabase Tables")]
     INV --> DB
     SVC --> AUDIT["AuditLog / Notification Writer"]
     AUDIT --> DB
@@ -247,7 +247,7 @@ flowchart TB
     USER -->|"Direct Signed Media Upload"| CLOUDINARY["Cloudinary CDN"]
     USER -->|"Checkout Redirect"| WHATSAPP["WhatsApp App / Web"]
 
-    RENDER_WEB -->|"TLS SCRAM-SHA-256 + IP Allowlist"| ATLAS[("MongoDB Atlas M10/M0\n3-Node Replica Set + Automated Backups")]
+    RENDER_WEB -->|"TLS SCRAM-SHA-256 + IP Allowlist"| SUPABASE[("Supabase PostgreSQL M10/M0\n3-Node Replica Set + Automated Backups")]
     RENDER_CRON -->|"Internal Signed Secret"| RENDER_WEB
     RENDER_WEB -->|"HTTPS API"| RESEND["Email Provider (Resend/Brevo)"]
     RENDER_WEB -->|"Telemetry"| SENTRY["Sentry + BetterStack Uptime"]
@@ -259,7 +259,7 @@ flowchart TB
 sequenceDiagram
     actor Cust as Customer (Browser)
     participant API as Express API
-    participant DB as MongoDB Atlas
+    participant DB as Supabase PostgreSQL
     participant WA as WhatsApp App
     actor Owner as Owner CRM
 
@@ -293,7 +293,7 @@ sequenceDiagram
 flowchart LR
     EXP["CircleUp Express API"]
 
-    EXP -->|"1. Mongoose TLS / Replica Set"| MDB["MongoDB Atlas\nPrimary Data & Transactions"]
+    EXP -->|"1. Supabase TLS / Replica Set"| MDB["Supabase PostgreSQL\nPrimary Data & Transactions"]
     EXP -->|"2. HMAC Upload Signature & Asset Delete"| CLD["Cloudinary Admin/Upload API"]
     REACT["React Client"] -->|"Direct Multipart Upload + Signature"| CLD
     REACT -->|"3. Pre-filled wa.me Deep Link"| WA["WhatsApp Click-to-Chat\n(No Backend Webhook)"]
@@ -364,7 +364,7 @@ All routes live inside a code-split React Router tree (`createBrowserRouter`), w
 | `/admin/audit-logs` | Immutable Admin & Security Audit Log Explorer |
 
 ### 4.2 Frontend Folder Structure & Duplication Prevention
-**Anti-Duplication Rule:** Business logic (price formatting, status badge colors, WhatsApp text previews, Zod validation schemas) and UI primitives live in `src/shared/` and `src/services/`. The 11 storefront category pages are **one** parameterized `CatalogPage` driven by `categorySlug` and `categories` metadata from MongoDB—zero copy-pasted category page files. `CartView`, `OrderTimeline`, `ProductCard`, and `CloudinaryUploader` are shared across Public, Customer CRM, and Owner CRM.
+**Anti-Duplication Rule:** Business logic (price formatting, status badge colors, WhatsApp text previews, Zod validation schemas) and UI primitives live in `src/shared/` and `src/services/`. The 11 storefront category pages are **one** parameterized `CatalogPage` driven by `categorySlug` and `categories` metadata from Supabase—zero copy-pasted category page files. `CartView`, `OrderTimeline`, `ProductCard`, and `CloudinaryUploader` are shared across Public, Customer CRM, and Owner CRM.
 
 ```text
 frontend/
@@ -422,12 +422,12 @@ frontend/
 | **Routes** | `modules/*/routes.ts` | Map HTTP verbs/paths to middleware chains & controllers | Zero logic; declaratively attach `authenticate`, `authorize`, `validate`, `rateLimiter`. |
 | **Validators** | `modules/*/validator.ts` | Zod schemas for `body`, `query`, `params` | Strip unknown fields (`strict()` / whitelist) to block mass assignment. |
 | **Middleware** | `middleware/` | AuthN, RBAC, Ownership checks, Sanitization, Error handler, Request ID | Never mutate domain state; attach `req.auth` context cleanly. |
-| **Controllers** | `modules/*/controller.ts` | Parse validated DTOs, extract `req.auth`, call Service, send standard JSON response | Thin wrappers (~15–30 lines/handler); no Mongoose queries directly in controllers! |
+| **Controllers** | `modules/*/controller.ts` | Parse validated DTOs, extract `req.auth`, call Service, send standard JSON response | Thin wrappers (~15–30 lines/handler); no Supabase queries directly in controllers! |
 | **Services** | `modules/*/service.ts` | Business rules, ACID transactions, external service orchestration, cross-module calls | Never access `req`/`res` objects; throw typed `AppError` subclasses (`ConflictError`, `NotFoundError`). |
-| **Models** | `modules/*/model.ts` | Mongoose schemas, indexes, virtuals, schema-level invariants | Keep methods focused on data integrity; heavy business orchestration stays in Services. |
-| **Config** | `config/` | Typed env validation (`zod`), MongoDB connection lifecycle, Cloudinary & CORS setup | Fail fast on boot if critical env secrets are missing. |
+| **Models** | `modules/*/model.ts` | Supabase schemas, indexes, virtuals, schema-level invariants | Keep methods focused on data integrity; heavy business orchestration stays in Services. |
+| **Config** | `config/` | Typed env validation (`zod`), Supabase connection lifecycle, Cloudinary & CORS setup | Fail fast on boot if critical env secrets are missing. |
 | **Utils** | `utils/` | Pagination builder, Crypto/OTP helpers, WhatsApp message formatter, Date/IST helpers | Pure deterministic functions. |
-| **Error Handlers** | `errors/` | `AppError` hierarchy + global Express error middleware (`MongooseError`, `ZodError`, `Multer/JSON`) | Never leak stack traces or internal DB details in production. |
+| **Error Handlers** | `errors/` | `AppError` hierarchy + global Express error middleware (`SupabaseError`, `ZodError`, `Multer/JSON`) | Never leak stack traces or internal DB details in production. |
 
 ### 5.2 Complete Backend Folder Structure
 
@@ -436,7 +436,7 @@ backend/
 ├── src/
 │   ├── config/
 │   │   ├── env.ts                     # Zod-validated environment variables
-│   │   ├── db.ts                      # Mongoose connection, pool config, graceful shutdown
+│   │   ├── db.ts                      # Supabase connection, pool config, graceful shutdown
 │   │   ├── cloudinary.ts              # Cloudinary SDK config
 │   │   ├── cors.ts                    # Strict origin allowlist
 │   │   └── logger.ts                  # Pino structured logger + sensitive field redaction
@@ -448,7 +448,7 @@ backend/
 │   │   ├── authenticate.ts            # Verifies Bearer JWT (customer/admin) & optionalAuth
 │   │   ├── authorize.ts               # Role guard (CUSTOMER, OWNER, STAFF) + Permission check
 │   │   ├── validate.ts                # Zod validation wrapper for body/query/params
-│   │   ├── sanitize.ts                # Strips MongoDB '$' and dotted operators recursively
+│   │   ├── sanitize.ts                # Strips Supabase '$' and dotted operators recursively
 │   │   └── rateLimiter.ts             # Tiered rate limiters (auth, checkout, uploads, global)
 │   ├── modules/
 │   │   ├── auth/                      # Customer & Admin auth, refresh rotation, reset tokens
@@ -475,7 +475,7 @@ backend/
 │   │   ├── pagination.ts
 │   │   ├── codes.ts                   # Generates CART-*, CHK-*, ORD-*, RNT-* readable codes
 │   │   ├── whatsapp.ts                # Escaped & formatted WhatsApp message generator
-│   │   └── transaction.ts             # Mongoose session/withTransaction retry wrapper
+│   │   └── transaction.ts             # Supabase session/withTransaction retry wrapper
 │   ├── app.ts                         # Express app assembly
 │   └── server.ts                      # HTTP bootstrap & SIGTERM graceful shutdown
 └── tests/
@@ -496,10 +496,10 @@ backend/
 
 ---
 
-## 6. Database System Design (MongoDB & Mongoose)
+## 6. Database System Design (Supabase & PostgreSQL)
 
 ### 6.1 Modeling Strategy: Embedding vs. Referencing
-CircleUp uses a **hybrid document-relational design** optimized for MongoDB's document limits (16 MB max), atomic single-document updates, and ACID transactions:
+CircleUp uses a **hybrid document-relational design** optimized for Supabase's document limits (16 MB max), atomic single-document updates, and ACID transactions:
 
 | Pattern | Applied To | Technical Justification |
 | :--- | :--- | :--- |
@@ -669,7 +669,7 @@ erDiagram
   - `{ refreshTokenHash: 1 }` (`unique: true`)
   - `{ actorId: 1, actorType: 1, isRevoked: 1 }`
   - `{ tokenFamilyId: 1 }`
-  - `{ expiresAt: 1 }` (MongoDB **TTL Index** `expireAfterSeconds: 0` for auto-cleanup!)
+  - `{ expiresAt: 1 }` (Supabase **TTL Index** `expireAfterSeconds: 0` for auto-cleanup!)
 - **Example JSON Document:**
 ```json
 {
@@ -1185,7 +1185,7 @@ erDiagram
 ```
 
 #### 12. `rentalDateLocks`
-- **Purpose:** Enforces database-level mutual exclusion per unit per calendar day (`YYYY-MM-DD`) so concurrent MongoDB transactions can never double-book overlapping rental intervals.
+- **Purpose:** Enforces database-level mutual exclusion per unit per calendar day (`YYYY-MM-DD`) so concurrent Supabase transactions can never double-book overlapping rental intervals.
 - **Schema & Field Types:**
   - `_id`: `ObjectId` (PK, required)
   - `productId`: `ObjectId` (ref `products`, required)
@@ -1378,7 +1378,7 @@ erDiagram
   - `moderatedBy`: `ObjectId` (ref `admins`, optional)
   - `publishedAt`: `Date` (optional — set only when `moderationStatus` becomes `'APPROVED'`)
   - `createdAt`, `updatedAt`: `Date`
-- **Validation Rules:** `consentRecord.granted === true` enforced in Zod + Mongoose pre-save; `publishedAt` remains null while `PENDING`/`REJECTED`.
+- **Validation Rules:** `consentRecord.granted === true` enforced in Zod + Supabase pre-save; `publishedAt` remains null while `PENDING`/`REJECTED`.
 - **Relationships:** N:1 `users`, `admins`; N:M `products`.
 - **Indexes:**
   - `{ moderationStatus: 1, isFeatured: -1, publishedAt: -1 }`
@@ -1661,7 +1661,7 @@ erDiagram
 *\*Note: Guest Checkout is supported only if `STORE_OPERATIONS.allowGuestCheckout` is enabled (requires Name + Phone + Address snapshot); default recommendation is requiring quick login/registration or matching phone/email so orders appear seamlessly in Customer CRM.*
 
 ### 7.3 Ownership & IDOR Prevention Rule
-Every Customer CRM endpoint (`GET /orders/:orderId`, `GET /rentals/:rentalId`, `DELETE /wishlist/:productId`, `PATCH /users/me/addresses/:addressId`) **never** fetches by `:id` alone. Every Mongoose query embeds ownership in the predicate:
+Every Customer CRM endpoint (`GET /orders/:orderId`, `GET /rentals/:rentalId`, `DELETE /wishlist/:productId`, `PATCH /users/me/addresses/:addressId`) **never** fetches by `:id` alone. Every Supabase query embeds ownership in the predicate:
 `Order.findOne({ _id: orderId, userId: req.auth.id })`. Unauthorized access returns `404` or `403` identically so attackers cannot probe existence of other customers' order/rental IDs.
 
 ---
@@ -1679,7 +1679,7 @@ Every product document falls into one of four `productType` classifications:
 $$\text{availableStock} = \text{variant.stock} - \text{variant.reservedStock}$$
 
 ### 8.2 Concurrency-Safe Stock Engine (Zero Overselling)
-Each variant stores `stock` (physical on-hand), `reservedStock` (held awaiting payment), and **`availableStock`** (`stock - reservedStock`). Persisting `availableStock` enables simple, indexable `$elemMatch` conditional queries without computed `$expr` array gymnastics. All mutations execute inside `InventoryService` using **atomic Mongoose `findOneAndUpdate` predicates inside a MongoDB ACID Transaction** (`session`):
+Each variant stores `stock` (physical on-hand), `reservedStock` (held awaiting payment), and **`availableStock`** (`stock - reservedStock`). Persisting `availableStock` enables simple, indexable `$elemMatch` conditional queries without computed `$expr` array gymnastics. All mutations execute inside `InventoryService` using **atomic Supabase `findOneAndUpdate` predicates inside a Supabase ACID Transaction** (`session`):
 
 - **Reserve Stock (Owner moves CheckoutRequest -> `RESERVED_AWAITING_PAYMENT`):**
   Filter `variants: { $elemMatch: { _id: variantId, isActive: true, availableStock: { $gte: qty } } }` -> Update `$inc: { 'variants.$.reservedStock': qty, 'variants.$.availableStock': -qty }`.
@@ -1781,7 +1781,7 @@ All dates are normalized to calendar day strings `YYYY-MM-DD` in store timezone 
    - **Step 1:** Inside `runInTransaction()`, fetch all `rentalDateLocks` overlapping `[startDate, effectiveBlockedUntil]` for `(productId, variantId)`.
    - **Step 2:** Find the lowest `unitIndex` in `0 .. totalRentalUnits - 1` that has **zero** locked `dateKey` rows in `[startDate, effectiveBlockedUntil]`. If none exist, abort transaction and throw `409 RENTAL_DATES_UNAVAILABLE`.
    - **Step 3:** Generate `dateKey` array covering `[startDate .. endDate]` (`lockKind: 'RENTAL_DAY'`) and `[endDate+1 .. effectiveBlockedUntil]` (`lockKind: 'TURNAROUND_BUFFER'`).
-   - **Step 4:** `RentalDateLock.insertMany(locks, { session })`. Because `{ productId, variantId, unitIndex, dateKey }` has a **MongoDB Unique Index**, even two simultaneous admin approvals executing in parallel will collide at the database constraint layer (`E11000` / `WriteConflict`), making overlapping bookings physically impossible!
+   - **Step 4:** `RentalDateLock.insertMany(locks, { session })`. Because `{ productId, variantId, unitIndex, dateKey }` has a **Supabase Unique Index**, even two simultaneous admin approvals executing in parallel will collide at the database constraint layer (`E11000` / `WriteConflict`), making overlapping bookings physically impossible!
    - **Step 5:** Update `Rental` (`status: 'APPROVED'`, `unitIndex`) and write `AuditLog` + Customer `Notification`.
 
 ### 10.3 Rental Status Lifecycle Diagram
@@ -1877,7 +1877,7 @@ Every Customer CRM module retrieves data strictly scoped to `req.auth.id` (verif
 All Owner CRM endpoints sit under `/api/v1/admin/*`, require `actorType === 'ADMIN'` + `role in ['OWNER', 'STAFF']` + active `permissions` check, and record `auditLogs` on every mutation.
 
 ### 13.1 Dashboard & Analytics Aggregations (Recharts)
-- **KPI Summary (`GET /api/v1/admin/analytics/overview?from=&to=`):** Executes parallel MongoDB queries/aggregations:
+- **KPI Summary (`GET /api/v1/admin/analytics/overview?from=&to=`):** Executes parallel Supabase queries/aggregations:
   - **Total Sales Revenue:** `$match` `orders` (`paymentStatus: 'PAID'`, `status: { $nin: ['CANCELLED', 'REFUNDED'] }`) -> `$sum: '$grandTotal'`.
   - **Rental Revenue:** `$match` `rentalTransactions` (`type: { $in: ['RENTAL_FEE_PAID', 'LATE_FEE_ASSESSED', 'DAMAGE_FEE_ASSESSED'] }`) -> `$sum: '$amount'`.
   - **Pending Checkout Requests:** `checkoutRequests.countDocuments({ status: { $in: ['INITIATED', 'RESERVED_AWAITING_PAYMENT'] } })`.
@@ -1902,7 +1902,7 @@ All Owner CRM endpoints sit under `/api/v1/admin/*`, require `actorType === 'ADM
    - Server ignores any client `isVerifiedPurchase` field; instead, `ReviewService` queries `orderItems` (`{ userId, productId, orderFulfillmentStatus: 'DELIVERED' }`) or `rentals` (`{ userId, productId, status: 'COMPLETED' }`). Only if a matching record exists does the backend set `isVerifiedPurchase = true` and attach `orderItemId` / `rentalId`.
    - When Owner approves/deletes a product review, `ReviewService` recalculates `products.ratingAvg` and `products.ratingCount` atomically.
 2. **Events / *The Social Circle*:**
-   - **Atomic Capacity Guard:** On `POST /api/v1/events/:id/register`, inside a MongoDB transaction:
+   - **Atomic Capacity Guard:** On `POST /api/v1/events/:id/register`, inside a Supabase transaction:
      `Event.findOneAndUpdate({ _id: eventId, status: 'PUBLISHED', registrationDeadline: { $gt: now }, $expr: { $lt: ['$registeredCount', '$capacity'] } }, { $inc: { registeredCount: 1 } })`.
    - Inserts `eventRegistrations` (unique `(eventId, userId)` active index prevents double-booking) and triggers `EVENT_REGISTERED` notification + email ticket.
    - Cancellation before deadline atomically decrements `registeredCount`.
@@ -1940,13 +1940,13 @@ All Owner CRM endpoints sit under `/api/v1/admin/*`, require `actorType === 'ADM
 - **Pagination, Filtering, Sorting & Search:**
   - All collection list endpoints enforce `?page=1&limit=20` (max `limit=100`). Large unbounded arrays are forbidden.
   - Products support `?productType=&category=&size=&condition=&minPrice=&maxPrice=&inStock=true&q=&sort=newest|price_asc|price_desc|bestselling`.
-  - Text search uses MongoDB `$text` index (`{ $text: { $search: q } }`) combined with sanitized regex fallback for partial SKU/brand matching on admin tables (`escapeRegex(q)`).
+  - Text search uses Supabase `$text` index (`{ $text: { $search: q } }`) combined with sanitized regex fallback for partial SKU/brand matching on admin tables (`escapeRegex(q)`).
 
 ### 15.2 Auth & Uploads & System Health Endpoints
 
 | Method | Endpoint | Purpose | Auth / Role | Request / Query | Response (`data`) & Errors |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `GET` | `/health` | Readiness check (API + Mongo ping) | Public | None | `200`: `{ status: 'ok', db: 'connected', uptime }`; `503` if DB down |
+| `GET` | `/health` | Readiness check (API + Database ping) | Public | None | `200`: `{ status: 'ok', db: 'connected', uptime }`; `503` if DB down |
 | `POST` | `/uploads/signature` | Generate signed Cloudinary upload params | Auth (`CUSTOMER`/`OWNER`/`STAFF`) | Body: `{ folder: 'products' \| 'community' \| 'reviews' \| 'cms', count }` | `200`: `{ signature, timestamp, cloudName, apiKey, folder, maxFileBytes }`; `403` if customer requests `products`/`cms` folder! |
 | `POST` | `/auth/register` | Register new customer account | Public | Body: `{ fullName, email, phone?, password }` | `201`: `{ user, accessToken }` + sets `HttpOnly` refresh cookie; `409 EMAIL_EXISTS` |
 | `POST` | `/auth/login` | Customer login | Public | Body: `{ email, password }` | `200`: `{ user, accessToken }` + refresh cookie; `401 INVALID_CREDENTIALS`, `423 ACCOUNT_LOCKED` |
@@ -2085,15 +2085,15 @@ All Owner CRM endpoints sit under `/api/v1/admin/*`, require `actorType === 'ADM
 
 | Threat / OWASP Category | Specific CircleUp Attack Vector | Concrete Technical Prevention Strategy |
 | :--- | :--- | :--- |
-| **NoSQL Injection** (A03) | Sending `{ "email": { "$ne": "" }, "password": ... }` or `$gt` in query filters. | 1. **Zod strict schema parsing** on every `body`/`query`/`params` rejects non-primitive types (`z.string().email()`).<br>2. Custom recursive `sanitize()` middleware strips any object keys starting with `$` or containing `.`.<br>3. `mongoose.set('sanitizeFilter', true)` enabled globally. |
+| **NoSQL Injection** (A03) | Sending `{ "email": { "$ne": "" }, "password": ... }` or `$gt` in query filters. | 1. **Zod strict schema parsing** on every `body`/`query`/`params` rejects non-primitive types (`z.string().email()`).<br>2. Custom recursive `sanitize()` middleware strips any object keys starting with `$` or containing `.`.<br>3. `supabase.set('sanitizeFilter', true)` enabled globally. |
 | **XSS (Cross-Site Scripting)** (A03) | Malicious `<script>` or `javascript:` URLs in `#ThriftCrew` captions, product reviews, or CMS fields. | 1. React auto-escapes JSX by default; `dangerouslySetInnerHTML` is banned except sanitized CMS markdown via `DOMPurify` + strict allowlist.<br>2. `helmet()` sets Content-Security-Policy (`script-src 'self'`, `img-src 'self' https://res.cloudinary.com`).<br>3. Refresh tokens sit in `HttpOnly` cookies (inaccessible to `document.cookie`), and Access JWT stays in Redux memory (never `localStorage`). |
 | **CSRF** (A01) | Cross-site hidden form triggering `/auth/refresh` or `/checkout/requests`. | 1. API state-changing endpoints require `Authorization: Bearer <token>` header (browsers never attach custom `Authorization` headers automatically from cross-origin forms).<br>2. Cookie-authenticated `/refresh` & `/logout` routes enforce `SameSite=Lax`, validate `Origin`/`Referer` against `CORS_ALLOWED_ORIGINS`, and require `X-Requested-With: CircleUpClient`. |
-| **Broken Access Control & IDOR** (A01) | Customer A querying `GET /orders/my/<OrderB_Id>` or calling `/admin/*` with Customer JWT. | 1. `authenticate` validates `actorType` (`CUSTOMER` vs `ADMIN`); Customer tokens are rejected (`403`) on `/admin/*` before reaching controllers.<br>2. Every Customer CRM DB query includes `{ _id: id, userId: req.auth.id }` in the MongoDB filter.<br>3. Never trust client-supplied `price`, `role`, `isVerifiedPurchase`, or `moderationStatus`. |
+| **Broken Access Control & IDOR** (A01) | Customer A querying `GET /orders/my/<OrderB_Id>` or calling `/admin/*` with Customer JWT. | 1. `authenticate` validates `actorType` (`CUSTOMER` vs `ADMIN`); Customer tokens are rejected (`403`) on `/admin/*` before reaching controllers.<br>2. Every Customer CRM DB query includes `{ _id: id, userId: req.auth.id }` in the Supabase filter.<br>3. Never trust client-supplied `price`, `role`, `isVerifiedPurchase`, or `moderationStatus`. |
 | **Brute-Force & Credential Stuffing** (A07) | Automated login attempts against `/auth/login` or `/admin/auth/login`. | 1. `express-rate-limit` tiered windows: Auth Customer (`10 req / 15 min` per IP+email), Admin Login (`5 req / 15 min`), Forgot Password (`3 req / 15 min`).<br>2. DB account lockout (`failedLoginAttempts >= 5` -> 15-min lock).<br>3. `bcrypt` cost factor `12` (~250ms per hash). |
 | **File Upload Vulnerabilities** (A04) | Uploading `.svg` XSS payloads, executables, or 50MB files. | 1. Backend `/uploads/signature` restricts Cloudinary `allowed_formats: ['jpg','jpeg','png','webp']` (`svg` blocked!) and `max_file_size: 5MB`.<br>2. Client validates MIME & dimensions pre-upload.<br>3. Backend rejects any `publicId` not beginning with the authorized Cloudinary folder prefix (`circleup/community/` for customers). |
 | **API Abuse & Checkout Spam** (A04) | Bots flooding `POST /checkout/requests` or `POST /rentals/requests`. | 1. Per-user & per-IP rate limits (`5 checkout requests / 10 min`).<br>2. Maximum 3 open `INITIATED` checkout requests per customer.<br>3. Mandatory email verification before Rental requests & `#ThriftCrew` submissions. |
-| **Sensitive Data Exposure** (A02) | Password hashes, reset tokens, `internalNotes`, or stack traces leaking in JSON responses. | 1. Mongoose `select: false` on `passwordHash` and token hashes.<br>2. Explicit projection/DTO serializers on every API response.<br>3. `pino` redacts `req.headers.authorization`, `req.headers.cookie`, `*.password`, `*.token`.<br>4. Production error handler suppresses stack traces. |
-| **Secrets & Database Security** (A05) | Leaked `.env` or overly permissive Atlas access. | 1. Zod env validator verifies secret entropy (`JWT_SECRET >= 32 chars`).<br>2. MongoDB Atlas dedicated least-privilege DB user (`readWrite` on `circleup_prod` only — never Atlas Project Owner credentials!), TLS enforced, IP allowlisted to Render outbound static IPs (or VPC peering). |
+| **Sensitive Data Exposure** (A02) | Password hashes, reset tokens, `internalNotes`, or stack traces leaking in JSON responses. | 1. Supabase `select: false` on `passwordHash` and token hashes.<br>2. Explicit projection/DTO serializers on every API response.<br>3. `pino` redacts `req.headers.authorization`, `req.headers.cookie`, `*.password`, `*.token`.<br>4. Production error handler suppresses stack traces. |
+| **Secrets & Database Security** (A05) | Leaked `.env` or overly permissive Supabase access. | 1. Zod env validator verifies secret entropy (`JWT_SECRET >= 32 chars`).<br>2. Supabase PostgreSQL dedicated least-privilege DB user (`readWrite` on `circleup_prod` only — never Supabase Project Owner credentials!), TLS enforced, IP allowlisted to Render outbound static IPs (or VPC peering). |
 | **Admin Account Protection** (A07) | Compromise of Owner CRM. | 1. Isolated `/api/v1/admin/auth/*` endpoints & separate `cu_admin_refresh` cookie (`12h` TTL).<br>2. Mandatory 12+ char passphrase.<br>3. Every admin action logged to immutable `auditLogs` with IP & `requestId`. |
 
 ---
@@ -2102,9 +2102,9 @@ All Owner CRM endpoints sit under `/api/v1/admin/*`, require `actorType === 'ADM
 
 | Integration | Authentication | Data Flow | Error Handling & Retry Strategy | Configuration & Failure Scenarios |
 | :--- | :--- | :--- | :--- | :--- |
-| **1. Cloudinary** (Images) | Backend HMAC-SHA1 signature using `CLOUDINARY_API_SECRET`. | Browser requests signature (`POST /uploads/signature`) -> Browser POSTs binary directly to `api.cloudinary.com` -> Saves returned `{ secure_url, public_id }` to MongoDB -> Admin asset deletion calls `cloudinary.uploader.destroy()`. | Client retries failed upload chunk up to 2x with backoff; backend deletion failures are logged (`WARN`) and queued for manual/cron sweep without blocking product archival. | Env: `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`. **Failure:** If Cloudinary is down, product creation degrades gracefully with clear "Image upload temporarily unavailable" error; existing cached CDN images remain unaffected. |
+| **1. Cloudinary** (Images) | Backend HMAC-SHA1 signature using `CLOUDINARY_API_SECRET`. | Browser requests signature (`POST /uploads/signature`) -> Browser POSTs binary directly to `api.cloudinary.com` -> Saves returned `{ secure_url, public_id }` to Supabase -> Admin asset deletion calls `cloudinary.uploader.destroy()`. | Client retries failed upload chunk up to 2x with backoff; backend deletion failures are logged (`WARN`) and queued for manual/cron sweep without blocking product archival. | Env: `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`. **Failure:** If Cloudinary is down, product creation degrades gracefully with clear "Image upload temporarily unavailable" error; existing cached CDN images remain unaffected. |
 | **2. WhatsApp Click-to-Chat** | None (stateless `https://wa.me/<number>?text=...` deep link). | Backend persists `CheckoutRequest` (`CHK-...`) **first** -> builds formatted URL-encoded text -> Frontend navigates/opens WhatsApp. | **Zero delivery webhook exists.** UI persists a confirmation screen displaying `requestCode`, copy-text button, and re-open WhatsApp button. | Config: `STORE_OPERATIONS.whatsappBusinessNumber` in `siteContent`. **Failure:** Popup blocker or missing WhatsApp app -> User copies pre-formatted message with `CHK-...` manually or calls/messages store number directly. |
-| **3. MongoDB Atlas** | SCRAM-SHA-256 credentials over TLS (`mongodb+srv://`) + IP allowlist. | Mongoose connection pool + ACID Replica Set transactions (`withTransaction`). | Transient `WriteConflict` / `TransientTransactionError` automatically retried up to 3x inside `runInTransaction()` helper; startup connection retries with exponential backoff. | Env: `MONGODB_URI`. **Failure:** Health check `/health` returns `503`; Render pauses routing new deploys; alerts trigger via BetterStack/Sentry. |
+| **3. Supabase PostgreSQL** | SCRAM-SHA-256 credentials over TLS (`supabase+srv://`) + IP allowlist. | Supabase connection pool + ACID Replica Set transactions (`withTransaction`). | Transient `WriteConflict` / `TransientTransactionError` automatically retried up to 3x inside `runInTransaction()` helper; startup connection retries with exponential backoff. | Env: `SUPABASE_URL`. **Failure:** Health check `/health` returns `503`; Render pauses routing new deploys; alerts trigger via BetterStack/Sentry. |
 | **4. Email Provider** (Resend / Brevo) | Bearer API Key over HTTPS (`RESEND_API_KEY`). | Domain events insert `notifications` (`emailStatus: 'PENDING'`) -> async dispatcher calls Email API -> updates `emailStatus: 'SENT'` or `'FAILED'`. | Never block checkout/order transaction waiting on SMTP/HTTP email! Retry worker picks up `'PENDING'`/`'FAILED'` docs (`attempts < 3`) every 5 mins with exponential backoff. | Env: `EMAIL_API_KEY`, `EMAIL_FROM`. **Failure:** In-app notification in Customer/Owner CRM still delivers instantaneously; customer can trigger "Resend Verification". |
 | **5. Future Payment Gateway** (Razorpay) | API Key ID + Secret + Webhook HMAC-SHA256 (`X-Razorpay-Signature`). | **Phase 2 extension:** `CheckoutRequest` gains `paymentGatewayOrderId`; Razorpay webhook triggers `OrderService.confirmFromWebhook()` idempotently using `paymentId` uniqueness check. | Raw body signature verification + idempotent transaction ensures duplicate webhooks never double-deduct stock. | Zero schema rewrite required (`orders.paymentMethod` already reserves `'RAZORPAY_FUTURE'`). |
 | **6. Future Shipping Provider** (Shiprocket / Delhivery) | OAuth2 Bearer Token (cached in memory with refresh before expiry). | **Phase 2 extension:** `PACKED` order triggers shipment creation -> writes `trackingInfo` -> carrier webhook updates `SHIPPED` -> `OUT_FOR_DELIVERY` -> `DELIVERED`. | Webhook signature check + fallback to manual Owner CRM tracking entry (`PATCH /admin/orders/:id/status`). | `orders.trackingInfo` already models `carrier`, `trackingNumber`, `trackingUrl`, `deliveredAt`. |
@@ -2140,22 +2140,22 @@ CircleUp decouples **Notification Creation** from **Delivery Transport**:
 ### 19.1 Environments & Topology
 | Environment | Frontend (Vercel) | Backend (Render) | Database | Media (Cloudinary) |
 | :--- | :--- | :--- | :--- | :--- |
-| **Local Dev** | `http://localhost:5173` (Vite proxy `/api -> :5000`) | `http://localhost:5000` (`tsx watch`) | MongoDB Atlas Free M0 Dev Cluster (or native `mongod --replSet rs0`) | Dedicated `circleup-dev/` folder |
-| **Development / Preview** | Vercel Preview URLs (`*.vercel.app`) | Render Dev Web Service | Atlas M0 `circleup-dev` | `circleup-dev/` |
-| **Staging** | `staging.circleup.in` (Vercel) | `api-staging.circleup.in` (Render) | Atlas M0 `circleup-staging` | `circleup-staging/` |
-| **Production** | `circleup.in` + `www.circleup.in` (Vercel) | `api.circleup.in` (Render Standard + Cron) | Atlas M10 (or M2->M10) `circleup-prod` | `circleup-prod/` |
+| **Local Dev** | `http://localhost:5173` (Vite proxy `/api -> :5000`) | `http://localhost:5000` (`tsx watch`) | Supabase PostgreSQL Free M0 Dev Cluster (or native `supabase start`) | Dedicated `circleup-dev/` folder |
+| **Development / Preview** | Vercel Preview URLs (`*.vercel.app`) | Render Dev Web Service | Supabase Dev `circleup-dev` | `circleup-dev/` |
+| **Staging** | `staging.circleup.in` (Vercel) | `api-staging.circleup.in` (Render) | Supabase Dev `circleup-staging` | `circleup-staging/` |
+| **Production** | `circleup.in` + `www.circleup.in` (Vercel) | `api.circleup.in` (Render Standard + Cron) | Supabase Production (or M2->M10) `circleup-prod` | `circleup-prod/` |
 
 > [!IMPORTANT]
 > **First-Party Cookie Routing Strategy:** Mapping `circleup.in` (Vercel) and `api.circleup.in` (Render) under the **same root domain** (plus a Vercel `/api/v1/*` rewrite proxy fallback in staging) ensures `HttpOnly; SameSite=Lax` refresh cookies operate as **first-party cookies**, avoiding Safari ITP & Chrome third-party cookie blocking.
 
 ### 19.2 Environment Variables Matrix
 - **Frontend (`VITE_*` — non-secret only!):** `VITE_API_BASE_URL`, `VITE_SENTRY_DSN`, `VITE_CLOUDINARY_CLOUD_NAME`.
-- **Backend (Secret Env Vars):** `NODE_ENV`, `PORT`, `MONGODB_URI`, `JWT_ACCESS_SECRET`, `JWT_ADMIN_ACCESS_SECRET`, `COOKIE_DOMAIN`, `CORS_ALLOWED_ORIGINS`, `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, `EMAIL_API_KEY`, `EMAIL_FROM`, `CRON_SECRET`, `SENTRY_DSN`, `FRONTEND_URL`.
+- **Backend (Secret Env Vars):** `NODE_ENV`, `PORT`, `SUPABASE_URL`, `JWT_ACCESS_SECRET`, `JWT_ADMIN_ACCESS_SECRET`, `COOKIE_DOMAIN`, `CORS_ALLOWED_ORIGINS`, `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, `EMAIL_API_KEY`, `EMAIL_FROM`, `CRON_SECRET`, `SENTRY_DSN`, `FRONTEND_URL`.
 
 ### 19.3 Git Branching, CI/CD, Backups & Observability
 - **Branching:** `main` (protected -> auto-deploys Production after PR review + passing CI), `staging` (auto-deploys Staging), `feat/<ticket>` short-lived feature branches.
-- **GitHub Actions CI:** On every PR: `tsc --noEmit` (FE + BE), ESLint, Vitest unit tests, Backend Supertest integration tests against `mongodb-memory-server` (`MongoMemoryReplSet`), Vite production build check.
-- **Database Backups:** MongoDB Atlas Continuous Cloud Backups (M10+ point-in-time recovery + daily snapshots) or scheduled `mongodump` encrypted backup script to cloud storage if starting on M0/M2.
+- **GitHub Actions CI:** On every PR: `tsc --noEmit` (FE + BE), ESLint, Vitest unit tests, Backend Supertest integration tests against `supabase-memory-server` (`mock Postgres test harness`), Vite production build check.
+- **Database Backups:** Supabase PostgreSQL Continuous Cloud Backups (M10+ point-in-time recovery + daily snapshots) or scheduled `pg_dump` encrypted backup script to cloud storage if starting on M0/M2.
 - **Observability:**
   - `pino` structured JSON logs shipped to Render Logs with `requestId` tracing.
   - **Sentry** SDK integrated in both React (`ErrorBoundary`) and Express (`Sentry.expressErrorHandler`) for real-time exception alerts.
@@ -2169,7 +2169,7 @@ CircleUp decouples **Notification Creation** from **Delivery Transport**:
 | Layer | Tooling | Scope |
 | :--- | :--- | :--- |
 | **Unit Tests** | `Vitest` | Pure business logic: rental price/late-fee calculators, WhatsApp message formatter, Zod schemas, state-transition validators, discount calculator. |
-| **Integration & API Tests** | `Vitest` + `Supertest` + `mongodb-memory-server` (**ReplicaSet mode**) | Full Express middleware + Services + Mongoose ACID transactions, index uniqueness constraints (`rentalDateLocks`, `sku`), cookie rotation, error envelopes. |
+| **Integration & API Tests** | `Vitest` + `Supertest` + `supabase-memory-server` (**ReplicaSet mode**) | Full Express middleware + Services + Supabase ACID transactions, index uniqueness constraints (`rentalDateLocks`, `sku`), cookie rotation, error envelopes. |
 | **Concurrency Tests** | `Promise.allSettled` harnesses in `Vitest` | Firing parallel transactions against identical single-unit stock & overlapping rental approvals to prove zero oversells / double-bookings. |
 | **E2E Tests** | `Playwright` | Critical browser flows across Public -> Customer CRM -> Owner CRM (login, cart merge, WhatsApp request creation, Owner confirmation, rental request). |
 | **Security & AuthZ Tests** | `Supertest` security suite | Cross-user IDOR attempts, customer JWT hitting `/admin/*`, expired/reused refresh token replay, `$ne` NoSQL injection payloads, unapproved `#ThriftCrew` visibility checks. |
@@ -2187,13 +2187,13 @@ CircleUp decouples **Notification Creation** from **Delivery Transport**:
 
 ## 21. Performance & Scalability Strategy
 
-- **Database Indexing & Lean Reads:** All public read endpoints (`GET /products`, `GET /events`, `GET /community/posts`) use `.lean()` queries backed by compound ESR (Equality, Sort, Range) indexes, cutting Mongoose hydration overhead by ~40–60%.
+- **Database Indexing & Lean Reads:** All public read endpoints (`GET /products`, `GET /events`, `GET /community/posts`) use `.lean()` queries backed by compound ESR (Equality, Sort, Range) indexes, cutting Supabase hydration overhead by ~40–60%.
 - **Pagination Everywhere:** Every list endpoint caps `limit <= 100` (default `20`), using index-supported sorting and `Promise.all([find, countDocuments])` (or cursor-based pagination on `auditLogs` / `inventoryLogs` as log volume grows).
 - **Cloudinary CDN Optimization:** Store raw `public_id` + base URL; frontend helper requests dynamic responsive transformations (`f_auto,q_auto,w_800,c_limit` for detail views, `w_400` for catalog grids), cutting mobile image payload by 60–80%.
 - **Caching Strategy:**
   - Browser/TanStack Query caches `categories`, `siteContent`, and public product details (`staleTime: 2–5 min`).
   - Backend lightweight in-memory TTL cache (60s, invalidated on admin mutation) for `categories` tree and `siteContent` (`STORE_OPERATIONS`), avoiding repetitive DB hits while remaining safe for a single-to-few node setup (easily swapped to Redis if scaled horizontally).
-- **Rate Limiting & Pool Sizing:** Mongoose `maxPoolSize: 20`, `serverSelectionTimeoutMS: 5000`. If Express scales horizontally to multiple Render instances, swap `express-rate-limit`'s memory store for `rate-limit-redis` and extract background cron tasks to a single Render Cron Job hitting `POST /internal/jobs/*` (already designed in our architecture!).
+- **Rate Limiting & Pool Sizing:** Supabase `maxPoolSize: 20`, `serverSelectionTimeoutMS: 5000`. If Express scales horizontally to multiple Render instances, swap `express-rate-limit`'s memory store for `rate-limit-redis` and extract background cron tasks to a single Render Cron Job hitting `POST /internal/jobs/*` (already designed in our architecture!).
 
 ---
 
@@ -2206,7 +2206,7 @@ CircleUp decouples **Notification Creation** from **Delivery Transport**:
 | **R-03** | **Cross-domain cookie rejection** between Vercel (`*.vercel.app`) & Render (`*.onrender.com`) | High | High | Use same root domain (`circleup.in` + `api.circleup.in`) in production/staging and Vercel API proxy rewrite in preview environments so refresh cookies stay first-party (`SameSite=Lax`). |
 | **R-04** | **Render Free-tier cold-start sleep** breaking WhatsApp checkout / admin workflows | High (if misconfigured) | High | Mandatory Render Starter/Standard paid tier in production + BetterStack `/health` monitoring. |
 | **R-05** | **Abandoned Cloudinary uploads** accumulating orphaned storage from cancelled drafts | Medium | Low | Store uploads in scoped temp/domain folders; run periodic admin/cron sweep comparing Cloudinary asset tags created > 48h ago against active DB `publicId` references. |
-| **R-06** | **Local MongoDB lacking Replica Set** causing transaction crashes only in dev or tests | Medium | Medium | Point local dev to MongoDB Atlas Free M0 Dev Cluster (native Replica Set, zero Docker) + configure `mongodb-memory-server` with `MongoMemoryReplSet` in CI/integration tests. |
+| **R-06** | **Local Supabase lacking Replica Set** causing transaction crashes only in dev or tests | Medium | Medium | Point local dev to Supabase PostgreSQL Free M0 Dev Cluster (native Replica Set, zero Docker) + configure `supabase-memory-server` with `mock Postgres test harness` in CI/integration tests. |
 | **R-07** | **Unmoderated user photos or PII** appearing on `#ThriftCrew` | Low | High | Hardcoded `moderationStatus: 'PENDING'` default; public API hardcodes `APPROVED` filter; explicit consent checkbox stored with IP/timestamp. |
 
 ---
@@ -2217,14 +2217,14 @@ Milestones are strictly ordered by data and API dependencies so frontend and bac
 
 | Milestone | Scope & Modules | Dependencies | Database Work | Backend APIs Required | Frontend Work | Testing & Definition of Done (DoD) |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **M0: Foundation & DevOps Skeleton** | Repo setup, TS configs, ESLint, Express boilerplate, Error/Logger/Env middleware, React Router + Redux + TanStack Query + Axios shell | None | Atlas Dev cluster / `MongoMemoryReplSet` test setup | `GET /health` | Route skeleton, layouts (`Public`, `Customer`, `Admin`), Axios client, ErrorBoundary | **DoD:** CI runs lint/typecheck/tests on PR; staging deploys to Vercel + Render; `/health` returns `200`. |
+| **M0: Foundation & DevOps Skeleton** | Repo setup, TS configs, ESLint, Express boilerplate, Error/Logger/Env middleware, React Router + Redux + TanStack Query + Axios shell | None | Supabase Dev cluster / `mock Postgres test harness` test setup | `GET /health` | Route skeleton, layouts (`Public`, `Customer`, `Admin`), Axios client, ErrorBoundary | **DoD:** CI runs lint/typecheck/tests on PR; staging deploys to Vercel + Render; `/health` returns `200`. |
 | **M1: Auth, RBAC & User Profile** | `auth`, `users`, `admins`, `authSessions`, `auditLogs`, `notifications` (email verification/reset) | M0 | Indexes on `users`, `admins`, `authSessions` (TTL), `auditLogs` | `/auth/*`, `/admin/auth/*`, `/users/me*` | Login, Register, Forgot/Reset Password, Verify Email, Admin Login, Profile & Address Book UI | **Tests:** Token rotation reuse test, brute-force lockout, IDOR cross-user checks.<br>**DoD:** Both Customer & Admin auth loops work end-to-end with `HttpOnly` refresh cookies. |
 | **M2: Catalog, Categories, CMS & Media** | `categories`, `products`, `inventoryLogs`, `siteContent`, `uploads` | M1 | Indexes on `categories`, `products` (`text` + ESR), `inventoryLogs`, `siteContent` | `/categories`, `/products*`, `/uploads/signature`, `/admin/products*`, `/admin/categories*`, `/admin/inventory*`, `/content/*`, `/admin/content/*` | Shared `CatalogPage` covering all 11 category routes + `/new-arrivals`, `ProductDetailPage`, Home CMS rendering, Owner Product/Category/Inventory/CMS pages + `CloudinaryUploader` | **Tests:** Single-unit `stock <= 1` validation, SKU uniqueness, signed upload folder RBAC.<br>**DoD:** Owner creates Pre-Loved/Fresh/Handcrafted/Rental products and storefront renders live filtered catalog. |
 | **M3: Cart & WhatsApp Checkout** | `carts`, `checkoutRequests`, `coupons` (foundation) | M2 | Indexes on `carts` (TTL guest carts), `checkoutRequests` | `/cart*`, `/checkout/requests*`, `/admin/checkout-requests*` | Cart Drawer & `/cart`, Guest-to-Customer cart merge on login, `/checkout/whatsapp` with fallback screen, Owner Checkout Queue UI | **Tests:** Guest cart merge, rental-in-cart rejection, `CheckoutRequest` pre-persistence before `wa.me` link.<br>**DoD:** Customer submits persisted `CHK-*` request and Owner sees competing-request warnings. |
 | **M4: Orders, Inventory Engine & Customer CRM Orders** | `orders`, `orderItems`, atomic `InventoryService`, `notifications` (in-app + email) | M3 | Indexes on `orders`, `orderItems`, `notifications` | `/admin/checkout-requests/:id/(reserve\|confirm\|reject)`, `/orders/my*`, `/admin/orders*`, `/notifications*` | Customer CRM Order History, Order Detail Timeline, Return Request, Notification Tray; Owner CRM Order Console & Tracking | **Tests:** Parallel confirmation concurrency test (1-of-1 item zero oversell), cancellation restock, status state machine.<br>**DoD:** Owner converts `CHK-*` -> `ORD-*`, stock deducts atomically, Customer tracks status live. |
 | **M5: Rental Management System** | `rentals`, `rentalTransactions`, `rentalDateLocks`, Cron jobs (overdue & D-1 reminders) | M1, M2, M4 (notifications) | Indexes on `rentals`, `rentalTransactions`, unique `rentalDateLocks` | `/rentals/availability/:productId`, `/rentals/requests`, `/rentals/my*`, `/admin/rentals*`, `/internal/jobs/*` | `/rentals` catalog + date-range availability calendar, Rental Booking flow, Customer Rental & Deposit Ledger view, Owner Rental Approval/Check-in/Settlement UI | **Tests:** Parallel rental approval overlap test, buffer-day collision test, late-fee & deposit refund math unit tests.<br>**DoD:** Zero overlapping bookings possible; deposit settlement produces exact ledger entries. |
 | **M6: Community System & Customer CRM Expansion** | `wishlists`, `reviews`, `events`, `eventRegistrations`, `communityPosts` | M4, M5 (for verified purchase/rental checks) | Indexes on `wishlists`, `reviews`, `events`, `eventRegistrations`, `communityPosts` | `/wishlist*`, `/reviews*`, `/events*`, `/community/posts*`, `/admin/reviews*`, `/admin/events*`, `/admin/community*` | Wishlist page, Verified Reviews UI, *The Social Circle* Events + registration, `#ThriftCrew` gallery & consent upload form, Customer CRM Community/Support, Owner Moderation Queues | **Tests:** Event capacity race condition, `isVerifiedPurchase` spoofing test, `#ThriftCrew` consent + moderation visibility gate.<br>**DoD:** Community submissions stay hidden until Owner approves; verified purchase badges cannot be forged. |
-| **M7: Owner Analytics, Hardening & Launch Readiness** | `analytics` (Recharts), Customer CRM admin controls, Staff RBAC, Audit Log viewer, E2E & Load QA | M1–M6 | Verify all prod indexes (`explain()`), backup schedule | `/admin/analytics/*`, `/admin/customers*`, `/admin/staff*`, `/admin/audit-logs` | Owner Dashboard KPIs, Recharts Revenue/Order/Bestseller charts, Customer Management, Staff Permissions, Audit Log Explorer | **Tests:** Full Playwright E2E suite, OWASP security check, Atlas M10 backup/restore drill.<br>**DoD:** Zero critical/high defects; Sentry + uptime alerts live; production launch checklist signed off. |
+| **M7: Owner Analytics, Hardening & Launch Readiness** | `analytics` (Recharts), Customer CRM admin controls, Staff RBAC, Audit Log viewer, E2E & Load QA | M1–M6 | Verify all prod indexes (`explain()`), backup schedule | `/admin/analytics/*`, `/admin/customers*`, `/admin/staff*`, `/admin/audit-logs` | Owner Dashboard KPIs, Recharts Revenue/Order/Bestseller charts, Customer Management, Staff Permissions, Audit Log Explorer | **Tests:** Full Playwright E2E suite, OWASP security check, Supabase Production backup/restore drill.<br>**DoD:** Zero critical/high defects; Sentry + uptime alerts live; production launch checklist signed off. |
 
 ---
 

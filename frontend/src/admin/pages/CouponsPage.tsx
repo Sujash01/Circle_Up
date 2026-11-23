@@ -185,11 +185,10 @@ export default function CouponsPage() {
                   <td className="py-3 px-4">
                     <button
                       onClick={() => handleToggleActive(coupon)}
-                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[0.68rem] font-bold transition-colors ${
-                        coupon.isActive
-                          ? 'bg-green-100 text-green-800 hover:bg-green-200'
-                          : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-                      }`}
+                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[0.68rem] font-bold transition-colors ${coupon.isActive
+                        ? 'bg-green-100 text-green-800 hover:bg-green-200'
+                        : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+                        }`}
                     >
                       {coupon.isActive ? (
                         <>
@@ -270,7 +269,7 @@ export default function CouponsPage() {
                     onChange={(e) =>
                       setEditingCoupon({
                         ...editingCoupon,
-                        discountType: e.target.value as 'PERCENTAGE' | 'FLAT',
+                        discountType: e.target.value as Coupon['discountType'],
                       })
                     }
                     className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-cocoa focus:border-primary focus:outline-none"

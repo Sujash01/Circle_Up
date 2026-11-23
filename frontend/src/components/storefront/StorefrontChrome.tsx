@@ -5,16 +5,16 @@ import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { store } from '@/app/store';
 import { authService } from '@/services/authService';
 import { storefrontApi } from '@/services/storefrontApi';
-import bag1 from '@/assets/bag-1.jpg';
+import bag1 from '@/assets/bag-1.webp';
 import circleUpLogo from '@/assets/circle-up-logo.png';
 import crumpledPaper from '@/assets/crumpled-paper.webp';
-import rtw1 from '@/assets/rtw-1.jpg';
+import rtw1 from '@/assets/rtw-1.webp';
 import { useStore } from '@/context/StoreContext';
 import { SpiralBinding } from '@/components/ui/SpiralBinding';
 import { WaveDivider } from '@/components/ui/WaveDivider';
 import { cn } from '@/lib/utils';
 import { subscribeToScrollFrames } from '@/lib/scrollScheduler';
-import { formatPrice } from '@/services/cartService';
+import { formatPrice } from '@circleup/shared';
 import { productService } from '@/services/productService';
 import { useHeaderPromo } from '@/services/storefrontSettingsService';
 
@@ -862,10 +862,13 @@ export function StorefrontFooter() {
             title="Company"
             links={[
               { label: 'About Us', to: '/about' },
-              { label: 'Saved Wishlist', to: '/wishlist' },
-              { label: 'Shopping Bag', to: '/cart' },
               { label: 'Contact', to: '/contact' },
+              { label: 'Saved Wishlist', to: '/wishlist' },
               { label: 'Customer Portal', to: '/account' },
+              { label: 'Privacy Policy', to: '/privacy-policy' },
+              { label: 'Terms & Conditions', to: '/terms' },
+              { label: 'Returns & Refunds', to: '/returns-refunds' },
+              { label: 'Shipping Policy', to: '/shipping-policy' },
               { label: 'Admin Workspace', to: '/admin' },
             ]}
           />
@@ -877,7 +880,18 @@ export function StorefrontFooter() {
               pad,
             )}
           >
-            <p>© {new Date().getFullYear()} CircleUp. Fashion that lasts.</p>
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              <p>© {new Date().getFullYear()} CircleUp. Fashion that lasts.</p>
+              <div className="hidden sm:flex items-center gap-3 text-[0.75rem] text-footer-foreground/50">
+                <Link to="/privacy-policy" className="hover:text-footer-foreground transition-colors">Privacy</Link>
+                <span>•</span>
+                <Link to="/terms" className="hover:text-footer-foreground transition-colors">Terms</Link>
+                <span>•</span>
+                <Link to="/returns-refunds" className="hover:text-footer-foreground transition-colors">Returns</Link>
+                <span>•</span>
+                <Link to="/shipping-policy" className="hover:text-footer-foreground transition-colors">Shipping</Link>
+              </div>
+            </div>
             <button
               type="button"
               onClick={() =>

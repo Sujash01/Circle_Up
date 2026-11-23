@@ -1,12 +1,15 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { formatPrice } from '@/services/cartService';
+import { formatPrice } from '@circleup/shared';
 import { productService, useCatalogVersion } from '@/services/productService';
 
 export function HandcraftedPage() {
   const catalogVersion = useCatalogVersion();
   const handcraftedProducts = useMemo(
-    () => productService.queryProducts({ category: 'handcrafted' }),
+    () => {
+      void catalogVersion;
+      return productService.queryProducts({ category: 'handcrafted' });
+    },
     [catalogVersion],
   );
 

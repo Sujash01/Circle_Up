@@ -1,4 +1,5 @@
 import { RENTAL_PRODUCTS } from '@/data/rentalProducts';
+import { storefrontApi } from './storefrontApi';
 import type { RentalProduct, SimulatedRentalRequest } from '@/types/storefront';
 import { readStorage, writeStorage } from './storage';
 
@@ -206,7 +207,31 @@ export const rentalService = {
 
     const existing = this.loadSubmittedRequests();
     writeStorage(RENTAL_REQUESTS_KEY, [record, ...existing]);
-    return { request: record };
+    const syncRes = { request: record };
+
+    const p = (async () => {
+      try {
+        const persisted = await storefrontApi.submitRentalRequest({
+          rentalProductId: params.product.id,
+          rentalProductName: params.product.name,
+          size: params.size,
+          startDate: params.startDate,
+          endDate: params.endDate,
+          durationDays: quote.durationDays,
+          estimatedRentalFee: quote.estimatedRentalFee,
+          securityDeposit: quote.securityDeposit,
+          estimatedTotal: quote.estimatedTotal,
+          customerName: params.customerName,
+          customerPhone: params.customerPhone,
+          notes: params.notes,
+        });
+        return { request: persisted };
+      } catch {
+        return syncRes;
+      }
+    })();
+
+    return Object.assign(p, syncRes);
   },
 };
 

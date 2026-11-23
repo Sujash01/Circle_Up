@@ -57,3 +57,24 @@ export function formatPrice(amountInPaise: number): string {
   return `₹${formattedRupees}.${paddedPaise}`;
 }
 
+/**
+ * Safely converts an amount in Rupees (e.g. 550 or "350") to non-negative integer paise (e.g. 55000 or 35000).
+ *
+ * @param amountInRupees Amount in Rupees (number or string)
+ * @returns Non-negative integer in paise
+ */
+export function convertRupeesToPaise(amountInRupees: number | string): number {
+  const parsed =
+    typeof amountInRupees === 'string'
+      ? parseFloat(amountInRupees.trim().replace(/[^0-9.-]/g, ''))
+      : amountInRupees;
+
+  if (typeof parsed !== 'number' || !Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`Invalid monetary amount in rupees: ${amountInRupees}`);
+  }
+
+  const paise = Math.round(parsed * 100);
+  return moneyPaiseSchema.parse(paise);
+}
+
+

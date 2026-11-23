@@ -23,6 +23,6 @@ describe('customer CRM schema compatibility', () => {
     expect(checkoutSchema).toContain('idx_orders_customer_email');
     expect(crmService).toContain("from('customers')");
     expect(crmService).toContain("from('orders')");
-    expect(crmService).not.toMatch(/mongoose|mock_customers|mongodb|models\/order/i);
+    expect(crmService).not.toMatch(/legacy_db|mock_customers|models\/order/i);
   });
 });

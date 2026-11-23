@@ -107,7 +107,7 @@ export function mapSupabaseRowToProductItem(row: Record<string, unknown>): IProd
     sizes,
     variants:
       Array.isArray(row.variants) && row.variants.length > 0
-        ? (row.variants as any)
+        ? (row.variants as ProductType['variants'])
         : (sizes.length > 0 ? sizes : ['One Size']).map((sz, idx) => ({
             id: `${rawSerial || 'var'}-${idx}-${sz.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
             label: sz,
@@ -117,9 +117,9 @@ export function mapSupabaseRowToProductItem(row: Record<string, unknown>): IProd
     category: String(row.category || ''),
     categoryLabel: (row.category_label as string) || undefined,
     subcategory: (row.subcategory as string) || undefined,
-    productType: (row.product_type as any) || 'Pre-Loved',
-    condition: (row.condition as any) || 'Gently Used',
-    gender: (row.gender as any) || 'Unisex',
+    productType: (row.product_type as ProductType['productType']) || 'Pre-Loved',
+    condition: (row.condition as ProductType['condition']) || 'Gently Used',
+    gender: (row.gender as ProductType['gender']) || 'Unisex',
     measurements: (row.measurements as string) || (row.measurements_data as Record<string, string>) || undefined,
     makerNote: (row.maker_note as string) || undefined,
     tags,
@@ -130,7 +130,7 @@ export function mapSupabaseRowToProductItem(row: Record<string, unknown>): IProd
     sku: (row.sku as string) || undefined,
     seoTitle: (row.seo_title as string) || undefined,
     seoDescription: (row.seo_description as string) || undefined,
-    status: (row.status as any) || (stock > 0 ? 'AVAILABLE' : 'SOLD_OUT'),
+    status: (row.status as ProductType['status']) || (stock > 0 ? 'AVAILABLE' : 'SOLD_OUT'),
     createdAt: row.created_at ? new Date(row.created_at as string).toISOString() : undefined,
     updatedAt: row.updated_at ? new Date(row.updated_at as string).toISOString() : undefined,
   };

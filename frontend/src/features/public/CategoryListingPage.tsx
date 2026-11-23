@@ -21,7 +21,10 @@ export function CategoryListingPage({
   const catalogVersion = useCatalogVersion();
   const meta = productService.getCategoryMeta(categorySlug);
   const allInCategory = useMemo(
-    () => productService.queryProducts({ category: categorySlug }),
+    () => {
+      void catalogVersion;
+      return productService.queryProducts({ category: categorySlug });
+    },
     [categorySlug, catalogVersion],
   );
 
@@ -45,13 +48,15 @@ export function CategoryListingPage({
   }, [allInCategory]);
 
   const filteredProducts = useMemo(
-    () =>
-      productService.queryProducts({
+    () => {
+      void catalogVersion;
+      return productService.queryProducts({
         category: categorySlug,
         size,
         inStockOnly,
         sort,
-      }),
+      });
+    },
     [categorySlug, size, inStockOnly, sort, catalogVersion],
   );
 

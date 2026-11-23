@@ -19,6 +19,11 @@ import { couponRouter } from './routes/coupon.routes.js';
 import { categoryRouter } from './routes/category.routes.js';
 import { rentalRouter } from './routes/rental.routes.js';
 import { eventRouter } from './routes/event.routes.js';
+import { reviewRouter } from './routes/review.routes.js';
+import { communityRouter } from './routes/community.routes.js';
+import { cronRouter } from './routes/cron.routes.js';
+import { marketingRouter } from './routes/marketing.routes.js';
+import { shippingTaxRouter } from './routes/shippingTax.routes.js';
 import { adminRouter } from './routes/admin/admin.routes.js';
 
 /**
@@ -53,9 +58,14 @@ export function createApp(): Express {
     { path: '/', router: categoryRouter }, // /categories and /collections
     { path: '/rentals', router: rentalRouter },
     { path: '/events', router: eventRouter },
+    { path: '/reviews', router: reviewRouter },
+    { path: '/community', router: communityRouter },
+    { path: '/cron', router: cronRouter },
     { path: '/products', router: productRouter },
     { path: '/orders', router: orderRouter },
     { path: '/contact', router: contactRouter },
+    { path: '/marketing', router: marketingRouter },
+    { path: '/shipping-tax', router: shippingTaxRouter },
     { path: '/health', router: healthRouter },
   ];
 
