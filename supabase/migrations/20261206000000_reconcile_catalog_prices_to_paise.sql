@@ -65,16 +65,18 @@ end $$;
 
 -- 4. Audit Log entry for price reconciliation
 insert into public.activity_audit_logs (
-  actor,
+  actor_id,
+  actor_role,
+  table_name,
+  record_id,
   action,
-  entity,
-  entity_id,
-  metadata
+  after_state
 ) values (
   'system:migration:20261206000000',
-  'PRICE_RECONCILIATION_RUPEES_TO_PAISE',
+  'system',
   'products',
   'all',
+  'PRICE_RECONCILIATION_RUPEES_TO_PAISE',
   jsonb_build_object(
     'target', 'products_and_rental_catalog_items',
     'rule', 'convert_unmultiplied_rupees_to_integer_paise',
