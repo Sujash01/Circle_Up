@@ -16,6 +16,22 @@ create index if not exists idx_orders_razorpay_order_id on public.orders(razorpa
 create index if not exists idx_orders_razorpay_payment_id on public.orders(razorpay_payment_id)
   where razorpay_payment_id is not null;
 
+-- Ensure checkout_idempotency_keys table exists
+create table if not exists public.checkout_idempotency_keys (
+  key_hash text primary key,
+  fingerprint text not null,
+  status text not null default 'PENDING',
+  customer_id uuid,
+  order_id uuid,
+  response_payload jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  expires_at timestamptz not null default (now() + interval '24 hours')
+);
+create index if not exists idx_checkout_idempotency_keys_expires_at on public.checkout_idempotency_keys(expires_at);
+alter table public.checkout_idempotency_keys enable row level security;
+grant all on public.checkout_idempotency_keys to postgres, service_role;
+
 -- 2. Update process_storefront_checkout to disallow CASH_ON_DELIVERY and support RAZORPAY
 create or replace function public.process_storefront_checkout(
   p_key_hash text,

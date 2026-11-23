@@ -32,31 +32,36 @@ where (serial_number in ('160', 'CU-160') or slug like '%latex-bodysuit%')
   and price < 70000;
 
 -- 3. Multiply raw rupee prices in public.rental_catalog_items if present
-update public.rental_catalog_items
-set
-  rental_price_3_days_paise = case 
-    when rental_price_3_days_paise > 0 and rental_price_3_days_paise < 5000 
-    then rental_price_3_days_paise * 100 
-    else rental_price_3_days_paise 
-  end,
-  rental_price_7_days_paise = case 
-    when rental_price_7_days_paise > 0 and rental_price_7_days_paise < 5000 
-    then rental_price_7_days_paise * 100 
-    else rental_price_7_days_paise 
-  end,
-  rental_price_14_days_paise = case 
-    when rental_price_14_days_paise > 0 and rental_price_14_days_paise < 5000 
-    then rental_price_14_days_paise * 100 
-    else rental_price_14_days_paise 
-  end,
-  security_deposit_paise = case 
-    when security_deposit_paise > 0 and security_deposit_paise < 5000 
-    then security_deposit_paise * 100 
-    else security_deposit_paise 
-  end
-where rental_price_3_days_paise < 5000 
-   or rental_price_7_days_paise < 5000 
-   or security_deposit_paise < 5000;
+do $$
+begin
+  if to_regclass('public.rental_catalog_items') is not null then
+    update public.rental_catalog_items
+    set
+      rental_price_3_days_paise = case 
+        when rental_price_3_days_paise > 0 and rental_price_3_days_paise < 5000 
+        then rental_price_3_days_paise * 100 
+        else rental_price_3_days_paise 
+      end,
+      rental_price_7_days_paise = case 
+        when rental_price_7_days_paise > 0 and rental_price_7_days_paise < 5000 
+        then rental_price_7_days_paise * 100 
+        else rental_price_7_days_paise 
+      end,
+      rental_price_14_days_paise = case 
+        when rental_price_14_days_paise > 0 and rental_price_14_days_paise < 5000 
+        then rental_price_14_days_paise * 100 
+        else rental_price_14_days_paise 
+      end,
+      security_deposit_paise = case 
+        when security_deposit_paise > 0 and security_deposit_paise < 5000 
+        then security_deposit_paise * 100 
+        else security_deposit_paise 
+      end
+    where rental_price_3_days_paise < 5000 
+       or rental_price_7_days_paise < 5000 
+       or security_deposit_paise < 5000;
+  end if;
+end $$;
 
 -- 4. Audit Log entry for price reconciliation
 insert into public.activity_audit_logs (
