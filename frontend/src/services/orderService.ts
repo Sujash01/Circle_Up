@@ -26,8 +26,8 @@ export function getCheckoutPaymentLabel(paymentMethod: string, paymentStatus: 'P
     ? 'Cash on delivery'
     : paymentMethod === 'WHATSAPP_UPI'
       ? 'WhatsApp / UPI'
-      : paymentMethod === 'ONLINE_UPI'
-        ? 'Online payment'
+      : paymentMethod === 'RAZORPAY' || paymentMethod === 'ONLINE_UPI'
+        ? 'Razorpay online payment'
         : 'Payment';
   return paymentStatus === 'PAID'
     ? `${methodLabel} · Payment received and verified`
@@ -39,11 +39,17 @@ export function getCheckoutPaymentLabel(paymentMethod: string, paymentStatus: 'P
 }
 
 export function getCheckoutErrorMessage(error: unknown): string {
+  if (error instanceof ApiClientError && error.code === 'PAYMENT_METHOD_DISALLOWED') {
+    return 'Cash on Delivery is no longer available. Please complete checkout securely with Razorpay.';
+  }
   if (error instanceof ApiClientError && error.code === 'PAYMENT_PROVIDER_UNAVAILABLE') {
-    return 'Razorpay online payment is temporarily unavailable. No payment was taken. Select Cash on Delivery or WhatsApp / UPI if that option is available.';
+    return 'Razorpay online payment is temporarily unavailable. No payment was taken. Please try again in a few moments.';
   }
   if (error instanceof ApiClientError && error.code === 'PAYMENT_METHOD_UNAVAILABLE') {
-    return 'WhatsApp / UPI payment is unavailable because the store payment contact is not configured. Select Cash on Delivery or try again later.';
+    return 'The selected payment method is unavailable. Please try again with Razorpay.';
+  }
+  if (error instanceof ApiClientError && error.code === 'PAYMENT_SIGNATURE_INVALID') {
+    return 'Payment verification failed. If your account was debited, please contact customer support with your payment reference.';
   }
   return error instanceof Error ? error.message : 'Failed to place order. Please check item availability.';
 }
@@ -80,6 +86,12 @@ export interface OrderRecord {
   paymentMethod: string;
   paymentStatus: 'PENDING' | 'PAID';
   guestAccessToken?: string;
+  razorpay?: {
+    orderId?: string;
+    keyId?: string;
+    amount?: number;
+    currency?: string;
+  };
   createdAt: string;
 }
 
@@ -143,6 +155,12 @@ interface BackendOrderResponse {
   paymentStatus?: 'PENDING' | 'PAID';
   trackingNumber?: string;
   courier?: string;
+  razorpay?: {
+    orderId?: string;
+    keyId?: string;
+    amount?: number;
+    currency?: string;
+  };
   items?: Array<{ serialNumber?: string; name?: string; price?: number; quantity?: number; size?: string; image?: string }>;
 }
 
@@ -236,6 +254,7 @@ export const orderService = {
       paymentMethod: serverOrder.paymentMethod || input.paymentMethod,
       paymentStatus: serverOrder.paymentStatus === 'PAID' ? 'PAID' : 'PENDING',
       guestAccessToken,
+      razorpay: serverOrder.razorpay,
       createdAt: serverOrder.createdAt || now.toISOString(),
     };
 
@@ -245,6 +264,113 @@ export const orderService = {
     }
 
     return orderRecord;
+  },
+
+  /**
+   * Confirms payment signature with backend and updates order to PAID & CONFIRMED.
+   */
+  async verifyRazorpayPayment(input: {
+    orderNumber: string;
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+    guestAccessToken?: string;
+  }): Promise<OrderRecord> {
+    const headers: Record<string, string> = {};
+    if (input.guestAccessToken) {
+      headers['x-guest-order-token'] = input.guestAccessToken;
+    }
+
+    const res = await apiClient.post<{
+      data: {
+        order: BackendOrderResponse & Record<string, unknown>;
+        items: Array<Record<string, unknown>>;
+        paymentStatus: 'PAID';
+        status: OrderStatus;
+      };
+    }>(
+      '/payments/razorpay/verify',
+      {
+        orderNumber: input.orderNumber,
+        razorpay_order_id: input.razorpay_order_id,
+        razorpay_payment_id: input.razorpay_payment_id,
+        razorpay_signature: input.razorpay_signature,
+      },
+      { headers },
+    );
+
+    const data = res.data?.data;
+    const rawOrder = data?.order || {};
+    const now = new Date();
+    const customer = (rawOrder.customer || {}) as { name?: string; email?: string; phone?: string };
+
+    const record: OrderRecord = {
+      id: String(rawOrder.orderNumber || rawOrder.order_number || input.orderNumber),
+      orderNumber: String(rawOrder.orderNumber || rawOrder.order_number || input.orderNumber),
+      date: formatDate(rawOrder.createdAt ? new Date(rawOrder.createdAt) : now),
+      estimatedDelivery: '',
+      courier: '',
+      trackingNumber: '',
+      status: (rawOrder.status as OrderStatus) || 'CONFIRMED',
+      step: getOrderTrackingStep(rawOrder.status || 'CONFIRMED'),
+      shippingAddress: typeof rawOrder.shippingAddress === 'string'
+        ? rawOrder.shippingAddress
+        : typeof rawOrder.shipping_address === 'object' && rawOrder.shipping_address
+          ? `${(rawOrder.shipping_address as Record<string, unknown>).addressLine || ''}, ${(rawOrder.shipping_address as Record<string, unknown>).city || ''}`
+          : '',
+      totalAmount: Number(rawOrder.totalAmount || rawOrder.total_amount || 0),
+      subtotal: Number(rawOrder.subtotal || 0),
+      discount: Number(rawOrder.discount || rawOrder.discount_amount || 0),
+      shippingFee: Number(rawOrder.deliveryFee || rawOrder.shipping_amount || 0),
+      items: (data?.items || []).map((it) => ({
+        name: String(it.name || 'Curated Find'),
+        size: String(it.size || 'One Size'),
+        color: 'Curated Wash',
+        image: String(it.image || it.image_url || ''),
+        price: Number(it.price || 0),
+        qty: Number(it.quantity || 1),
+        serialNumber: String(it.serialNumber || it.serial_number || ''),
+      })),
+      customerId: rawOrder.customerId ? String(rawOrder.customerId) : undefined,
+      customerEmail: String(customer.email || rawOrder.customer_email || ''),
+      customerName: String(customer.name || rawOrder.customer_name || 'Customer'),
+      customerPhone: String(customer.phone || rawOrder.customer_phone || ''),
+      paymentMethod: 'RAZORPAY',
+      paymentStatus: 'PAID',
+      guestAccessToken: input.guestAccessToken,
+      createdAt: String(rawOrder.createdAt || rawOrder.created_at || now.toISOString()),
+    };
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('circleup_orders_updated', { detail: record }));
+    }
+
+    return record;
+  },
+
+  /**
+   * Releases stock reservation on backend when customer closes checkout modal.
+   */
+  async cancelPendingReservation(input: {
+    orderNumber: string;
+    reason?: string;
+    guestAccessToken?: string;
+  }): Promise<boolean> {
+    const headers: Record<string, string> = {};
+    if (input.guestAccessToken) {
+      headers['x-guest-order-token'] = input.guestAccessToken;
+    }
+
+    const res = await apiClient.post<{ data: { cancelled: boolean } }>(
+      '/payments/razorpay/cancel',
+      {
+        orderNumber: input.orderNumber,
+        reason: input.reason || 'Checkout modal dismissed',
+      },
+      { headers },
+    );
+
+    return Boolean(res.data?.data?.cancelled);
   },
 
   /**

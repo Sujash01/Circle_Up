@@ -769,7 +769,7 @@ describe('Milestone 1, Step 2: Atomic Checkout RPC Unit & Verification Test Suit
         customer: { name: 'Aarav Patel', email: 'aarav@example.com', phone: '+919876543210' },
         shippingAddress: { addressLine: '10 Marine Drive', city: 'Mumbai', state: 'MH', postalCode: '400020' },
         items: [{ serialNumber: 'CU-001', quantity: 1, size: 'M' }],
-        paymentMethod: 'CASH_ON_DELIVERY' as const,
+        paymentMethod: 'RAZORPAY' as const,
         idempotencyKey: 'test-idem-key-fallback-1',
       };
 
@@ -800,7 +800,7 @@ describe('Milestone 1, Step 2: Atomic Checkout RPC Unit & Verification Test Suit
         customer: { name: 'Aarav Patel', email: 'aarav@example.com', phone: '+919876543210' },
         shippingAddress: { addressLine: '10 Marine Drive', city: 'Mumbai', state: 'MH', postalCode: '400020' },
         items: [{ serialNumber: 'CU-001', quantity: 1, size: 'M' }],
-        paymentMethod: 'CASH_ON_DELIVERY' as const,
+        paymentMethod: 'RAZORPAY' as const,
         idempotencyKey: 'test-idem-key-fallback-2',
       };
 
@@ -867,7 +867,7 @@ describe('Milestone 1, Step 2: Atomic Checkout RPC Unit & Verification Test Suit
         customer: { name: 'Aarav Patel', email: 'aarav@example.com', phone: '+919876543210' },
         shippingAddress: { addressLine: '10 Marine Drive', city: 'Mumbai', state: 'MH', postalCode: '400020' },
         items: [{ serialNumber: 'CU-001', quantity: 1, size: 'M' }],
-        paymentMethod: 'CASH_ON_DELIVERY' as const,
+        paymentMethod: 'RAZORPAY' as const,
         idempotencyKey: 'test-idem-key-fallback-3',
       };
 

@@ -26,6 +26,8 @@ describe('orderService checkout confirmation', () => {
     expect(getCheckoutPaymentLabel('CASH_ON_DELIVERY', 'PENDING')).toContain('Payment due on delivery');
     expect(getCheckoutPaymentLabel('WHATSAPP_UPI', 'PENDING')).toContain('pending verification');
     expect(getCheckoutPaymentLabel('WHATSAPP_UPI', 'PAID')).toContain('received and verified');
+    expect(getCheckoutPaymentLabel('RAZORPAY', 'PENDING')).toContain('Payment pending');
+    expect(getCheckoutPaymentLabel('RAZORPAY', 'PAID')).toContain('received and verified');
   });
 
   it('explains unavailable online payment without implying payment succeeded', () => {
@@ -34,10 +36,63 @@ describe('orderService checkout confirmation', () => {
     expect(getCheckoutErrorMessage(error)).toMatch(/No payment was taken/i);
   });
 
-  it('explains unavailable WhatsApp / UPI configuration clearly', () => {
-    const error = new ApiClientError('Unavailable', 503, 'PAYMENT_METHOD_UNAVAILABLE');
-    expect(getCheckoutErrorMessage(error)).toMatch(/store payment contact is not configured/i);
-    expect(getCheckoutErrorMessage(error)).toMatch(/Cash on Delivery/i);
+  it('explains that Cash on Delivery is disallowed and requires Razorpay', () => {
+    const error = new ApiClientError('Disallowed', 400, 'PAYMENT_METHOD_DISALLOWED');
+    expect(getCheckoutErrorMessage(error)).toMatch(/Cash on Delivery is no longer available/i);
+    expect(getCheckoutErrorMessage(error)).toMatch(/Razorpay/i);
+  });
+
+  it('verifies Razorpay payment signature via the backend endpoint', async () => {
+    vi.spyOn(apiClient, 'post').mockResolvedValue({
+      data: {
+        data: {
+          order: {
+            orderNumber: 'ORD-261123-VERIFY',
+            subtotal: 255000,
+            totalAmount: 255000,
+            status: 'CONFIRMED',
+            paymentStatus: 'PAID',
+            paymentMethod: 'RAZORPAY',
+            customer: { name: 'Verified Customer', email: 'verified@example.com' },
+          },
+          items: [],
+          paymentStatus: 'PAID',
+          status: 'CONFIRMED',
+        },
+      },
+    } as never);
+
+    const verified = await orderService.verifyRazorpayPayment({
+      orderNumber: 'ORD-261123-VERIFY',
+      razorpay_order_id: 'order_test_123',
+      razorpay_payment_id: 'pay_test_456',
+      razorpay_signature: 'test_signature',
+    });
+
+    expect(verified.orderNumber).toBe('ORD-261123-VERIFY');
+    expect(verified.paymentStatus).toBe('PAID');
+    expect(verified.status).toBe('CONFIRMED');
+    expect(verified.paymentMethod).toBe('RAZORPAY');
+  });
+
+  it('releases pending reservation via the cancel endpoint on dismissal', async () => {
+    const postSpy = vi.spyOn(apiClient, 'post').mockResolvedValue({
+      data: {
+        data: { cancelled: true },
+      },
+    } as never);
+
+    const cancelled = await orderService.cancelPendingReservation({
+      orderNumber: 'ORD-261123-CANCEL',
+      reason: 'Checkout modal dismissed',
+    });
+
+    expect(cancelled).toBe(true);
+    expect(postSpy).toHaveBeenCalledWith(
+      '/payments/razorpay/cancel',
+      expect.objectContaining({ orderNumber: 'ORD-261123-CANCEL' }),
+      expect.anything(),
+    );
   });
 
   it('does not create a local order or tracking details when the backend rejects checkout', async () => {

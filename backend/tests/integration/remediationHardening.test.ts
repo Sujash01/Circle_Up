@@ -79,6 +79,8 @@ describe('Remediation Hardening Test Suite', () => {
         JWT_ACCESS_SECRET: 'super-secure-production-jwt-access-secret-64-characters-long-example',
         JWT_ADMIN_ACCESS_SECRET: 'super-secure-production-jwt-admin-secret-64-characters-long-example',
         GUEST_ORDER_TOKEN_SECRET: 'super-secure-production-guest-token-secret-64-characters-long-example',
+        RAZORPAY_KEY_ID: 'rzp_live_super_secure_key_id_123',
+        RAZORPAY_KEY_SECRET: 'super_secure_razorpay_secret_key_123',
       });
       expect(res.success).toBe(true);
     });
@@ -131,6 +133,8 @@ describe('Remediation Hardening Test Suite', () => {
           JWT_ACCESS_SECRET: validStrongSecret2,
           JWT_ADMIN_ACCESS_SECRET: validStrongSecret3,
           GUEST_ORDER_TOKEN_SECRET: validStrongSecret4,
+          RAZORPAY_KEY_ID: 'rzp_live_super_secure_key_id_123',
+          RAZORPAY_KEY_SECRET: 'super_secure_razorpay_secret_key_123',
         });
         expect(res.success).toBe(true);
       }

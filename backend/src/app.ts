@@ -24,6 +24,7 @@ import { communityRouter } from './routes/community.routes.js';
 import { cronRouter } from './routes/cron.routes.js';
 import { marketingRouter } from './routes/marketing.routes.js';
 import { shippingTaxRouter } from './routes/shippingTax.routes.js';
+import { paymentRouter } from './routes/payment.routes.js';
 import { adminRouter } from './routes/admin/admin.routes.js';
 
 /**
@@ -44,7 +45,12 @@ export function createApp(): Express {
   app.use(helmet());
   app.use(compression());
   app.use(cors(corsOptions));
-  app.use(express.json({ limit: '100kb' }));
+  app.use(express.json({
+    limit: '100kb',
+    verify: (req, _res, buf) => {
+      (req as { rawBody?: Buffer }).rawBody = buf;
+    },
+  }));
   app.use(express.urlencoded({ extended: false, limit: '100kb' }));
   app.use(cookieParser());
   app.use(sanitizeRequest);
@@ -63,6 +69,7 @@ export function createApp(): Express {
     { path: '/cron', router: cronRouter },
     { path: '/products', router: productRouter },
     { path: '/orders', router: orderRouter },
+    { path: '/payments/razorpay', router: paymentRouter },
     { path: '/contact', router: contactRouter },
     { path: '/marketing', router: marketingRouter },
     { path: '/shipping-tax', router: shippingTaxRouter },

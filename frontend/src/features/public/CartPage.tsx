@@ -9,7 +9,6 @@ import { useStore } from '@/context/StoreContext';
 import { cn } from '@/lib/utils';
 import { cartService } from '@/services/cartService';
 import { getCheckoutErrorMessage, getCheckoutPaymentLabel, orderService } from '@/services/orderService';
-import { storefrontApi } from '@/services/storefrontApi';
 
 import { formatPrice, type PaymentMethod } from '@circleup/shared';
 
@@ -76,7 +75,6 @@ export function CartPage() {
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
   const [orderError, setOrderError] = useState('');
   const [placedOrder, setPlacedOrder] = useState<PlacedOrderDetails | null>(null);
-  const [whatsappPaymentNumber, setWhatsappPaymentNumber] = useState('');
   const [marketingConsent, setMarketingConsent] = useState(false);
 
   // Checkout Form State
@@ -88,7 +86,7 @@ export function CartPage() {
     city: '',
     state: '',
     postalCode: '',
-    paymentMethod: 'CASH_ON_DELIVERY' as PaymentMethod,
+    paymentMethod: 'RAZORPAY' as PaymentMethod,
   });
 
   const authUser = useSelector((state: RootState) => state.auth.user);
@@ -114,26 +112,6 @@ export function CartPage() {
       }
     };
   }, []);
-
-  useEffect(() => {
-    if (!isCheckoutModalOpen || checkoutStep !== 2) return;
-    let active = true;
-    storefrontApi.getHomepage()
-      .then((data) => {
-        if (!active) return;
-        const configuredNumber = data.siteSettings?.whatsappNumber || '';
-        setWhatsappPaymentNumber(configuredNumber);
-        if (!configuredNumber) {
-          setFormData((previous) => previous.paymentMethod === 'WHATSAPP_UPI'
-            ? { ...previous, paymentMethod: 'CASH_ON_DELIVERY' }
-            : previous);
-        }
-      })
-      .catch(() => {
-        if (active) setWhatsappPaymentNumber('');
-      });
-    return () => { active = false; };
-  }, [isCheckoutModalOpen, checkoutStep]);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window.location.hash === '#checkout-step2') {
@@ -193,6 +171,9 @@ export function CartPage() {
                 {getCheckoutPaymentLabel(placedOrder.paymentMethod, placedOrder.paymentStatus)}
               </strong>
             </p>
+            {placedOrder.paymentStatus === 'PAID' && (
+              <p className="text-xs text-primary font-medium">Payment received and verified via Razorpay.</p>
+            )}
             {placedOrder.paymentMethod === 'CASH_ON_DELIVERY' && placedOrder.paymentStatus === 'PENDING' && (
               <p className="text-xs text-muted-foreground">Payment is due when your order is delivered.</p>
             )}
@@ -323,43 +304,175 @@ export function CartPage() {
         shippingFee: deliveryFee,
         totalAmount: checkoutTotal,
         promoCode: cart.promoCode,
-        paymentMethod: formData.paymentMethod,
+        paymentMethod: 'RAZORPAY',
         notes: customerNote,
         customerId: authUser?.id,
         marketingConsent,
       });
 
-      setPlacedOrder({
-        orderNumber: placed.orderNumber,
-        customer: {
-          name: placed.customerName,
-          email: placed.customerEmail,
-          phone: placed.customerPhone || '',
-        },
-        shippingAddress: {
-          addressLine: formData.addressLine,
-          city: formData.city,
-          state: formData.state,
-          postalCode: formData.postalCode,
-        },
-        items: placed.items.map((it) => ({
-          serialNumber: it.serialNumber || it.name,
-          name: it.name,
-          price: it.price,
-          quantity: it.qty,
-          size: it.size,
-        })),
-        subtotal: placed.subtotal,
-        discount: placed.discount,
-        deliveryFee: placed.shippingFee,
-        totalAmount: placed.totalAmount,
-        paymentMethod: placed.paymentMethod,
-        paymentStatus: placed.paymentStatus,
-        createdAt: placed.createdAt,
-      });
+      const finalizeDirectOrder = () => {
+        setPlacedOrder({
+          orderNumber: placed.orderNumber,
+          customer: {
+            name: placed.customerName,
+            email: placed.customerEmail,
+            phone: placed.customerPhone || '',
+          },
+          shippingAddress: {
+            addressLine: formData.addressLine,
+            city: formData.city,
+            state: formData.state,
+            postalCode: formData.postalCode,
+          },
+          items: placed.items.map((it) => ({
+            serialNumber: it.serialNumber || it.name,
+            name: it.name,
+            price: it.price,
+            quantity: it.qty,
+            size: it.size,
+          })),
+          subtotal: placed.subtotal,
+          discount: placed.discount,
+          deliveryFee: placed.shippingFee,
+          totalAmount: placed.totalAmount,
+          paymentMethod: placed.paymentMethod,
+          paymentStatus: placed.paymentStatus,
+          createdAt: placed.createdAt,
+        });
 
-      clearCart();
-      setIsCheckoutModalOpen(false);
+        clearCart();
+        setIsCheckoutModalOpen(false);
+      };
+
+      const razorpayOrderId = placed.razorpay?.orderId;
+      const razorpayKeyId = placed.razorpay?.keyId || (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_RAZORPAY_KEY_ID;
+
+      const openRazorpayModal = (RazorpayCtor: { new (options: unknown): { open(): void; on(event: string, handler: (res: unknown) => void): void } }) => {
+        const options = {
+          key: razorpayKeyId || 'rzp_test_placeholder',
+          amount: placed.razorpay?.amount || placed.totalAmount,
+          currency: placed.razorpay?.currency || 'INR',
+          name: 'CircleUp',
+          description: `Order ${placed.orderNumber}`,
+          order_id: razorpayOrderId,
+          prefill: {
+            name: formData.name,
+            email: formData.email,
+            contact: formData.phone,
+          },
+          theme: {
+            color: '#2C3E2D',
+          },
+          handler: async function (response: {
+            razorpay_payment_id: string;
+            razorpay_order_id: string;
+            razorpay_signature: string;
+          }) {
+            try {
+              setIsSubmittingOrder(true);
+              const verified = await orderService.verifyRazorpayPayment({
+                orderNumber: placed.orderNumber,
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                guestAccessToken: placed.guestAccessToken,
+              });
+
+              setPlacedOrder({
+                orderNumber: verified.orderNumber,
+                customer: {
+                  name: verified.customerName,
+                  email: verified.customerEmail,
+                  phone: verified.customerPhone || '',
+                },
+                shippingAddress: {
+                  addressLine: formData.addressLine,
+                  city: formData.city,
+                  state: formData.state,
+                  postalCode: formData.postalCode,
+                },
+                items: verified.items.map((it) => ({
+                  serialNumber: it.serialNumber || it.name,
+                  name: it.name,
+                  price: it.price,
+                  quantity: it.qty,
+                  size: it.size,
+                })),
+                subtotal: verified.subtotal,
+                discount: verified.discount,
+                deliveryFee: verified.shippingFee,
+                totalAmount: verified.totalAmount,
+                paymentMethod: 'RAZORPAY',
+                paymentStatus: 'PAID',
+                createdAt: verified.createdAt,
+              });
+
+              clearCart();
+              setIsCheckoutModalOpen(false);
+            } catch (err: unknown) {
+              setOrderError(getCheckoutErrorMessage(err));
+            } finally {
+              setIsSubmittingOrder(false);
+            }
+          },
+          modal: {
+            ondismiss: async function () {
+              try {
+                await orderService.cancelPendingReservation({
+                  orderNumber: placed.orderNumber,
+                  reason: 'Checkout dismissed by customer',
+                  guestAccessToken: placed.guestAccessToken,
+                });
+              } catch {
+                // Ignore background cancellation errors on dismissal
+              }
+              setOrderError('Payment was not completed. Your shopping bag has been kept safe.');
+              setIsSubmittingOrder(false);
+            },
+          },
+        };
+
+        const rzp = new RazorpayCtor(options);
+        rzp.on('payment.failed', async function (errRes: unknown) {
+          const description = (errRes as { error?: { description?: string } })?.error?.description || 'Payment failed';
+          try {
+            await orderService.cancelPendingReservation({
+              orderNumber: placed.orderNumber,
+              reason: description,
+              guestAccessToken: placed.guestAccessToken,
+            });
+          } catch {
+            // Ignore background cancellation errors on failure
+          }
+          setOrderError(`${description}. Please try again.`);
+          setIsSubmittingOrder(false);
+        });
+        rzp.open();
+      };
+
+      const win = typeof window !== 'undefined' ? (window as unknown as { Razorpay?: { new (options: unknown): { open(): void; on(event: string, handler: (res: unknown) => void): void } } }) : undefined;
+
+      if (win?.Razorpay) {
+        openRazorpayModal(win.Razorpay);
+      } else if (typeof window !== 'undefined' && typeof document !== 'undefined' && razorpayOrderId) {
+        const script = document.createElement('script');
+        script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        script.async = true;
+        script.onload = () => {
+          const loadedWin = window as unknown as { Razorpay?: { new (options: unknown): { open(): void; on(event: string, handler: (res: unknown) => void): void } } };
+          if (loadedWin.Razorpay) {
+            openRazorpayModal(loadedWin.Razorpay);
+          } else {
+            finalizeDirectOrder();
+          }
+        };
+        script.onerror = () => {
+          finalizeDirectOrder();
+        };
+        document.body.appendChild(script);
+      } else {
+        finalizeDirectOrder();
+      }
     } catch (err: unknown) {
       setOrderError(getCheckoutErrorMessage(err));
     } finally {
@@ -804,59 +917,21 @@ export function CartPage() {
                   </button>
                 </div>
 
-                {/* Payment methods use the existing checkout surface and remain honest about availability. */}
-                <fieldset className="space-y-2.5">
-                  <legend className="font-semibold uppercase tracking-wider text-cocoa text-xs">Payment Method</legend>
-                  <label className={cn(
-                    'block rounded border p-3.5 space-y-1.5 cursor-pointer',
-                    formData.paymentMethod === 'CASH_ON_DELIVERY'
-                      ? 'border-primary/40 bg-primary/8 ring-1 ring-primary/40'
-                      : 'border-foreground/15',
-                  )}>
+                {/* Sole Payment Method: Razorpay Online Payment */}
+                <div className="rounded border border-primary/40 bg-primary/8 ring-1 ring-primary/40 p-4 space-y-2">
+                  <div className="flex items-center justify-between">
                     <span className="flex items-center gap-2 text-xs font-bold text-cocoa">
-                      <input
-                        type="radio"
-                        name="paymentMethod"
-                        value="CASH_ON_DELIVERY"
-                        checked={formData.paymentMethod === 'CASH_ON_DELIVERY'}
-                        onChange={() => setFormData((previous) => ({ ...previous, paymentMethod: 'CASH_ON_DELIVERY' }))}
-                      />
-                      Cash on Delivery (COD)
+                      <span className="size-2 rounded-full bg-primary" />
+                      Razorpay Online Payment
                     </span>
-                    <span className="block pl-6 text-[0.72rem] text-muted-foreground">Pay when your order is delivered. Payment remains pending until received.</span>
-                  </label>
-
-                  <label className={cn(
-                    'block rounded border p-3.5 space-y-1.5',
-                    whatsappPaymentNumber ? 'cursor-pointer' : 'cursor-not-allowed opacity-60',
-                    formData.paymentMethod === 'WHATSAPP_UPI'
-                      ? 'border-primary/40 bg-primary/8 ring-1 ring-primary/40'
-                      : 'border-foreground/15',
-                  )}>
-                    <span className="flex items-center gap-2 text-xs font-bold text-cocoa">
-                      <input
-                        type="radio"
-                        name="paymentMethod"
-                        value="WHATSAPP_UPI"
-                        checked={formData.paymentMethod === 'WHATSAPP_UPI'}
-                        disabled={!whatsappPaymentNumber}
-                        onChange={() => setFormData((previous) => ({ ...previous, paymentMethod: 'WHATSAPP_UPI' }))}
-                      />
-                      WhatsApp / UPI
+                    <span className="text-[0.68rem] font-semibold text-primary uppercase tracking-wider bg-primary/10 px-2.5 py-0.5 rounded-full">
+                      Sole Payment Method
                     </span>
-                    {whatsappPaymentNumber
-                      ? <span className="block pl-6 text-[0.72rem] text-muted-foreground">After placing your order, contact CircleUp at +{whatsappPaymentNumber} to arrange UPI payment. Payment stays pending until receipt is verified.</span>
-                      : <span className="block pl-6 text-[0.72rem] text-muted-foreground">Temporarily unavailable because the store payment contact is not configured.</span>}
-                  </label>
-
-                  <div className="rounded border border-foreground/15 p-3.5 space-y-1.5 opacity-60">
-                    <span className="flex items-center gap-2 text-xs font-bold text-cocoa">
-                      <input type="radio" name="paymentMethod" disabled />
-                      Razorpay online payment — temporarily unavailable
-                    </span>
-                    <span className="block pl-6 text-[0.72rem] text-muted-foreground">No payment will be taken. Online checkout will be enabled after server-side payment verification is configured.</span>
                   </div>
-                </fieldset>
+                  <p className="text-[0.72rem] text-muted-foreground leading-relaxed">
+                    Pay securely using UPI (Google Pay, PhonePe, Paytm), Credit / Debit Cards, NetBanking, and leading digital wallets. 100% encrypted and protected by Razorpay.
+                  </p>
+                </div>
 
                 {/* Price Breakdown */}
                 <div className="border-t border-foreground/15 pt-3 space-y-1.5 text-xs text-cocoa">
@@ -905,8 +980,8 @@ export function CartPage() {
                     className="flex-1 bg-primary py-3 text-center text-xs font-semibold uppercase tracking-widest text-primary-foreground hover:bg-forest-deep disabled:opacity-50 cursor-pointer"
                   >
                     {isSubmittingOrder
-                      ? 'Processing Order...'
-                      : `${formData.paymentMethod === 'CASH_ON_DELIVERY' ? 'Place COD Order' : 'Place WhatsApp / UPI Order'} · ${formatPrice(checkoutTotal)}`}
+                      ? 'Launching Secure Payment...'
+                      : `Pay with Razorpay · ${formatPrice(checkoutTotal)}`}
                   </button>
                 </div>
 

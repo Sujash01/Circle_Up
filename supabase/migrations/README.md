@@ -50,6 +50,8 @@ Migrations in this directory are named in alphabetical / timestamp order. Supaba
     **P2 Feature Hardening**: Atomic event registration with row locks, newsletter subscribers table, order refund RPC, and fulfillment tracking RPC.
 23. `20261206000000_reconcile_catalog_prices_to_paise.sql`  
     **Catalog & Rental Price Reconciliation to Integer Paise**: Converts any catalog or rental items stored in raw rupees (e.g. `price < 5000`, such as serial 160 "Latex bodysuit" entered as `700`) by multiplying `* 100` into canonical integer paise (`70000` paise = ₹700).
+24. `20261207000000_enable_razorpay_checkout.sql`  
+    **Razorpay Online Checkout & COD Removal**: Replaces Cash on Delivery with direct Razorpay online checkout, preserves integer paise calculations throughout, and adds atomic verification and reservation release RPCs.
 
 ## 20261115 Dependency Order Verification
 

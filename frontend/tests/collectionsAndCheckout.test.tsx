@@ -229,14 +229,11 @@ describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
       await Promise.resolve();
     });
 
-    expect(host.textContent).toContain('Cash on Delivery (COD)');
-    expect(host.textContent).toContain('WhatsApp / UPI');
-    expect(host.textContent).toContain('store payment contact is not configured');
-    expect(host.textContent).toContain('Razorpay online payment — temporarily unavailable');
-    const whatsappChoice = host.querySelector('input[name="paymentMethod"][value="WHATSAPP_UPI"]') as HTMLInputElement;
-    const codChoice = host.querySelector('input[name="paymentMethod"][value="CASH_ON_DELIVERY"]') as HTMLInputElement;
-    expect(whatsappChoice.disabled).toBe(true);
-    expect(codChoice.checked).toBe(true);
+    expect(host.textContent).toContain('Razorpay Online Payment');
+    expect(host.textContent).toContain('Sole Payment Method');
+    expect(host.textContent).not.toContain('Cash on Delivery (COD)');
+    const codChoice = host.querySelector('input[name="paymentMethod"][value="CASH_ON_DELIVERY"]');
+    expect(codChoice).toBeNull();
 
     act(() => {
       root.unmount();

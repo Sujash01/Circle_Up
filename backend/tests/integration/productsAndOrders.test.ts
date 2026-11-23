@@ -372,12 +372,11 @@ describe('Products & Orders API', () => {
     expect(res.body.data.paymentStatus).toBe('PENDING');
   });
 
-  it('creates COD orders with pending payment status', async () => {
-    const res = await checkoutRequest().set('Idempotency-Key', 'cod-pending-confirmation-001')
+  it('rejects new Cash on Delivery checkout requests with PAYMENT_METHOD_DISALLOWED', async () => {
+    const res = await checkoutRequest().set('Idempotency-Key', 'cod-disallowed-confirmation-001')
       .send(checkoutPayload([{ serialNumber: 'CU-001', quantity: 1 }], undefined, 'CASH_ON_DELIVERY'));
-    expect(res.status).toBe(201);
-    expect(res.body.data.paymentMethod).toBe('CASH_ON_DELIVERY');
-    expect(res.body.data.paymentStatus).toBe('PENDING');
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('PAYMENT_METHOD_DISALLOWED');
   });
 
   it('lists admin orders from Supabase and returns unavailable errors without fallback', async () => {

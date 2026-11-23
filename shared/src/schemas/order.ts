@@ -82,6 +82,7 @@ export const paymentMethodSchema = z.enum([
   'WHATSAPP_UPI',
   'CASH_ON_DELIVERY',
   'ONLINE_UPI',
+  'RAZORPAY',
 ]);
 
 export const paymentStatusSchema = z.enum([
@@ -108,8 +109,12 @@ export const orderSchema = z.object({
   deliveryFee: moneyPaiseSchema.default(0),
   totalAmount: moneyPaiseSchema,
   status: orderStatusSchema.default('PENDING'),
-  paymentMethod: paymentMethodSchema.default('WHATSAPP_UPI'),
+  paymentMethod: paymentMethodSchema.default('RAZORPAY'),
   paymentStatus: paymentStatusSchema.default('PENDING'),
+  paymentId: z.string().optional(),
+  razorpayOrderId: z.string().optional(),
+  razorpayPaymentId: z.string().optional(),
+  razorpaySignature: z.string().optional(),
   utrNumber: z.string().optional(),
   paymentProofUrl: z.string().optional(),
   marketingConsent: z.boolean().optional(),
@@ -134,7 +139,7 @@ export const createOrderPayloadSchema = z.object({
     }).strict(),
   ).min(1, 'Order must contain at least one item').max(20),
   promoCode: z.string().trim().max(64).optional(),
-  paymentMethod: paymentMethodSchema.default('WHATSAPP_UPI'),
+  paymentMethod: paymentMethodSchema.default('RAZORPAY'),
   marketingConsent: z.boolean().optional(),
   notes: z.string().max(1000).optional(),
 }).strict();

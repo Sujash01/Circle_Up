@@ -241,7 +241,7 @@ describe('Order & Admin Security Remediation Suite', () => {
             postalCode: '400050',
           },
           items: [{ serialNumber: 'CU-001', quantity: 1, size: 'M' }],
-          paymentMethod: 'CASH_ON_DELIVERY',
+          paymentMethod: 'WHATSAPP_UPI',
         });
 
       expect(res.status).toBe(201);
@@ -310,7 +310,7 @@ describe('Order & Admin Security Remediation Suite', () => {
             postalCode: '400050',
           },
           items: [{ serialNumber: 'CU-001', quantity: 1, size: 'Free Size' }],
-          paymentMethod: 'CASH_ON_DELIVERY',
+          paymentMethod: 'WHATSAPP_UPI',
         });
 
       expect(res.status).toBe(201);

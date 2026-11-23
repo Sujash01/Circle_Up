@@ -73,7 +73,7 @@ describe('Stock Reservation Expiry & COD Verification (Resolves P0-7)', () => {
     expect(result.expiryHours).toBe(24);
   });
 
-  it('COD Verification Gate rejects fake, dummy, or missing contact info for COD orders', async () => {
+  it('rejects Cash on Delivery checkout requests with PAYMENT_METHOD_DISALLOWED', async () => {
     const basePayload = {
       shippingAddress: {
         addressLine: '14 Rosewood Lane',
@@ -85,50 +85,14 @@ describe('Stock Reservation Expiry & COD Verification (Resolves P0-7)', () => {
       items: [{ serialNumber: 'CU-TEST-001', quantity: 1 }],
       paymentMethod: 'CASH_ON_DELIVERY' as const,
       idempotencyKey: 'idemp-cod-test-key-001',
+      customer: { name: 'Customer', email: 'test@example.com', phone: '+919876543210' },
     };
 
-    // Dummy phone 1: 0000000000
     await expect(
-      orderService.createOrder({
-        ...basePayload,
-        customer: { name: 'Fake Customer', email: 'test@example.com', phone: '0000000000' },
-      }),
+      orderService.createOrder(basePayload),
     ).rejects.toMatchObject({
       statusCode: 400,
-      code: 'COD_VERIFICATION_REQUIRED',
-    });
-
-    // Dummy phone 2: 1234567890
-    await expect(
-      orderService.createOrder({
-        ...basePayload,
-        customer: { name: 'Fake Customer', email: 'test@example.com', phone: '1234567890' },
-      }),
-    ).rejects.toMatchObject({
-      statusCode: 400,
-      code: 'COD_VERIFICATION_REQUIRED',
-    });
-
-    // Dummy phone 3: all 9s
-    await expect(
-      orderService.createOrder({
-        ...basePayload,
-        customer: { name: 'Fake Customer', email: 'test@example.com', phone: '9999999999' },
-      }),
-    ).rejects.toMatchObject({
-      statusCode: 400,
-      code: 'COD_VERIFICATION_REQUIRED',
-    });
-
-    // Dummy phone 4: too short
-    await expect(
-      orderService.createOrder({
-        ...basePayload,
-        customer: { name: 'Fake Customer', email: 'test@example.com', phone: '12345' },
-      }),
-    ).rejects.toMatchObject({
-      statusCode: 400,
-      code: 'COD_VERIFICATION_REQUIRED',
+      code: 'PAYMENT_METHOD_DISALLOWED',
     });
   });
 
