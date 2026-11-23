@@ -623,11 +623,11 @@ begin
   )
   values (
     coalesce(v_order.customer_id::text, 'guest'),
-    'CUSTOMER',
+    'system',
     v_order.customer_email,
     'orders',
     v_order.id::text,
-    'PAYMENT_VERIFIED',
+    'ORDER_PAYMENT_VERIFIED',
     jsonb_build_object('payment_status', 'PENDING', 'status', 'PENDING'),
     jsonb_build_object('payment_status', 'PAID', 'status', v_order.status, 'payment_id', p_razorpay_payment_id),
     jsonb_build_object('razorpay_payment_id', p_razorpay_payment_id, 'razorpay_order_id', p_razorpay_order_id)
@@ -756,14 +756,14 @@ begin
   )
   values (
     coalesce(v_order.customer_id::text, 'guest'),
-    'CUSTOMER',
+    'system',
     v_order.customer_email,
     'orders',
     v_order.id::text,
-    'ORDER_RESERVATION_CANCELLED',
+    'ORDER_STATUS_UPDATE',
     jsonb_build_object('status', v_order.status, 'payment_status', v_order.payment_status),
     jsonb_build_object('status', 'CANCELLED', 'payment_status', v_order.payment_status),
-    jsonb_build_object('reason', p_reason)
+    jsonb_build_object('reason', p_reason, 'operation', 'ORDER_RESERVATION_CANCELLED')
   );
 
   return true;
