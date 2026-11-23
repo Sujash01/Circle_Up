@@ -1,6 +1,11 @@
 import crypto from 'crypto';
 import { createHash } from 'crypto';
-import { BadRequestError, NotFoundError, ServiceUnavailableError } from '../../errors/AppError.js';
+import {
+  BadRequestError,
+  NotFoundError,
+  ServiceUnavailableError,
+  UnprocessableEntityError,
+} from '../../errors/AppError.js';
 import { buildPaginationMeta, parsePagination } from '../../utils/pagination.js';
 import type { CreateOrderPayload } from '@circleup/shared';
 import { env } from '../../config/env.js';
@@ -9,6 +14,9 @@ import { getConfiguredWhatsappNumber, settingsRepository } from '../../repositor
 import {
   createRazorpayOrder,
   isRazorpayConfigurationAvailable,
+  attachRazorpayOrderIdToOrder,
+  reconcileRazorpayOrder,
+  markOrderPaidViaRazorpay,
 } from '../../services/razorpay.service.js';
 import {
   isSupabaseCheckoutConfigured,
@@ -295,123 +303,214 @@ export const orderService = {
 
     // 3. Authoritative Supabase atomic RPC execution path
     // Zero catch-and-fallback to legacy databases: all RPC errors or database failures throw directly
-      const effectivePaymentMethod = paymentMethod || 'RAZORPAY';
+    const effectivePaymentMethod = paymentMethod || 'RAZORPAY';
 
-      const rpcResult = await executeStorefrontCheckoutRpc({
-        p_key_hash: keyHash,
-        p_fingerprint: fingerprint,
-        p_customer_id: customerId || null,
-        p_customer: {
-          name: customer.name.trim(),
-          email: customer.email.trim().toLowerCase(),
-          phone: customer.phone.trim(),
-        },
-        p_shipping_address: shippingAddress,
-        p_items: items.map((it) => ({
-          serialNumber: it.serialNumber.trim().toUpperCase(),
-          quantity: it.quantity,
-          size: it.size,
-        })),
-        p_payment_method: effectivePaymentMethod,
-        p_promo_code: promoCode ? promoCode.trim().toUpperCase() : null,
-        p_notes: notes ? notes.trim() : null,
-        p_guest_access_token_hash: guestAccessTokenHash,
-        p_guest_access_expires_at: guestAccessExpiresAt,
-        p_order_number: orderNumber,
-      });
+    const rpcResult = await executeStorefrontCheckoutRpc({
+      p_key_hash: keyHash,
+      p_fingerprint: fingerprint,
+      p_customer_id: customerId || null,
+      p_customer: {
+        name: customer.name.trim(),
+        email: customer.email.trim().toLowerCase(),
+        phone: customer.phone.trim(),
+      },
+      p_shipping_address: shippingAddress,
+      p_items: items.map((it) => ({
+        serialNumber: it.serialNumber.trim().toUpperCase(),
+        quantity: it.quantity,
+        size: it.size,
+      })),
+      p_payment_method: effectivePaymentMethod,
+      p_promo_code: promoCode ? promoCode.trim().toUpperCase() : null,
+      p_notes: notes ? notes.trim() : null,
+      p_guest_access_token_hash: guestAccessTokenHash,
+      p_guest_access_expires_at: guestAccessExpiresAt,
+      p_order_number: orderNumber,
+    });
 
-      // Create Razorpay order server-side with integer paise amount
-      let razorpayOrder: { id: string; amount: number; currency: string } | undefined;
-      if (effectivePaymentMethod === 'RAZORPAY' || effectivePaymentMethod === 'ONLINE_UPI') {
-        if (isRazorpayConfigurationAvailable()) {
-          try {
-            const rzp = await createRazorpayOrder({
-              amountPaise: rpcResult.totalAmount,
-              internalOrderNumber: rpcResult.orderNumber,
-            });
-            razorpayOrder = {
-              id: rzp.id,
-              amount: rzp.amount,
-              currency: rzp.currency,
-            };
-          } catch (err) {
-            if (env.NODE_ENV === 'test') {
-              razorpayOrder = {
-                id: `order_test_${crypto.randomBytes(8).toString('hex')}`,
-                amount: rpcResult.totalAmount,
-                currency: 'INR',
-              };
-            } else {
-              throw err;
-            }
+    // Create Razorpay order server-side with integer paise amount
+    let razorpayOrder: { id: string; amount: number; currency: string } | undefined;
+    if (effectivePaymentMethod === 'RAZORPAY' || effectivePaymentMethod === 'ONLINE_UPI') {
+      if (!isRazorpayConfigurationAvailable()) {
+        // Online reservation safety: Preserve reservation under hold, never automatically release stock
+        try {
+          if (isSupabaseConfigured()) {
+            const client = getSupabaseAdminClient();
+            await client
+              .from('orders')
+              .update({ notes: '[RESERVATION_HOLD: PROVIDER_UNAVAILABLE]' })
+              .eq('order_number', rpcResult.orderNumber);
           }
-        } else if (env.NODE_ENV === 'test') {
+        } catch {
+          // Non-blocking
+        }
+        throw new ServiceUnavailableError(
+          'Razorpay online payment is temporarily unavailable. Please try again later.',
+          'PAYMENT_PROVIDER_UNAVAILABLE',
+        );
+      }
+
+      try {
+        const rzp = await createRazorpayOrder({
+          amountPaise: rpcResult.totalAmount,
+          internalOrderNumber: rpcResult.orderNumber,
+        });
+
+        // Bind provider order ID to internal database order
+        await attachRazorpayOrderIdToOrder(rpcResult.orderNumber, rzp.id);
+
+        razorpayOrder = {
+          id: rzp.id,
+          amount: rzp.amount,
+          currency: rzp.currency,
+        };
+      } catch (err: unknown) {
+        // Safeguard 1: On gateway creation rejection, preserve reservation under hold
+        if (err instanceof UnprocessableEntityError || err instanceof BadRequestError) {
+          try {
+            if (isSupabaseConfigured()) {
+              const client = getSupabaseAdminClient();
+              await client
+                .from('orders')
+                .update({ notes: '[RESERVATION_HOLD: GATEWAY_REJECTED_PARAMS]' })
+                .eq('order_number', rpcResult.orderNumber);
+            }
+          } catch {
+            // Non-blocking
+          }
+          throw err;
+        }
+
+        // Ambiguous gateway errors: timeouts (AbortError), connection reset (ECONNRESET), 5xx.
+        // Safely reconcile against provider API by receipt before deciding on reservation status.
+        const recon = await reconcileRazorpayOrder(rpcResult.orderNumber);
+
+        if (recon.status === 'CONFIRMED_ABSENT') {
+          // Provider confirms no order exists for this receipt.
+          // In accordance with Phase 1 Razorpay reservation safety, preserve reservation under hold
+          // rather than releasing stock automatically.
+          try {
+            if (isSupabaseConfigured()) {
+              const client = getSupabaseAdminClient();
+              await client
+                .from('orders')
+                .update({ notes: '[RESERVATION_HOLD: PROVIDER_CONFIRMED_ABSENT]' })
+                .eq('order_number', rpcResult.orderNumber);
+            }
+          } catch {
+            // Non-blocking
+          }
+          throw new ServiceUnavailableError(
+            'Payment gateway initialization failed. Stock reservation is held pending review. Please try again.',
+            'PAYMENT_PROVIDER_ERROR',
+          );
+        }
+
+        if (recon.status === 'ORDER_EXISTS' && recon.order) {
+          // Provider order was actually created! Bind provider order ID to order to preserve it.
+          try {
+            await attachRazorpayOrderIdToOrder(rpcResult.orderNumber, recon.order.id);
+          } catch {
+            // Non-blocking
+          }
+          // Do NOT cancel the reservation. Stock reservation is preserved.
           razorpayOrder = {
-            id: `order_test_${crypto.randomBytes(8).toString('hex')}`,
-            amount: rpcResult.totalAmount,
-            currency: 'INR',
+            id: recon.order.id,
+            amount: recon.order.amount,
+            currency: recon.order.currency,
+          };
+        } else if (recon.status === 'CAPTURED_PAYMENT_EXISTS' && recon.order) {
+          // A payment was captured! Do NOT cancel!
+          try {
+            await attachRazorpayOrderIdToOrder(rpcResult.orderNumber, recon.order.id);
+          } catch {
+            // Non-blocking
+          }
+          razorpayOrder = {
+            id: recon.order.id,
+            amount: recon.order.amount,
+            currency: recon.order.currency,
           };
         } else {
+          // recon.status === 'UNCERTAIN'
+          // Provider state could NOT be determined (e.g. gateway network timeout/down).
+          // SAFEGUARD 1: NEVER release stock or cancel based on an uncertain provider response!
+          // Preserve the stock reservation. The order remains PENDING with [RESERVATION_HOLD].
+          try {
+            if (isSupabaseConfigured()) {
+              const client = getSupabaseAdminClient();
+              await client
+                .from('orders')
+                .update({
+                  notes: '[RESERVATION_HOLD: AMBIGUOUS_GATEWAY_RESPONSE]',
+                })
+                .eq('order_number', rpcResult.orderNumber);
+            }
+          } catch {
+            // Non-blocking
+          }
+
           throw new ServiceUnavailableError(
-            'Razorpay online payment is temporarily unavailable. Please try again later.',
-            'PAYMENT_PROVIDER_UNAVAILABLE',
+            'Payment provider request timed out. Stock reservation preserved. Please check order status before retrying.',
+            'PAYMENT_PROVIDER_TIMEOUT',
           );
         }
       }
+    }
 
-      // Ephemeral guest token attached strictly in memory (never stored in response_payload or DB)
-      const finalResponse = {
-        ...rpcResult,
-        guestAccessToken: rpcResult.customerId ? undefined : (ephemeralGuestTokens.get(keyHash)?.token || rawGuestToken),
-        razorpay: razorpayOrder
-          ? {
-              orderId: razorpayOrder.id,
-              keyId: env.RAZORPAY_KEY_ID || 'rzp_test_placeholder',
-              amount: razorpayOrder.amount,
-              currency: razorpayOrder.currency,
-            }
-          : undefined,
-      };
+    // Ephemeral guest token attached strictly in memory (never stored in response_payload or DB)
+    const finalResponse = {
+      ...rpcResult,
+      guestAccessToken: rpcResult.customerId ? undefined : (ephemeralGuestTokens.get(keyHash)?.token || rawGuestToken),
+      razorpay: razorpayOrder
+        ? {
+          orderId: razorpayOrder.id,
+          keyId: env.RAZORPAY_KEY_ID || 'rzp_test_placeholder',
+          amount: razorpayOrder.amount,
+          currency: razorpayOrder.currency,
+        }
+        : undefined,
+    };
 
-      // For offline methods (e.g. WHATSAPP_UPI), trigger initial confirmation emails
-      if (effectivePaymentMethod === 'WHATSAPP_UPI') {
-        void emailService.sendOrderConfirmation(
-          {
-            orderNumber: rpcResult.orderNumber,
-            customerEmail: customer.email,
-            customerName: customer.name,
-            totalInPaise: rpcResult.totalAmount,
-            subtotalInPaise: rpcResult.subtotal,
-            deliveryFeeInPaise: rpcResult.deliveryFee,
-            discountInPaise: rpcResult.discount,
-            shippingAddress,
-          },
-          (rpcResult.items || []).map((it) => ({
-            title: it.name || 'Vintage Find',
-            size: it.size,
-            priceInPaise: it.price || 0,
-            quantity: it.quantity || 1,
-          }))
-        ).catch(() => { });
+    // For offline methods (e.g. WHATSAPP_UPI), trigger initial confirmation emails
+    if (effectivePaymentMethod === 'WHATSAPP_UPI') {
+      void emailService.sendOrderConfirmation(
+        {
+          orderNumber: rpcResult.orderNumber,
+          customerEmail: customer.email,
+          customerName: customer.name,
+          totalInPaise: rpcResult.totalAmount,
+          subtotalInPaise: rpcResult.subtotal,
+          deliveryFeeInPaise: rpcResult.deliveryFee,
+          discountInPaise: rpcResult.discount,
+          shippingAddress,
+        },
+        (rpcResult.items || []).map((it) => ({
+          title: it.name || 'Vintage Find',
+          size: it.size,
+          priceInPaise: it.price || 0,
+          quantity: it.quantity || 1,
+        }))
+      ).catch(() => { });
 
-        void emailService.sendOwnerOrderAlert(
-          {
-            orderNumber: rpcResult.orderNumber,
-            customerName: customer.name,
-            customerEmail: customer.email,
-            customerPhone: customer.phone,
-            paymentMethod: effectivePaymentMethod,
-            totalInPaise: rpcResult.totalAmount,
-          },
-          (rpcResult.items || []).map((it) => ({
-            title: it.name || 'Vintage Find',
-            quantity: it.quantity || 1,
-          }))
-        ).catch(() => { });
-      }
+      void emailService.sendOwnerOrderAlert(
+        {
+          orderNumber: rpcResult.orderNumber,
+          customerName: customer.name,
+          customerEmail: customer.email,
+          customerPhone: customer.phone,
+          paymentMethod: effectivePaymentMethod,
+          totalInPaise: rpcResult.totalAmount,
+        },
+        (rpcResult.items || []).map((it) => ({
+          title: it.name || 'Vintage Find',
+          quantity: it.quantity || 1,
+        }))
+      ).catch(() => { });
+    }
 
-      return finalResponse;
-    },
+    return finalResponse;
+  },
 
   async listCustomerOrders(customerId: string, query: { page?: unknown; limit?: unknown }) {
     const { page, limit, skip } = parsePagination(query);
@@ -484,6 +583,42 @@ export const orderService = {
   async expireStaleReservations(expiryHours: number = env.RESERVATION_EXPIRY_HOURS) {
     if (isSupabaseConfigured()) {
       const client = getSupabaseAdminClient();
+
+      // Safeguard 1: Reconcile pending online orders before releasing reservations
+      // We must not blindly release stock for an order that may have been paid on the provider
+      try {
+        const cutoff = new Date(Date.now() - Math.max(expiryHours, 1) * 3600 * 1000).toISOString();
+        const { data: pendingOrders } = await client
+          .from('orders')
+          .select('id, order_number, razorpay_order_id, payment_method, total_amount')
+          .eq('status', 'PENDING')
+          .eq('payment_status', 'PENDING')
+          .in('payment_method', ['RAZORPAY', 'ONLINE_UPI'])
+          .lt('created_at', cutoff);
+
+        if (pendingOrders && pendingOrders.length > 0) {
+          for (const ord of pendingOrders) {
+            try {
+              const recon = await reconcileRazorpayOrder(ord.order_number as string);
+              if (recon.status === 'CAPTURED_PAYMENT_EXISTS' && recon.capturedPayment) {
+                // Payment was captured! Reconcile order to PAID so reservation is not cancelled
+                await markOrderPaidViaRazorpay({
+                  orderNumber: ord.order_number as string,
+                  razorpayOrderId: recon.order?.id || (ord.razorpay_order_id as string) || '',
+                  razorpayPaymentId: recon.capturedPayment.id,
+                  razorpaySignature: 'reconciled_via_cron_expiry',
+                  verifiedAmountPaise: recon.capturedPayment.amount,
+                });
+              }
+            } catch {
+              // Ignore reconciliation failure for single order to allow cron to proceed
+            }
+          }
+        }
+      } catch {
+        // Non-blocking pre-check failure
+      }
+
       const { data, error } = await client.rpc('admin_release_expired_reservations', {
         p_expiry_hours: expiryHours,
       });

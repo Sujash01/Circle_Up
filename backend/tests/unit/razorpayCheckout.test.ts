@@ -1,12 +1,14 @@
 import { createHmac } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { envSchema } from '../../src/config/env.js';
+import { orderService } from '../../src/modules/orders/order.service.js';
 import {
   createRazorpayOrder,
   verifyRazorpayPaymentSignature,
   verifyRazorpayWebhookSignature,
+  setRazorpayGatewayClientForTesting,
 } from '../../src/services/razorpay.service.js';
 
 describe('Razorpay Direct Checkout & Verification Lifecycle', () => {
@@ -45,6 +47,18 @@ describe('Razorpay Direct Checkout & Verification Lifecycle', () => {
   });
 
   it('preserves integer paise in Razorpay order creation', async () => {
+    setRazorpayGatewayClientForTesting({
+      createOrder: async (input) => ({
+        id: 'order_test_mock123',
+        amount: input.amountPaise,
+        currency: 'INR',
+        receipt: input.internalOrderNumber,
+        status: 'created',
+      }),
+      fetchPayment: async () => null,
+      fetchOrder: async () => null,
+    });
+
     // 2550 INR = 255000 paise
     const amountInPaise = 255000;
     const internalOrderNumber = 'ORD-261123-A1B2C3D4E5F6';
@@ -71,18 +85,21 @@ describe('Razorpay Direct Checkout & Verification Lifecycle', () => {
       orderId,
       paymentId,
       signature: validSignature,
+      customSecret: secret,
     })).toBe(true);
 
     expect(verifyRazorpayPaymentSignature({
       orderId: 'order_test_tampered',
       paymentId,
       signature: validSignature,
+      customSecret: secret,
     })).toBe(false);
 
     expect(verifyRazorpayPaymentSignature({
       orderId,
       paymentId,
       signature: 'bad-signature-of-invalid-length',
+      customSecret: secret,
     })).toBe(false);
   });
 
@@ -93,8 +110,8 @@ describe('Razorpay Direct Checkout & Verification Lifecycle', () => {
       .update(rawBody)
       .digest('hex');
 
-    expect(verifyRazorpayWebhookSignature(rawBody, validSignature)).toBe(true);
-    expect(verifyRazorpayWebhookSignature(Buffer.from('tampered body'), validSignature)).toBe(false);
+    expect(verifyRazorpayWebhookSignature(rawBody, validSignature, webhookSecret)).toBe(true);
+    expect(verifyRazorpayWebhookSignature(Buffer.from('tampered body'), validSignature, webhookSecret)).toBe(false);
   });
 
   it('enforces RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in production env configuration', () => {
@@ -140,6 +157,7 @@ describe('Razorpay Direct Checkout & Verification Lifecycle', () => {
   });
 
   it('POST /api/v1/payments/razorpay/cancel requires order access authorization', async () => {
+    vi.spyOn(orderService, 'getOrderByNumber').mockResolvedValueOnce(null as any);
     const res = await request(app)
       .post('/api/v1/payments/razorpay/cancel')
       .send({

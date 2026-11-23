@@ -96,6 +96,18 @@ adminRouter.post(
   adminOrderController.processRefund,
 );
 adminRouter.post(
+  '/orders/:id/returns/inspection',
+  requireAdminAuth(),
+  verifyAdminCsrf,
+  adminOrderController.recordReturnInspection,
+);
+adminRouter.post(
+  '/orders/:id/reservation/release',
+  requireAdminAuth('owner'),
+  verifyAdminCsrf,
+  adminOrderController.authorizeReservationRelease,
+);
+adminRouter.post(
   '/orders/:id/fulfillments',
   requireAdminAuth(),
   verifyAdminCsrf,

@@ -1,4 +1,5 @@
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError, ServiceUnavailableError } from '../errors/AppError.js';
+import { createHash } from 'node:crypto';
 import { parsePagination, buildPaginationMeta } from '../utils/pagination.js';
 import type { AdminSessionData } from './adminAuth.service.js';
 import { emailService } from './email.service.js';
@@ -69,7 +70,28 @@ function raiseRpcError(error: { message?: string; code?: string }): never {
   const message = payload.message || 'Order operation could not be completed.';
   if (code === 'FORBIDDEN') throw new ForbiddenError(message, code);
   if (code === 'ORDER_NOT_FOUND') throw new NotFoundError(message, code);
-  if (code === 'VALIDATION_ERROR' || code === 'INVALID_STATUS_TRANSITION' || code === 'PAYMENT_ALREADY_RECORDED' || code === 'PAYMENT_PROVIDER_UNAVAILABLE' || code === 'INVALID_PAYMENT_ORDER_STATE' || code === 'INVALID_MANUAL_PAYMENT_METHOD') {
+  const badRequestCodes = new Set([
+    'VALIDATION_ERROR',
+    'INVALID_STATUS_TRANSITION',
+    'PAYMENT_ALREADY_RECORDED',
+    'PAYMENT_PROVIDER_UNAVAILABLE',
+    'INVALID_PAYMENT_ORDER_STATE',
+    'INVALID_MANUAL_PAYMENT_METHOD',
+    'ONLINE_RESERVATION_RELEASE_DISABLED',
+    'CANNOT_RELEASE_CAPTURED_ORDER',
+    'PAYMENT_STATE_NOT_TERMINAL',
+    'AUTHORITATIVE_PROOF_REQUIRED',
+    'INVALID_EVIDENCE_REFERENCE',
+    'PROVIDER_ORDER_MISMATCH',
+    'RECEIPT_VERIFICATION_REQUIRED',
+    'NON_TERMINAL_PROVIDER_STATE',
+    'IDEMPOTENCY_KEY_COLLISION',
+    'RETURN_WINDOW_EXPIRED',
+    'INVALID_RETURN_QUANTITY',
+    'INVALID_ROUTING_ACTION',
+    'ORDER_ITEM_NOT_FOUND',
+  ]);
+  if (badRequestCodes.has(code)) {
     throw new BadRequestError(message, code);
   }
   if (code === 'ORDER_CONFLICT') throw new ConflictError(message, code);
@@ -98,6 +120,57 @@ function auditArgs(actor: AdminSessionData, context: { ipAddress?: string; userA
     p_ip_address: context.ipAddress || '127.0.0.1',
     p_user_agent: (context.userAgent || 'CircleUp Admin').slice(0, 1024),
   };
+}
+
+/**
+ * Computes a deterministic SHA-256 fingerprint for a physical return inspection.
+ *
+ * Included fields:
+ *   - orderId: canonical UUID of the order (trimmed, lower-cased)
+ *   - inspectionStatus: PASSED or FAILED (upper-cased, trimmed)
+ *   - items: sorted by orderItemId code-point comparison (< / >) containing:
+ *       - orderItemId: UUID string (trimmed, lower-cased)
+ *       - quantity: positive integer
+ *       - routingAction: RESTOCK, DRY_CLEAN, ALTERATION, DISCARD (upper-cased, trimmed)
+ *       - stockRestored: boolean flag representing physical inventory effect
+ *
+ * Excluded fields:
+ *   - Non-functional UI metadata (tracking notes, timestamps, ephemeral actor session data)
+ */
+export function computeReturnFingerprint(params: {
+  orderId?: string;
+  orderRef?: string;
+  items: Array<{ orderItemId: string; quantity: number; routingAction: string }>;
+  inspectionStatus: string;
+}): string {
+  const normStatus = params.inspectionStatus.trim().toUpperCase();
+  const rawId = params.orderId || params.orderRef || '';
+  const orderId = rawId.trim().toLowerCase();
+
+  const sortedItems = [...params.items]
+    .sort((a, b) => {
+      const idA = a.orderItemId.trim().toLowerCase();
+      const idB = b.orderItemId.trim().toLowerCase();
+      return idA < idB ? -1 : idA > idB ? 1 : 0;
+    })
+    .map((it) => {
+      const action = it.routingAction.trim().toUpperCase();
+      const willRestock = action === 'RESTOCK' && normStatus === 'PASSED';
+      return {
+        orderItemId: it.orderItemId.trim().toLowerCase(),
+        quantity: it.quantity,
+        routingAction: action,
+        stockRestored: willRestock,
+      };
+    });
+
+  const payload = JSON.stringify({
+    orderId,
+    inspectionStatus: normStatus,
+    items: sortedItems,
+  });
+
+  return createHash('sha256').update(payload).digest('hex');
 }
 
 export const adminOrderService = {
@@ -157,12 +230,23 @@ export const adminOrderService = {
     orderRef: string,
     actor: AdminSessionData,
     auditContext: { ipAddress?: string; userAgent?: string },
-    options?: { utrNumber?: string; paymentProofUrl?: string },
+    options?: { utrNumber?: string; paymentProofUrl?: string; confirmedAmountPaise?: number },
   ) {
-    const result = await callOrderRpc('admin_mark_order_payment_received', {
+    const confirmedAmount = options?.confirmedAmountPaise;
+    if (!confirmedAmount || !Number.isInteger(confirmedAmount) || confirmedAmount <= 0) {
+      throw new BadRequestError('Explicit confirmed positive payment amount in paise is mandatory.', 'VALIDATION_ERROR');
+    }
+
+    const utr = options?.utrNumber?.trim();
+    if (!utr || utr.length < 6) {
+      throw new BadRequestError('External bank transaction reference (UTR >= 6 chars) is mandatory for offline payment attestation.', 'VALIDATION_ERROR');
+    }
+
+    const result = await callOrderRpc('admin_verify_order_payment', {
       p_order_ref: normalizeOrderRef(orderRef),
-      p_utr_number: options?.utrNumber || null,
+      p_utr_number: utr,
       p_payment_proof_url: options?.paymentProofUrl || null,
+      p_confirmed_amount_paise: confirmedAmount,
       ...auditArgs(actor, auditContext),
     });
     const order = result.order as OrderRow | undefined;
@@ -174,16 +258,25 @@ export const adminOrderService = {
     orderRef: string,
     amountPaise: number,
     reason: string,
-    routingAction: 'RESTOCK' | 'DRY_CLEAN' | 'ALTERATION' | 'DISCARD',
-    actor: AdminSessionData,
-    auditContext: { ipAddress?: string; userAgent?: string },
+    _routingAction?: 'RESTOCK' | 'DRY_CLEAN' | 'ALTERATION' | 'DISCARD',
+    actor?: AdminSessionData,
+    auditContext?: { ipAddress?: string; userAgent?: string },
+    options?: { idempotencyKey?: string; settlementReference?: string },
   ) {
+    if (!actor) {
+      throw new BadRequestError('Admin authentication is required.', 'UNAUTHORIZED');
+    }
+    const idempotencyKey =
+      options?.idempotencyKey?.trim() ||
+      `ref_${normalizeOrderRef(orderRef)}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
     const result = await callOrderRpc('admin_process_order_refund', {
       p_order_ref: normalizeOrderRef(orderRef),
       p_amount_paise: amountPaise,
       p_reason: reason,
-      p_routing_action: routingAction,
-      ...auditArgs(actor, auditContext),
+      p_idempotency_key: idempotencyKey,
+      p_settlement_reference: options?.settlementReference?.trim() || null,
+      ...auditArgs(actor, auditContext || {}),
     });
     const order = result.order as OrderRow | undefined;
     if (!order) throw unavailable('Supabase did not return the refund result.');
@@ -201,6 +294,104 @@ export const adminOrderService = {
     ).catch(() => { });
 
     return { order: mapped, refund: result.refund };
+  },
+
+  async recordReturnInspection(
+    orderRef: string,
+    params: {
+      items: Array<{ orderItemId: string; quantity: number; routingAction: 'RESTOCK' | 'DRY_CLEAN' | 'ALTERATION' | 'DISCARD' }>;
+      trackingNumber?: string;
+      inspectionStatus: 'PASSED' | 'FAILED' | 'CONDITIONAL';
+      inspectionNotes?: string;
+      idempotencyKey: string;
+    },
+    actor: AdminSessionData,
+    auditContext: { ipAddress?: string; userAgent?: string },
+  ) {
+    if (!params.items || !Array.isArray(params.items) || params.items.length === 0) {
+      throw new BadRequestError('Physical return items are required.', 'VALIDATION_ERROR');
+    }
+    if (!params.idempotencyKey || params.idempotencyKey.trim().length < 10) {
+      throw new BadRequestError('A valid idempotency key (>= 10 chars) is required.', 'VALIDATION_ERROR');
+    }
+
+    if (!isSupabaseConfigured()) throw unavailable('Supabase order storage is not configured.');
+    const client = getSupabaseAdminClient();
+    const norm = normalizeOrderRef(orderRef);
+    const { data: ord, error: ordErr } = await client
+      .from('orders')
+      .select('id, order_number')
+      .or(`order_number.eq.${norm},id.eq.${norm}`)
+      .maybeSingle();
+
+    if (ordErr || !ord?.id) {
+      throw new NotFoundError(`Order ${orderRef} was not found.`, 'ORDER_NOT_FOUND');
+    }
+
+    const resolvedOrderId = String(ord.id).toLowerCase();
+
+    const canonicalFingerprint = computeReturnFingerprint({
+      orderId: resolvedOrderId,
+      items: params.items,
+      inspectionStatus: params.inspectionStatus,
+    });
+
+    const formattedItems = [...params.items]
+      .sort((a, b) => {
+        const idA = a.orderItemId.trim().toLowerCase();
+        const idB = b.orderItemId.trim().toLowerCase();
+        return idA < idB ? -1 : idA > idB ? 1 : 0;
+      })
+      .map((it) => ({
+        orderItemId: it.orderItemId.trim().toLowerCase(),
+        quantity: it.quantity,
+        routingAction: it.routingAction.trim().toUpperCase(),
+      }));
+
+    const result = await callOrderRpc('admin_record_physical_return_inspection', {
+      p_order_ref: norm,
+      p_items: formattedItems,
+      p_tracking_number: params.trackingNumber?.trim() || null,
+      p_inspection_status: params.inspectionStatus,
+      p_inspection_notes: params.inspectionNotes?.trim() || null,
+      p_idempotency_key: params.idempotencyKey.trim(),
+      p_fingerprint: canonicalFingerprint,
+      ...auditArgs(actor, auditContext),
+    });
+
+    const order = result.order as OrderRow | undefined;
+    if (!order) throw unavailable('Supabase did not return the return inspection result.');
+    return {
+      order: mapOrder({ ...order, order_items: result.order_items }),
+      return: result.return,
+    };
+  },
+
+  async authorizeReservationRelease(
+    orderRef: string,
+    params: {
+      reason: string;
+      cancellationProof?: Record<string, unknown>;
+    },
+    actor: AdminSessionData,
+    auditContext: { ipAddress?: string; userAgent?: string },
+  ) {
+    if (!actor || actor.role !== 'owner') {
+      throw new ForbiddenError('Only active administrative owners can authorize manual reservation release.', 'FORBIDDEN');
+    }
+
+    if (!params.reason || params.reason.trim().length < 10) {
+      throw new BadRequestError('A detailed release authorization reason (>= 10 chars) is required.', 'VALIDATION_ERROR');
+    }
+
+    const result = await callOrderRpc('admin_authorize_reservation_release', {
+      p_order_ref: normalizeOrderRef(orderRef),
+      p_reason: params.reason.trim(),
+      p_cancellation_proof: params.cancellationProof || null,
+      ...auditArgs(actor, auditContext),
+    });
+
+    return result;
   },
 
   async createFulfillment(

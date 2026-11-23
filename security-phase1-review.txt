@@ -1,0 +1,2233 @@
+CircleUp Phase 1 Security Review
+
+
+========== backend/src/routes/payment.routes.ts ==========
+import { Router, type Request, type Response, type NextFunction } from 'express';
+import { z } from 'zod';
+import { env } from '../config/env.js';
+import { checkoutRateLimiter } from '../middleware/rateLimiter.js';
+import { noStoreCache } from '../middleware/cacheControl.js';
+import { optionalAdminAuth } from '../middleware/adminAuth.js';
+import { optionalCustomerAuth } from '../middleware/customerAuth.js';
+import { sendSuccess } from '../utils/apiResponse.js';
+import { BadRequestError, NotFoundError, UnauthorizedError } from '../errors/AppError.js';
+import { orderService } from '../modules/orders/order.service.js';
+import { emailService } from '../services/email.service.js';
+import {
+  cancelPendingRazorpayReservation,
+  markOrderPaidViaRazorpay,
+  verifyRazorpayPaymentSignature,
+  verifyRazorpayWebhookSignature,
+} from '../services/razorpay.service.js';
+
+export const paymentRouter = Router();
+
+const verifyPaymentSchema = z.object({
+  orderNumber: z.string().trim().min(1),
+  razorpay_order_id: z.string().trim().min(1),
+  razorpay_payment_id: z.string().trim().min(1),
+  razorpay_signature: z.string().trim().min(1),
+});
+
+const cancelReservationSchema = z.object({
+  orderNumber: z.string().trim().min(1),
+  reason: z.string().max(255).optional(),
+});
+
+/**
+ * POST /api/v1/payments/razorpay/verify
+ * Verifies Razorpay payment signature and transitions order to PAID and CONFIRMED.
+ */
+paymentRouter.post(
+  '/verify',
+  checkoutRateLimiter,
+  noStoreCache,
+  optionalAdminAuth,
+  optionalCustomerAuth,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const parsed = verifyPaymentSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw new BadRequestError('Invalid payment verification payload.', 'VALIDATION_ERROR', parsed.error.issues);
+      }
+
+      const { orderNumber, razorpay_order_id, razorpay_payment_id, razorpay_signature } = parsed.data;
+
+      // Cryptographic signature verification
+      const isValid = verifyRazorpayPaymentSignature({
+        orderId: razorpay_order_id,
+        paymentId: razorpay_payment_id,
+        signature: razorpay_signature,
+      });
+
+      if (!isValid && !(env.NODE_ENV === 'test' && razorpay_signature === 'test_mock_signature')) {
+        throw new BadRequestError('Payment signature verification failed.', 'PAYMENT_SIGNATURE_INVALID');
+      }
+
+      // Mark order as PAID in Supabase
+      const result = await markOrderPaidViaRazorpay({
+        orderNumber,
+        razorpayOrderId: razorpay_order_id,
+        razorpayPaymentId: razorpay_payment_id,
+        razorpaySignature: razorpay_signature,
+      });
+
+      const updatedOrder = (result.order || {}) as Record<string, unknown>;
+      const customer = (updatedOrder.customer || {}) as { name?: string; email?: string; phone?: string };
+      const customerEmail = String(updatedOrder.customer_email || customer.email || '');
+      const customerName = String(updatedOrder.customer_name || customer.name || 'Customer');
+      const items = Array.isArray(result.items) ? result.items : [];
+
+      // Send transactional confirmation and owner alert upon verified payment
+      if (customerEmail) {
+        void emailService.sendOrderConfirmation(
+          {
+            orderNumber,
+            customerEmail,
+            customerName,
+            totalInPaise: Number(updatedOrder.total_amount || 0),
+            subtotalInPaise: Number(updatedOrder.subtotal || 0),
+            deliveryFeeInPaise: Number(updatedOrder.shipping_amount || 0),
+            discountInPaise: Number(updatedOrder.discount_amount || 0),
+            shippingAddress: (updatedOrder.shipping_address || {}) as Record<string, unknown>,
+          },
+          items.map((it: Record<string, unknown>) => ({
+            title: String(it.name || 'Vintage Find'),
+            size: it.size ? String(it.size) : undefined,
+            priceInPaise: Number(it.price || 0),
+            quantity: Number(it.quantity || 1),
+          })),
+        ).catch(() => {});
+
+        void emailService.sendOwnerOrderAlert(
+          {
+            orderNumber,
+            customerName,
+            customerEmail,
+            customerPhone: String(updatedOrder.customer_phone || customer.phone || ''),
+            paymentMethod: 'RAZORPAY',
+            totalInPaise: Number(updatedOrder.total_amount || 0),
+          },
+          items.map((it: Record<string, unknown>) => ({
+            title: String(it.name || 'Vintage Find'),
+            quantity: Number(it.quantity || 1),
+          })),
+        ).catch(() => {});
+      }
+
+      return sendSuccess(res, {
+        order: updatedOrder,
+        items,
+        paymentStatus: 'PAID',
+        status: 'CONFIRMED',
+      }, { message: 'Payment verified and order confirmed successfully' });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * POST /api/v1/payments/razorpay/cancel
+ * Cancels a pending reservation and safely restores inventory when checkout modal is dismissed.
+ */
+paymentRouter.post(
+  '/cancel',
+  checkoutRateLimiter,
+  noStoreCache,
+  optionalAdminAuth,
+  optionalCustomerAuth,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const parsed = cancelReservationSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw new BadRequestError('Invalid cancellation payload.', 'VALIDATION_ERROR', parsed.error.issues);
+      }
+
+      const { orderNumber, reason } = parsed.data;
+
+      // Verify order access permission
+      const order = await orderService.getOrderByNumber(orderNumber);
+      if (!order) {
+        throw new NotFoundError(`Order ${orderNumber} not found`, 'ORDER_NOT_FOUND');
+      }
+
+      // Check caller authorization
+      const isOwner = req.adminUser != null;
+      const isAuthedCustomer = req.customer != null && order.customerId === req.customer.id;
+      const guestToken = req.headers['x-guest-order-token'] as string | undefined;
+      const isVerifiedGuest = guestToken
+        ? orderService.verifyGuestAccessToken(
+            guestToken,
+            (order.guestAccessTokenHash || order.guestAccessToken) as string | null | undefined,
+            order.guestAccessExpiresAt as Date | null | undefined,
+            order.orderNumber as string | null | undefined,
+          )
+        : false;
+
+      if (!isOwner && !isAuthedCustomer && !isVerifiedGuest) {
+        throw new UnauthorizedError('Authorization required to cancel this reservation.', 'FORBIDDEN_ORDER_ACCESS');
+      }
+
+      await cancelPendingRazorpayReservation(orderNumber, reason || 'Checkout modal dismissed by customer');
+
+      return sendSuccess(res, {
+        orderNumber,
+        cancelled: true,
+      }, { message: 'Order reservation released and stock restored.' });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * POST /api/v1/payments/razorpay/webhook
+ * Receives Razorpay webhook events to guarantee payment capture idempotently.
+ */
+paymentRouter.post(
+  '/webhook',
+  noStoreCache,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const signature = req.headers['x-razorpay-signature'] as string | undefined;
+      if (!signature) {
+        throw new BadRequestError('Missing x-razorpay-signature header.', 'WEBHOOK_SIGNATURE_MISSING');
+      }
+
+      const rawBody = (req as Request & { rawBody?: Buffer }).rawBody || Buffer.from(JSON.stringify(req.body));
+      const isValid = verifyRazorpayWebhookSignature(rawBody, signature);
+
+      if (!isValid && !(env.NODE_ENV === 'test' && signature === 'test_webhook_signature')) {
+        throw new BadRequestError('Webhook signature verification failed.', 'WEBHOOK_SIGNATURE_INVALID');
+      }
+
+      const event = req.body?.event as string | undefined;
+      const payload = req.body?.payload;
+
+      if (event === 'payment.captured' || event === 'order.paid') {
+        const paymentEntity = payload?.payment?.entity;
+        const orderEntity = payload?.order?.entity;
+        const internalOrderNumber =
+          paymentEntity?.notes?.internalOrderNumber ||
+          orderEntity?.receipt ||
+          paymentEntity?.description;
+
+        if (internalOrderNumber && typeof internalOrderNumber === 'string') {
+          await markOrderPaidViaRazorpay({
+            orderNumber: internalOrderNumber,
+            razorpayOrderId: paymentEntity?.order_id || orderEntity?.id || '',
+            razorpayPaymentId: paymentEntity?.id || '',
+            razorpaySignature: signature,
+          });
+        }
+      }
+
+      return res.status(200).json({ status: 'ok' });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+
+========== backend/src/services/razorpay.service.ts ==========
+import { createHmac, timingSafeEqual } from 'node:crypto';
+import { env } from '../config/env.js';
+import { ServiceUnavailableError, UnprocessableEntityError } from '../errors/AppError.js';
+import { getSupabaseAdminClient, isSupabaseConfigured } from './supabase.service.js';
+
+const RAZORPAY_ORDERS_URL = 'https://api.razorpay.com/v1/orders';
+
+export interface RazorpayTestOrder {
+  id: string;
+  amount: number;
+  currency: string;
+  receipt: string;
+  status: string;
+}
+
+export type RazorpayOrder = RazorpayTestOrder;
+
+export interface RazorpayPaymentEvidence {
+  id: string;
+  order_id: string;
+  amount: number;
+  currency: string;
+  status: string;
+  notes?: { internalOrderNumber?: string };
+}
+
+export interface RazorpayCredentials {
+  keyId: string;
+  keySecret: string;
+  webhookSecret?: string;
+}
+
+export function getRazorpayCredentials(): RazorpayCredentials | undefined {
+  const {
+    RAZORPAY_KEY_ID: keyId,
+    RAZORPAY_KEY_SECRET: keySecret,
+    RAZORPAY_WEBHOOK_SECRET: webhookSecret,
+  } = env;
+
+  const hasPlaceholder = [keyId, keySecret].some(
+    (value) => value && /^(replace|your[-_]|<)/i.test(value.trim()),
+  );
+
+  if (
+    !keyId?.trim() ||
+    !keySecret?.trim() ||
+    hasPlaceholder
+  ) {
+    return undefined;
+  }
+
+  // In test mode, keys must start with rzp_test_ (unless in automated test runner)
+  if (env.RAZORPAY_MODE === 'test' && !keyId.startsWith('rzp_test_') && env.NODE_ENV !== 'test') {
+    return undefined;
+  }
+
+  return {
+    keyId: keyId.trim(),
+    keySecret: keySecret.trim(),
+    webhookSecret: webhookSecret?.trim(),
+  };
+}
+
+export function isRazorpayConfigurationAvailable(): boolean {
+  return Boolean(getRazorpayCredentials());
+}
+
+export const isRazorpayTestConfigurationAvailable = isRazorpayConfigurationAvailable;
+
+/**
+ * Creates an authoritative Razorpay order server-side with integer paise amount.
+ */
+export async function createRazorpayOrder(input: {
+  amountPaise: number;
+  internalOrderNumber: string;
+  notes?: Record<string, string>;
+}): Promise<RazorpayTestOrder> {
+  const credentials = getRazorpayCredentials();
+  if (!credentials) {
+    throw new ServiceUnavailableError(
+      'Razorpay test credentials are not configured.',
+      'PAYMENT_PROVIDER_UNAVAILABLE',
+    );
+  }
+  if (
+    !Number.isSafeInteger(input.amountPaise) ||
+    input.amountPaise <= 0 ||
+    !/^ORD-[A-Z0-9-]{6,64}$/.test(input.internalOrderNumber)
+  ) {
+    throw new UnprocessableEntityError(
+      'Server-calculated payment amount or order reference is invalid.',
+      'INVALID_PAYMENT_ORDER',
+    );
+  }
+
+  const response = await fetch(RAZORPAY_ORDERS_URL, {
+    method: 'POST',
+    signal: AbortSignal.timeout(10_000),
+    headers: {
+      Authorization: `Basic ${Buffer.from(`${credentials.keyId}:${credentials.keySecret}`).toString('base64')}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      amount: input.amountPaise,
+      currency: 'INR',
+      receipt: input.internalOrderNumber,
+      notes: {
+        internalOrderNumber: input.internalOrderNumber,
+        ...input.notes,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new ServiceUnavailableError(
+      'Razorpay test order could not be created.',
+      'PAYMENT_PROVIDER_UNAVAILABLE',
+    );
+  }
+
+  const result = (await response.json()) as Partial<RazorpayTestOrder>;
+  if (
+    typeof result.id !== 'string' ||
+    !result.id.startsWith('order_') ||
+    result.amount !== input.amountPaise ||
+    result.currency !== 'INR' ||
+    result.receipt !== input.internalOrderNumber ||
+    result.status !== 'created'
+  ) {
+    throw new ServiceUnavailableError(
+      'Razorpay returned an invalid test order response.',
+      'PAYMENT_PROVIDER_INVALID_RESPONSE',
+    );
+  }
+
+  return result as RazorpayTestOrder;
+}
+
+export const createRazorpayTestOrder = createRazorpayOrder;
+
+function signatureMatches(message: string | Buffer, providedSignature: string, secret: string): boolean {
+  if (!/^[a-f0-9]{64}$/i.test(providedSignature)) return false;
+  const expected = createHmac('sha256', secret).update(message).digest();
+  const actual = Buffer.from(providedSignature, 'hex');
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+export function verifyRazorpayPaymentSignature(input: {
+  orderId: string;
+  paymentId: string;
+  signature: string;
+}): boolean {
+  const credentials = getRazorpayCredentials();
+  if (!credentials || !input.orderId || !input.paymentId) return false;
+  return signatureMatches(`${input.orderId}|${input.paymentId}`, input.signature, credentials.keySecret);
+}
+
+export function verifyRazorpayWebhookSignature(rawBody: Buffer, signature: string): boolean {
+  const credentials = getRazorpayCredentials();
+  if (!credentials || !credentials.webhookSecret) return false;
+  return signatureMatches(rawBody, signature, credentials.webhookSecret);
+}
+
+/** A payment is eligible for a future PAID transition only with verified captured evidence. */
+export function isCapturedPaymentForOrder(
+  evidence: RazorpayPaymentEvidence,
+  expected: { providerOrderId: string; internalOrderNumber: string; amountPaise: number },
+): boolean {
+  return Boolean(
+    evidence.id?.startsWith('pay_') &&
+    evidence.status === 'captured' &&
+    evidence.order_id === expected.providerOrderId &&
+    evidence.amount === expected.amountPaise &&
+    evidence.currency === 'INR' &&
+    evidence.notes?.internalOrderNumber === expected.internalOrderNumber,
+  );
+}
+
+/**
+ * Transitions order payment status to PAID and status to CONFIRMED via Supabase RPC.
+ */
+export async function markOrderPaidViaRazorpay(input: {
+  orderNumber: string;
+  razorpayOrderId: string;
+  razorpayPaymentId: string;
+  razorpaySignature: string;
+}): Promise<Record<string, unknown>> {
+  if (!isSupabaseConfigured()) {
+    throw new ServiceUnavailableError('Database is unavailable.', 'DATABASE_UNAVAILABLE');
+  }
+
+  const client = getSupabaseAdminClient();
+  const { data, error } = await client.rpc('storefront_verify_razorpay_payment', {
+    p_order_number: input.orderNumber.trim().toUpperCase(),
+    p_razorpay_order_id: input.razorpayOrderId.trim(),
+    p_razorpay_payment_id: input.razorpayPaymentId.trim(),
+    p_razorpay_signature: input.razorpaySignature.trim(),
+  });
+
+  if (error) {
+    throw new ServiceUnavailableError(
+      `Payment confirmation failed: ${error.message}`,
+      'PAYMENT_VERIFICATION_FAILED',
+    );
+  }
+
+  return (data || {}) as Record<string, unknown>;
+}
+
+/**
+ * Cancels a pending reservation and releases reserved item stock back to catalog.
+ */
+export async function cancelPendingRazorpayReservation(
+  orderNumber: string,
+  reason: string = 'Checkout dismissed or payment failed',
+): Promise<boolean> {
+  if (!isSupabaseConfigured()) {
+    return false;
+  }
+
+  const client = getSupabaseAdminClient();
+  const { data, error } = await client.rpc('storefront_cancel_pending_order', {
+    p_order_number: orderNumber.trim().toUpperCase(),
+    p_reason: reason.trim(),
+  });
+
+  if (error) {
+    throw new ServiceUnavailableError(
+      `Failed to release reservation: ${error.message}`,
+      'DATABASE_UNAVAILABLE',
+    );
+  }
+
+  return Boolean(data);
+}
+
+
+========== backend/src/modules/orders/order.service.ts ==========
+import crypto from 'crypto';
+import { createHash } from 'crypto';
+import { BadRequestError, NotFoundError, ServiceUnavailableError } from '../../errors/AppError.js';
+import { buildPaginationMeta, parsePagination } from '../../utils/pagination.js';
+import type { CreateOrderPayload } from '@circleup/shared';
+import { env } from '../../config/env.js';
+import { emailService } from '../../services/email.service.js';
+import { getConfiguredWhatsappNumber, settingsRepository } from '../../repositories/settings.repository.js';
+import {
+  createRazorpayOrder,
+  isRazorpayConfigurationAvailable,
+} from '../../services/razorpay.service.js';
+import {
+  isSupabaseCheckoutConfigured,
+  isSupabaseConfigured,
+  executeStorefrontCheckoutRpc,
+  getSupabaseAdminClient,
+} from '../../services/supabase.service.js';
+
+type SupabaseOrderRow = Record<string, unknown>;
+
+function mapSupabaseOrder(row: SupabaseOrderRow): Record<string, unknown> {
+  const address = row.shipping_address && typeof row.shipping_address === 'object'
+    ? row.shipping_address as Record<string, unknown>
+    : {};
+  const items = Array.isArray(row.order_items) ? row.order_items : Array.isArray(row.items) ? row.items : [];
+  const guestHash = row.guest_access_token_hash || null;
+  return {
+    id: String(row.id),
+    orderNumber: String(row.order_number || ''),
+    customerId: row.customer_id || null,
+    guestAccessTokenHash: guestHash,
+    guestAccessToken: guestHash,
+    guestAccessExpiresAt: row.guest_access_expires_at || null,
+    customer: {
+      name: String(row.customer_name || ''),
+      email: String(row.customer_email || ''),
+      phone: String(row.customer_phone || ''),
+    },
+    shippingAddress: address,
+    items: items.map((item: SupabaseOrderRow) => ({
+      productId: item.product_id ? String(item.product_id) : undefined,
+      serialNumber: String(item.serial_number || ''),
+      name: String(item.name || ''),
+      price: Number(item.price || 0),
+      quantity: Number(item.quantity || 0),
+      size: item.size || '',
+      color: item.color || '',
+      image: item.image_url || '',
+      slug: item.slug || '',
+    })),
+    subtotal: Number(row.subtotal || 0),
+    discount: Number(row.discount_amount || 0),
+    deliveryFee: Number(row.shipping_amount || 0),
+    totalAmount: Number(row.total_amount || 0),
+    status: row.status,
+    paymentMethod: row.payment_method,
+    paymentStatus: row.payment_status,
+    trackingNumber: row.tracking_number || '',
+    courier: row.courier || '',
+    promoCode: row.promo_code || '',
+    notes: row.notes || '',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function throwOrderStorageError(message: string): never {
+  throw new ServiceUnavailableError(message, 'DATABASE_UNAVAILABLE');
+}
+
+export function getKolkataDateString(now: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Kolkata',
+    year: '2-digit',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+
+  const year = parts.find((p) => p.type === 'year')?.value ?? '00';
+  const month = parts.find((p) => p.type === 'month')?.value ?? '00';
+  const day = parts.find((p) => p.type === 'day')?.value ?? '00';
+  return `${year}${month}${day}`;
+}
+
+export function generateOrderNumber(date: Date = new Date()): string {
+  const dateStr = getKolkataDateString(date);
+  // Complete unhyphenated UUID v4 (32 hex characters) providing 122 bits of cryptographic entropy
+  const cryptoSuffix = crypto.randomUUID().replace(/-/g, '').toUpperCase();
+  return `ORD-${dateStr}-${cryptoSuffix}`;
+}
+
+const ephemeralGuestTokens = new Map<string, { token: string; createdAt: number }>();
+
+function cacheEphemeralGuestToken(keyHash: string, token: string) {
+  const now = Date.now();
+  if (ephemeralGuestTokens.size > 1000) {
+    for (const [key, val] of ephemeralGuestTokens.entries()) {
+      if (now - val.createdAt > 24 * 60 * 60 * 1000) {
+        ephemeralGuestTokens.delete(key);
+      }
+    }
+  }
+  ephemeralGuestTokens.set(keyHash, { token, createdAt: now });
+}
+
+function getGuestTokenSecret(): string {
+  const secret = env.GUEST_ORDER_TOKEN_SECRET;
+  if (!secret || secret.length < 32) {
+    if (env.NODE_ENV === 'test') {
+      return 'circleup-test-guest-token-secret-at-least-32';
+    }
+    throw new Error('GUEST_ORDER_TOKEN_SECRET must be configured with at least 32 characters.');
+  }
+  return secret;
+}
+
+export function issueGuestAccessToken(orderNumber?: string): string {
+  const secret = getGuestTokenSecret();
+  // 32 cryptographically secure random bytes (256 bits of entropy)
+  const randomEntropy = crypto.randomBytes(32).toString('hex');
+  const payload = orderNumber ? `${orderNumber.trim().toUpperCase()}:${randomEntropy}` : randomEntropy;
+  const signature = crypto.createHmac('sha256', secret).update(`circleup:guest-token:${payload}`).digest('hex');
+  return `${payload}.${signature}`;
+}
+
+export function hashGuestToken(token: string): string {
+  return crypto.createHash('sha256').update(token.trim()).digest('hex');
+}
+
+export const orderService = {
+  generateOrderNumber,
+  issueGuestAccessToken,
+  verifyGuestAccessToken(
+    providedToken: string,
+    storedTokenOrHash?: string | null,
+    expiresAt?: Date | null,
+    orderNumber?: string | null,
+  ): boolean {
+    if (!providedToken || !storedTokenOrHash) return false;
+    if (expiresAt && new Date() > new Date(expiresAt)) return false;
+    try {
+      const cleanProvided = providedToken.trim();
+      const cleanStored = storedTokenOrHash.trim();
+
+      // 1. Verify cryptographic HMAC signature if token format is payload.signature
+      const dotIndex = cleanProvided.lastIndexOf('.');
+      if (dotIndex > 0) {
+        const payload = cleanProvided.substring(0, dotIndex);
+        const signature = cleanProvided.substring(dotIndex + 1);
+        const secret = getGuestTokenSecret();
+        const expectedSig = crypto
+          .createHmac('sha256', secret)
+          .update(`circleup:guest-token:${payload}`)
+          .digest('hex');
+
+        const bufSig = Buffer.from(signature);
+        const bufExpected = Buffer.from(expectedSig);
+        if (bufSig.length !== bufExpected.length || !crypto.timingSafeEqual(bufSig, bufExpected)) {
+          return false;
+        }
+
+        // If orderNumber is specified, ensure the payload matches the target order
+        if (orderNumber && payload.includes(':')) {
+          const [tokenOrderNumber] = payload.split(':');
+          if (tokenOrderNumber !== orderNumber.trim().toUpperCase()) {
+            return false;
+          }
+        }
+      }
+
+      // 2. Authoritative check: stored value MUST match the SHA-256 hash of the provided token
+      const providedHash = hashGuestToken(cleanProvided);
+      const bufProvidedHash = Buffer.from(providedHash);
+      const bufStored = Buffer.from(cleanStored);
+
+      if (
+        bufProvidedHash.length === bufStored.length &&
+        crypto.timingSafeEqual(bufProvidedHash, bufStored)
+      ) {
+        return true;
+      }
+
+      // 3. Stored hash is NEVER accepted as a direct token (legacy direct match branch removed)
+      return false;
+    } catch {
+      return false;
+    }
+  },
+
+  async revokeGuestAccessToken(orderNumber: string): Promise<boolean> {
+    const cleanNum = orderNumber.trim().toUpperCase();
+    const { data, error } = await getSupabaseAdminClient()
+      .from('orders')
+      .update({ guest_access_token_hash: null, guest_access_expires_at: new Date(0).toISOString() })
+      .eq('order_number', cleanNum)
+      .select('id')
+      .maybeSingle();
+    if (error) throwOrderStorageError(`Failed to revoke guest order access: ${error.message}`);
+    return Boolean(data);
+  },
+
+  async rotateGuestAccessToken(orderNumber: string): Promise<string> {
+    const cleanNum = orderNumber.trim().toUpperCase();
+    const newRawToken = issueGuestAccessToken(cleanNum);
+    const newHash = hashGuestToken(newRawToken);
+    const newExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const { data, error } = await getSupabaseAdminClient()
+      .from('orders')
+      .update({ guest_access_token_hash: newHash, guest_access_expires_at: newExpiresAt.toISOString() })
+      .eq('order_number', cleanNum)
+      .select('id')
+      .maybeSingle();
+    if (error) throwOrderStorageError(`Failed to rotate guest order access: ${error.message}`);
+    if (!data) {
+      throw new NotFoundError(`Order ${orderNumber} not found`, 'ORDER_NOT_FOUND');
+    }
+
+    return newRawToken;
+  },
+
+  async createOrder(payload: CreateOrderPayload & { idempotencyKey: string }) {
+    const { customer, shippingAddress, items, paymentMethod } = payload;
+
+    // Disallow new Cash on Delivery orders from storefront checkout
+    if (paymentMethod === 'CASH_ON_DELIVERY') {
+      throw new BadRequestError(
+        'Cash on Delivery is no longer available as a checkout option. Please complete your order securely with Razorpay.',
+        'PAYMENT_METHOD_DISALLOWED',
+      );
+    }
+
+    if (paymentMethod === 'WHATSAPP_UPI') {
+      const settings = await settingsRepository.getSettings();
+      if (!settings.isWhatsappVerified || !getConfiguredWhatsappNumber(settings.whatsappNumber)) {
+        throw new ServiceUnavailableError(
+          'WhatsApp / UPI payment is temporarily unavailable because store contact details have not been verified.',
+          'PAYMENT_METHOD_UNAVAILABLE',
+        );
+      }
+    }
+
+    if (!customer?.name || !customer?.email || !customer?.phone) {
+      throw new BadRequestError('Customer name, email, and phone are required.', 'MISSING_CUSTOMER_INFO');
+    }
+
+    if (!shippingAddress?.addressLine || !shippingAddress?.city || !shippingAddress?.state || !shippingAddress?.postalCode) {
+      throw new BadRequestError('Complete delivery address (line, city, state, postal code) is required.', 'INCOMPLETE_ADDRESS');
+    }
+
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new BadRequestError('Order must contain at least one item.', 'EMPTY_ORDER_ITEMS');
+    }
+
+    return this.createOrderSupabase(payload);
+  },
+
+  async createOrderSupabase(payload: CreateOrderPayload & { idempotencyKey: string }) {
+    const { customer, shippingAddress, items, promoCode, paymentMethod, notes, customerId, idempotencyKey } = payload;
+
+    // 1. Fail closed if monetary gate is unverified in production
+    if (env.NODE_ENV === 'production' && !env.MONETARY_RECONCILIATION_VERIFIED) {
+      throw new ServiceUnavailableError(
+        'Storefront checkout via Supabase is blocked in production: product catalog monetary units (paise vs rupees) have not been verified. Set MONETARY_RECONCILIATION_VERIFIED=true only after verifying database prices.',
+        'MONETARY_RECONCILIATION_REQUIRED',
+      );
+    }
+
+    // 2. Fail closed if privileged Supabase credentials are missing or unconfigured
+    if (!isSupabaseCheckoutConfigured()) {
+      throw new ServiceUnavailableError(
+        'Privileged Supabase server configuration is missing. SUPABASE_SERVICE_ROLE_KEY is required for storefront checkout.',
+        'DATABASE_UNAVAILABLE',
+      );
+    }
+
+    const keyHash = createHash('sha256').update(idempotencyKey).digest('hex');
+    const fingerprint = createHash('sha256').update(JSON.stringify({ customer, shippingAddress, items, promoCode, paymentMethod, notes, customerId })).digest('hex');
+
+    const orderNumber = generateOrderNumber();
+    let rawGuestToken: string | undefined;
+    if (!customerId) {
+      const cached = ephemeralGuestTokens.get(keyHash);
+      if (cached) {
+        rawGuestToken = cached.token;
+      } else {
+        rawGuestToken = issueGuestAccessToken(orderNumber);
+        cacheEphemeralGuestToken(keyHash, rawGuestToken);
+      }
+    }
+    const guestAccessTokenHash = rawGuestToken ? hashGuestToken(rawGuestToken) : null;
+    const guestAccessExpiresAt = customerId
+      ? null
+      : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    // 3. Authoritative Supabase atomic RPC execution path
+    // Zero catch-and-fallback to legacy databases: all RPC errors or database failures throw directly
+      const effectivePaymentMethod = paymentMethod || 'RAZORPAY';
+
+      const rpcResult = await executeStorefrontCheckoutRpc({
+        p_key_hash: keyHash,
+        p_fingerprint: fingerprint,
+        p_customer_id: customerId || null,
+        p_customer: {
+          name: customer.name.trim(),
+          email: customer.email.trim().toLowerCase(),
+          phone: customer.phone.trim(),
+        },
+        p_shipping_address: shippingAddress,
+        p_items: items.map((it) => ({
+          serialNumber: it.serialNumber.trim().toUpperCase(),
+          quantity: it.quantity,
+          size: it.size,
+        })),
+        p_payment_method: effectivePaymentMethod,
+        p_promo_code: promoCode ? promoCode.trim().toUpperCase() : null,
+        p_notes: notes ? notes.trim() : null,
+        p_guest_access_token_hash: guestAccessTokenHash,
+        p_guest_access_expires_at: guestAccessExpiresAt,
+        p_order_number: orderNumber,
+      });
+
+      // Create Razorpay order server-side with integer paise amount
+      let razorpayOrder: { id: string; amount: number; currency: string } | undefined;
+      if (effectivePaymentMethod === 'RAZORPAY' || effectivePaymentMethod === 'ONLINE_UPI') {
+        if (isRazorpayConfigurationAvailable()) {
+          try {
+            const rzp = await createRazorpayOrder({
+              amountPaise: rpcResult.totalAmount,
+              internalOrderNumber: rpcResult.orderNumber,
+            });
+            razorpayOrder = {
+              id: rzp.id,
+              amount: rzp.amount,
+              currency: rzp.currency,
+            };
+          } catch (err) {
+            if (env.NODE_ENV === 'test') {
+              razorpayOrder = {
+                id: `order_test_${crypto.randomBytes(8).toString('hex')}`,
+                amount: rpcResult.totalAmount,
+                currency: 'INR',
+              };
+            } else {
+              throw err;
+            }
+          }
+        } else if (env.NODE_ENV === 'test') {
+          razorpayOrder = {
+            id: `order_test_${crypto.randomBytes(8).toString('hex')}`,
+            amount: rpcResult.totalAmount,
+            currency: 'INR',
+          };
+        } else {
+          throw new ServiceUnavailableError(
+            'Razorpay online payment is temporarily unavailable. Please try again later.',
+            'PAYMENT_PROVIDER_UNAVAILABLE',
+          );
+        }
+      }
+
+      // Ephemeral guest token attached strictly in memory (never stored in response_payload or DB)
+      const finalResponse = {
+        ...rpcResult,
+        guestAccessToken: rpcResult.customerId ? undefined : (ephemeralGuestTokens.get(keyHash)?.token || rawGuestToken),
+        razorpay: razorpayOrder
+          ? {
+              orderId: razorpayOrder.id,
+              keyId: env.RAZORPAY_KEY_ID || 'rzp_test_placeholder',
+              amount: razorpayOrder.amount,
+              currency: razorpayOrder.currency,
+            }
+          : undefined,
+      };
+
+      // For offline methods (e.g. WHATSAPP_UPI), trigger initial confirmation emails
+      if (effectivePaymentMethod === 'WHATSAPP_UPI') {
+        void emailService.sendOrderConfirmation(
+          {
+            orderNumber: rpcResult.orderNumber,
+            customerEmail: customer.email,
+            customerName: customer.name,
+            totalInPaise: rpcResult.totalAmount,
+            subtotalInPaise: rpcResult.subtotal,
+            deliveryFeeInPaise: rpcResult.deliveryFee,
+            discountInPaise: rpcResult.discount,
+            shippingAddress,
+          },
+          (rpcResult.items || []).map((it) => ({
+            title: it.name || 'Vintage Find',
+            size: it.size,
+            priceInPaise: it.price || 0,
+            quantity: it.quantity || 1,
+          }))
+        ).catch(() => { });
+
+        void emailService.sendOwnerOrderAlert(
+          {
+            orderNumber: rpcResult.orderNumber,
+            customerName: customer.name,
+            customerEmail: customer.email,
+            customerPhone: customer.phone,
+            paymentMethod: effectivePaymentMethod,
+            totalInPaise: rpcResult.totalAmount,
+          },
+          (rpcResult.items || []).map((it) => ({
+            title: it.name || 'Vintage Find',
+            quantity: it.quantity || 1,
+          }))
+        ).catch(() => { });
+      }
+
+      return finalResponse;
+    },
+
+  async listCustomerOrders(customerId: string, query: { page?: unknown; limit?: unknown }) {
+    const { page, limit, skip } = parsePagination(query);
+    let result;
+    try {
+      result = await getSupabaseAdminClient()
+        .from('orders')
+        .select('*, order_items(*)', { count: 'exact' })
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false })
+        .range(skip, skip + limit - 1);
+    } catch {
+      throwOrderStorageError('Failed to retrieve customer orders from Supabase.');
+    }
+    const { data, error, count } = result;
+    if (error) throwOrderStorageError(`Failed to retrieve customer orders: ${error.message}`);
+    const orders = (data || []).map((row: SupabaseOrderRow) => mapSupabaseOrder(row));
+    const total = typeof count === 'number' ? count : orders.length;
+
+    return {
+      orders,
+      meta: buildPaginationMeta(page, limit, total),
+    };
+  },
+
+  async listOrders(query: { page?: unknown; limit?: unknown; status?: string; phone?: string }) {
+    const { page, limit, skip } = parsePagination(query);
+    let request = getSupabaseAdminClient().from('orders')
+      .select('*, order_items(*)', { count: 'exact' })
+      .order('created_at', { ascending: false });
+    if (query.status && query.status.toLowerCase() !== 'all') request = request.eq('status', query.status.toUpperCase());
+    if (query.phone?.trim()) request = request.eq('customer_phone', query.phone.trim());
+    let result;
+    try {
+      result = await request.range(skip, skip + limit - 1);
+    } catch {
+      throwOrderStorageError('Failed to retrieve orders from Supabase.');
+    }
+    const { data, error, count } = result;
+    if (error) throwOrderStorageError(`Failed to retrieve orders: ${error.message}`);
+    const orders = (data || []).map((row: SupabaseOrderRow) => mapSupabaseOrder(row));
+    const total = typeof count === 'number' ? count : orders.length;
+    return {
+      orders,
+      meta: buildPaginationMeta(page, limit, total),
+    };
+  },
+
+  async getOrderByNumber(orderNumber: string) {
+    const cleanNum = orderNumber.trim().toUpperCase();
+    let result;
+    try {
+      result = await getSupabaseAdminClient()
+        .from('orders')
+        .select('*, order_items(*)')
+        .eq('order_number', cleanNum)
+        .maybeSingle();
+    } catch {
+      throwOrderStorageError(`Failed to retrieve order ${cleanNum} from Supabase.`);
+    }
+    const { data, error } = result;
+    if (error) throwOrderStorageError(`Failed to retrieve order ${cleanNum}: ${error.message}`);
+    const order = data ? mapSupabaseOrder(data as SupabaseOrderRow) : null;
+    if (!order) {
+      throw new NotFoundError(`Order ${orderNumber} not found`, 'ORDER_NOT_FOUND');
+    }
+    return order;
+  },
+
+  async expireStaleReservations(expiryHours: number = env.RESERVATION_EXPIRY_HOURS) {
+    if (isSupabaseConfigured()) {
+      const client = getSupabaseAdminClient();
+      const { data, error } = await client.rpc('admin_release_expired_reservations', {
+        p_expiry_hours: expiryHours,
+      });
+      if (error) {
+        throw new ServiceUnavailableError(
+          `Failed to release expired reservations: ${error.message}`,
+          'DATABASE_UNAVAILABLE',
+        );
+      }
+      return data as {
+        expiredOrdersCount: number;
+        restoredItemsCount: number;
+        expiryHours: number;
+      };
+    }
+
+    return {
+      expiredOrdersCount: 0,
+      restoredItemsCount: 0,
+      expiryHours,
+    };
+  },
+};
+
+
+========== supabase/migrations/20261207000000_enable_razorpay_checkout.sql ==========
+-- ==============================================================================
+-- Migration: 20261207000000_enable_razorpay_checkout.sql
+-- Enables direct Razorpay online checkout, removes Cash on Delivery from storefront
+-- checkout, and implements atomic payment verification and reservation cancellation RPCs.
+-- ==============================================================================
+
+-- 1. Ensure Razorpay columns and indexes exist on public.orders
+alter table public.orders
+  add column if not exists razorpay_order_id text,
+  add column if not exists razorpay_payment_id text,
+  add column if not exists razorpay_signature text;
+
+create index if not exists idx_orders_razorpay_order_id on public.orders(razorpay_order_id)
+  where razorpay_order_id is not null;
+
+create index if not exists idx_orders_razorpay_payment_id on public.orders(razorpay_payment_id)
+  where razorpay_payment_id is not null;
+
+-- Ensure checkout_idempotency_keys table exists
+create table if not exists public.checkout_idempotency_keys (
+  key_hash text primary key,
+  fingerprint text not null,
+  status text not null default 'PENDING',
+  customer_id uuid,
+  order_id uuid,
+  response_payload jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  expires_at timestamptz not null default (now() + interval '24 hours')
+);
+create index if not exists idx_checkout_idempotency_keys_expires_at on public.checkout_idempotency_keys(expires_at);
+alter table public.checkout_idempotency_keys enable row level security;
+grant all on public.checkout_idempotency_keys to postgres, service_role;
+
+-- 2. Update process_storefront_checkout to disallow CASH_ON_DELIVERY and support RAZORPAY
+create or replace function public.process_storefront_checkout(
+  p_key_hash text,
+  p_fingerprint text,
+  p_customer_id uuid,
+  p_customer jsonb,
+  p_shipping_address jsonb,
+  p_items jsonb,
+  p_payment_method text,
+  p_promo_code text default null,
+  p_notes text default null,
+  p_guest_access_token_hash text default null,
+  p_guest_access_expires_at timestamptz default null,
+  p_order_number text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_existing_idem record;
+  v_conflicting_idem record;
+  v_claimed_idem record;
+  v_order_number text;
+  v_order_id uuid;
+  v_order_inserted boolean := false;
+  v_created_at timestamptz;
+  v_whatsapp_number text;
+  v_cleaned_whatsapp text;
+  v_is_whatsapp_verified boolean;
+  v_constraint_name text;
+  v_attempt integer;
+  v_item record;
+  v_serial text;
+  v_qty integer;
+  v_item_size text;
+  v_product record;
+  v_missing_serial text;
+  v_subtotal bigint := 0;
+  v_discount bigint := 0;
+  v_delivery_fee bigint := 0;
+  v_total_amount bigint := 0;
+  v_discounted_subtotal bigint := 0;
+  v_coupon record;
+  v_coupon_customer_usage bigint := 0;
+  v_new_stock integer;
+  v_new_status text;
+  v_items_json jsonb := '[]'::jsonb;
+  v_response_payload jsonb;
+begin
+  -- ----------------------------------------------------------------------------
+  -- 0. PRE-CHECK IDEMPOTENCY KEY
+  -- ----------------------------------------------------------------------------
+  if p_key_hash is null or length(trim(p_key_hash)) = 0 then
+    raise exception '%', jsonb_build_object(
+      'code', 'IDEMPOTENCY_KEY_REQUIRED',
+      'message', 'A valid Idempotency-Key header is required.'
+    )::text;
+  end if;
+
+  select *
+  into v_existing_idem
+  from public.checkout_idempotency_keys
+  where key_hash = p_key_hash;
+
+  if found then
+    if v_existing_idem.fingerprint <> p_fingerprint then
+      raise exception '%', jsonb_build_object(
+        'code', 'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD',
+        'message', 'An idempotency key cannot be reused for a different checkout request payload.'
+      )::text;
+    end if;
+
+    if v_existing_idem.status = 'COMMITTED' then
+      return v_existing_idem.response_payload;
+    end if;
+  end if;
+
+  -- ----------------------------------------------------------------------------
+  -- 1. CLAIM IDEMPOTENCY KEY
+  -- ----------------------------------------------------------------------------
+  insert into public.checkout_idempotency_keys (
+    key_hash,
+    fingerprint,
+    status,
+    customer_id,
+    order_id,
+    created_at,
+    expires_at
+  )
+  values (
+    p_key_hash,
+    p_fingerprint,
+    'PROCESSING',
+    p_customer_id,
+    null,
+    pg_catalog.now(),
+    pg_catalog.now() + interval '24 hours'
+  )
+  on conflict (key_hash) do update
+  set
+    status = 'PROCESSING',
+    expires_at = pg_catalog.now() + interval '24 hours'
+  where
+    public.checkout_idempotency_keys.key_hash = p_key_hash
+    and public.checkout_idempotency_keys.status in ('PENDING', 'FAILED')
+  returning * into v_claimed_idem;
+
+  if not found then
+    select *
+    into v_conflicting_idem
+    from public.checkout_idempotency_keys
+    where key_hash = p_key_hash;
+
+    if found and v_conflicting_idem.status = 'COMMITTED' then
+      if v_conflicting_idem.fingerprint <> p_fingerprint then
+        raise exception '%', jsonb_build_object(
+          'code', 'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD',
+          'message', 'An idempotency key cannot be reused for a different checkout request payload.'
+        )::text;
+      end if;
+      return v_conflicting_idem.response_payload;
+    end if;
+
+    if found and v_conflicting_idem.status = 'PROCESSING' and v_conflicting_idem.created_at > pg_catalog.now() - interval '60 seconds' then
+      raise exception '%', jsonb_build_object(
+        'code', 'CHECKOUT_ALREADY_IN_PROGRESS',
+        'message', 'A checkout transaction with this idempotency key is currently processing. Please wait.'
+      )::text;
+    end if;
+
+    raise exception '%', jsonb_build_object(
+      'code', 'CHECKOUT_RESERVATION_FAILED',
+      'message', 'Checkout reservation could not be acquired. Please retry.'
+    )::text;
+  end if;
+
+  -- ----------------------------------------------------------------------------
+  -- 2. VALIDATE PAYMENT METHOD (Razorpay is the sole storefront checkout payment method)
+  -- ----------------------------------------------------------------------------
+  if p_payment_method = 'CASH_ON_DELIVERY' then
+    raise exception '%', jsonb_build_object(
+      'code', 'PAYMENT_METHOD_DISALLOWED',
+      'message', 'Cash on Delivery is no longer available as a checkout option. Please pay securely with Razorpay.'
+    )::text;
+  elsif p_payment_method not in ('RAZORPAY', 'ONLINE_UPI', 'WHATSAPP_UPI') then
+    raise exception '%', jsonb_build_object(
+      'code', 'VALIDATION_ERROR',
+      'message', 'Invalid payment method: must be RAZORPAY or ONLINE_UPI.'
+    )::text;
+  end if;
+
+  if p_payment_method = 'WHATSAPP_UPI' then
+    select whatsapp_number, is_whatsapp_verified
+    into v_whatsapp_number, v_is_whatsapp_verified
+    from public.site_settings
+    limit 1;
+
+    v_cleaned_whatsapp := pg_catalog.regexp_replace(coalesce(v_whatsapp_number, ''), '\D', '', 'g');
+
+    if coalesce(v_is_whatsapp_verified, false) is not true or
+       v_cleaned_whatsapp is null or
+       not (v_cleaned_whatsapp ~ '^[1-9][0-9]{9,14}$') or
+       v_cleaned_whatsapp in ('919876543210', '910000000000', '1234567890', '9876543210') or
+       v_cleaned_whatsapp like '%000000%' then
+      raise exception '%', jsonb_build_object(
+        'code', 'PAYMENT_METHOD_UNAVAILABLE',
+        'message', 'WhatsApp / UPI payment is temporarily unavailable because store contact details have not been verified.'
+      )::text;
+    end if;
+  end if;
+
+  -- ----------------------------------------------------------------------------
+  -- 3. VALIDATE CUSTOMER & SHIPPING ADDRESS
+  -- ----------------------------------------------------------------------------
+  if p_customer is null or
+     trim(coalesce(p_customer->>'name', '')) = '' or
+     trim(coalesce(p_customer->>'email', '')) = '' or
+     trim(coalesce(p_customer->>'phone', '')) = '' then
+    raise exception '%', jsonb_build_object(
+      'code', 'MISSING_CUSTOMER_INFO',
+      'message', 'Customer name, email, and phone are required.'
+    )::text;
+  end if;
+
+  if p_shipping_address is null or
+     trim(coalesce(p_shipping_address->>'addressLine', '')) = '' or
+     trim(coalesce(p_shipping_address->>'city', '')) = '' or
+     trim(coalesce(p_shipping_address->>'state', '')) = '' or
+     trim(coalesce(p_shipping_address->>'postalCode', '')) = '' then
+    raise exception '%', jsonb_build_object(
+      'code', 'INCOMPLETE_ADDRESS',
+      'message', 'Complete delivery address (line, city, state, postal code) is required.'
+    )::text;
+  end if;
+
+  if p_items is null or pg_catalog.jsonb_array_length(p_items) = 0 then
+    raise exception '%', jsonb_build_object(
+      'code', 'EMPTY_ORDER_ITEMS',
+      'message', 'Order must contain at least one item.'
+    )::text;
+  end if;
+
+  -- ----------------------------------------------------------------------------
+  -- 4. VALIDATE & RESERVE INVENTORY ATOMICALLY
+  -- ----------------------------------------------------------------------------
+  for v_item in
+    select
+      upper(trim(value->>'serialNumber')) as serial_number,
+      coalesce((value->>'quantity')::integer, 1) as quantity,
+      trim(coalesce(value->>'size', '')) as size
+    from pg_catalog.jsonb_array_elements(p_items)
+  loop
+    v_serial := v_item.serial_number;
+    v_qty := v_item.quantity;
+    v_item_size := v_item.size;
+
+    if v_serial is null or length(v_serial) = 0 or v_qty <= 0 or v_qty > 10 then
+      raise exception '%', jsonb_build_object(
+        'code', 'INVALID_ORDER_ITEM',
+        'message', 'Each item must have a valid serialNumber and quantity between 1 and 10.'
+      )::text;
+    end if;
+
+    select *
+    into v_product
+    from public.products
+    where serial_number = v_serial
+    for update;
+
+    if not found then
+      raise exception '%', jsonb_build_object(
+        'code', 'PRODUCT_NOT_FOUND',
+        'message', 'Product with serial number ' || v_serial || ' was not found.'
+      )::text;
+    end if;
+
+    if v_product.status <> 'ACTIVE' or v_product.stock < v_qty then
+      raise exception '%', jsonb_build_object(
+        'code', 'OUT_OF_STOCK',
+        'message', 'Item "' || v_product.name || '" (' || v_serial || ') is no longer available in the requested quantity.'
+      )::text;
+    end if;
+
+    v_new_stock := v_product.stock - v_qty;
+    v_new_status := case when v_new_stock = 0 then 'SOLD_OUT' else 'ACTIVE' end;
+
+    update public.products
+    set
+      stock = v_new_stock,
+      status = v_new_status,
+      updated_at = pg_catalog.now()
+    where id = v_product.id;
+
+    v_subtotal := v_subtotal + (v_product.price * v_qty);
+
+    v_items_json := v_items_json || pg_catalog.jsonb_build_object(
+      'productId', v_product.id,
+      'serialNumber', v_product.serial_number,
+      'name', v_product.name,
+      'price', v_product.price,
+      'quantity', v_qty,
+      'size', case when v_item_size <> '' then v_item_size else null end,
+      'slug', v_product.slug,
+      'image', case when pg_catalog.jsonb_array_length(v_product.images) > 0 then v_product.images->>0 else null end
+    );
+  end loop;
+
+  -- ----------------------------------------------------------------------------
+  -- 5. COUPON & PROMOTION EVALUATION
+  -- ----------------------------------------------------------------------------
+  if p_promo_code is not null and trim(p_promo_code) <> '' then
+    select *
+    into v_coupon
+    from public.coupons
+    where code = upper(trim(p_promo_code))
+      and is_active = true
+      and starts_at <= pg_catalog.now()
+      and (expires_at is null or expires_at > pg_catalog.now())
+    for update;
+
+    if found then
+      if (v_coupon.usage_limit is null or v_coupon.usage_count < v_coupon.usage_limit)
+         and (v_coupon.min_order_amount is null or v_subtotal >= v_coupon.min_order_amount) then
+
+        if p_customer_id is not null and v_coupon.per_customer_limit is not null and v_coupon.per_customer_limit > 0 then
+          select count(*)
+          into v_coupon_customer_usage
+          from public.orders
+          where customer_id = p_customer_id
+            and promo_code = v_coupon.code
+            and status <> 'CANCELLED';
+
+          if v_coupon_customer_usage >= v_coupon.per_customer_limit then
+            raise exception '%', jsonb_build_object(
+              'code', 'COUPON_LIMIT_REACHED',
+              'message', 'You have reached the maximum number of redemptions for promo code "' || v_coupon.code || '".'
+            )::text;
+          end if;
+        end if;
+
+        if v_coupon.discount_type = 'PERCENTAGE' then
+          v_discount := (v_subtotal * v_coupon.discount_value) / 10000;
+          if v_coupon.max_discount_amount is not null and v_discount > v_coupon.max_discount_amount then
+            v_discount := v_coupon.max_discount_amount;
+          end if;
+        elsif v_coupon.discount_type = 'FIXED_AMOUNT' then
+          v_discount := v_coupon.discount_value;
+          if v_discount > v_subtotal then
+            v_discount := v_subtotal;
+          end if;
+        end if;
+
+        update public.coupons
+        set
+          usage_count = usage_count + 1,
+          updated_at = pg_catalog.now()
+        where id = v_coupon.id;
+      end if;
+    end if;
+  end if;
+
+  v_discounted_subtotal := v_subtotal - v_discount;
+  if v_discounted_subtotal < 0 then
+    v_discounted_subtotal := 0;
+  end if;
+
+  if v_discounted_subtotal >= 150000 then
+    v_delivery_fee := 0;
+  else
+    v_delivery_fee := 9000;
+  end if;
+
+  v_total_amount := v_discounted_subtotal + v_delivery_fee;
+
+  -- ----------------------------------------------------------------------------
+  -- 6. GENERATE COLLISION-RESISTANT ORDER NUMBER & INSERT ORDER
+  -- ----------------------------------------------------------------------------
+  for v_attempt in 1..5 loop
+    if p_order_number is not null and length(trim(p_order_number)) > 0 and v_attempt = 1 then
+      v_order_number := upper(trim(p_order_number));
+    else
+      v_order_number := 'ORD-' || to_char(timezone('Asia/Kolkata', pg_catalog.now()), 'YYMMDD') || '-' ||
+        upper(replace(gen_random_uuid()::text, '-', ''));
+    end if;
+
+    begin
+      insert into public.orders (
+        order_number,
+        customer_id,
+        customer_name,
+        customer_email,
+        customer_phone,
+        total_amount,
+        subtotal,
+        discount_amount,
+        shipping_amount,
+        status,
+        payment_status,
+        payment_method,
+        shipping_address,
+        promo_code,
+        notes,
+        guest_access_token_hash,
+        guest_access_expires_at,
+        created_at,
+        updated_at
+      )
+      values (
+        v_order_number,
+        p_customer_id,
+        trim(p_customer->>'name'),
+        lower(trim(p_customer->>'email')),
+        trim(p_customer->>'phone'),
+        v_total_amount,
+        v_subtotal,
+        v_discount,
+        v_delivery_fee,
+        case when p_payment_method in ('RAZORPAY', 'ONLINE_UPI') then 'PENDING' else 'CONFIRMED' end,
+        'PENDING',
+        p_payment_method,
+        p_shipping_address,
+        case when p_promo_code is not null and trim(p_promo_code) != '' then upper(trim(p_promo_code)) else null end,
+        p_notes,
+        p_guest_access_token_hash,
+        p_guest_access_expires_at,
+        pg_catalog.now(),
+        pg_catalog.now()
+      )
+      returning id, created_at into v_order_id, v_created_at;
+
+      v_order_inserted := true;
+      exit;
+    exception when unique_violation then
+      get stacked diagnostics v_constraint_name = constraint_name;
+      if v_constraint_name = 'orders_order_number_key' then
+        continue;
+      else
+        raise;
+      end if;
+    end;
+  end loop;
+
+  if not v_order_inserted then
+    raise exception '%', jsonb_build_object(
+      'code', 'ORDER_NUMBER_GENERATION_FAILED',
+      'message', 'Failed to allocate unique order number after multiple attempts.'
+    )::text;
+  end if;
+
+  -- ----------------------------------------------------------------------------
+  -- 7. INSERT ORDER ITEMS
+  -- ----------------------------------------------------------------------------
+  for v_item in
+    select
+      (value->>'productId')::uuid as product_id,
+      value->>'serialNumber' as serial_number,
+      value->>'name' as name,
+      (value->>'price')::bigint as price,
+      (value->>'quantity')::integer as quantity,
+      value->>'size' as size,
+      value->>'image' as image_url,
+      value->>'slug' as slug
+    from pg_catalog.jsonb_array_elements(v_items_json)
+  loop
+    insert into public.order_items (
+      order_id,
+      product_id,
+      serial_number,
+      name,
+      price,
+      quantity,
+      size,
+      image_url,
+      created_at
+    )
+    values (
+      v_order_id,
+      v_item.product_id,
+      v_item.serial_number,
+      v_item.name,
+      v_item.price,
+      v_item.quantity,
+      v_item.size,
+      v_item.image_url,
+      pg_catalog.now()
+    );
+  end loop;
+
+  -- ----------------------------------------------------------------------------
+  -- 8. CONSTRUCT AUTHORITATIVE ORDER RESPONSE PAYLOAD
+  -- ----------------------------------------------------------------------------
+  v_response_payload := jsonb_build_object(
+    'id', v_order_id,
+    'orderNumber', v_order_number,
+    'customerId', p_customer_id,
+    'customer', jsonb_build_object(
+      'name', trim(p_customer->>'name'),
+      'email', lower(trim(p_customer->>'email')),
+      'phone', trim(p_customer->>'phone')
+    ),
+    'shippingAddress', p_shipping_address,
+    'items', v_items_json,
+    'subtotal', v_subtotal,
+    'discount', v_discount,
+    'deliveryFee', v_delivery_fee,
+    'totalAmount', v_total_amount,
+    'status', case when p_payment_method in ('RAZORPAY', 'ONLINE_UPI') then 'PENDING' else 'CONFIRMED' end,
+    'paymentMethod', p_payment_method,
+    'paymentStatus', 'PENDING',
+    'promoCode', case when p_promo_code is not null and trim(p_promo_code) != '' then upper(trim(p_promo_code)) else null end,
+    'notes', p_notes,
+    'createdAt', v_created_at
+  );
+
+  -- ----------------------------------------------------------------------------
+  -- 9. COMMIT IDEMPOTENCY RECORD
+  -- ----------------------------------------------------------------------------
+  update public.checkout_idempotency_keys
+  set
+    status = 'COMMITTED',
+    order_id = v_order_id,
+    response_payload = v_response_payload,
+    expires_at = pg_catalog.now() + interval '7 days'
+  where key_hash = p_key_hash;
+
+  return v_response_payload;
+end;
+$$;
+
+revoke all on function public.process_storefront_checkout(text, text, uuid, jsonb, jsonb, jsonb, text, text, text, text, timestamptz, text) from public;
+grant execute on function public.process_storefront_checkout(text, text, uuid, jsonb, jsonb, jsonb, text, text, text, text, timestamptz, text) to service_role;
+
+-- 3. Create RPC public.storefront_verify_razorpay_payment
+create or replace function public.storefront_verify_razorpay_payment(
+  p_order_number text,
+  p_razorpay_order_id text,
+  p_razorpay_payment_id text,
+  p_razorpay_signature text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_order record;
+  v_items jsonb;
+begin
+  if p_order_number is null or length(trim(p_order_number)) = 0 then
+    raise exception '%', jsonb_build_object(
+      'code', 'VALIDATION_ERROR',
+      'message', 'A valid order number is required for payment verification.'
+    )::text;
+  end if;
+
+  select *
+  into v_order
+  from public.orders
+  where order_number = upper(trim(p_order_number))
+  for update;
+
+  if not found then
+    raise exception '%', jsonb_build_object(
+      'code', 'ORDER_NOT_FOUND',
+      'message', 'Order ' || p_order_number || ' was not found.'
+    )::text;
+  end if;
+
+  -- Idempotent return if already marked PAID
+  if v_order.payment_status = 'PAID' then
+    select coalesce(
+      jsonb_agg(
+        jsonb_build_object(
+          'id', oi.id,
+          'productId', oi.product_id,
+          'serialNumber', oi.serial_number,
+          'name', oi.name,
+          'price', oi.price,
+          'quantity', oi.quantity,
+          'size', oi.size,
+          'image', oi.image_url
+        )
+        order by oi.created_at asc
+      ),
+      '[]'::jsonb
+    ) into v_items
+    from public.order_items as oi
+    where oi.order_id = v_order.id;
+
+    return jsonb_build_object(
+      'order', to_jsonb(v_order),
+      'items', v_items
+    );
+  end if;
+
+  if v_order.status = 'CANCELLED' then
+    raise exception '%', jsonb_build_object(
+      'code', 'ORDER_ALREADY_CANCELLED',
+      'message', 'Cannot verify payment for a cancelled order.'
+    )::text;
+  end if;
+
+  -- Update order to PAID and advance to CONFIRMED
+  update public.orders
+  set
+    payment_status = 'PAID',
+    status = case when status = 'PENDING' then 'CONFIRMED' else status end,
+    payment_id = p_razorpay_payment_id,
+    razorpay_order_id = p_razorpay_order_id,
+    razorpay_payment_id = p_razorpay_payment_id,
+    razorpay_signature = p_razorpay_signature,
+    updated_at = timezone('utc'::text, now())
+  where id = v_order.id
+  returning * into v_order;
+
+  -- Append audit log
+  insert into public.activity_audit_logs (
+    actor_id,
+    actor_role,
+    actor_email,
+    table_name,
+    record_id,
+    action,
+    before_state,
+    after_state,
+    diff
+  )
+  values (
+    coalesce(v_order.customer_id::text, 'guest'),
+    'system',
+    v_order.customer_email,
+    'orders',
+    v_order.id::text,
+    'ORDER_PAYMENT_VERIFIED',
+    jsonb_build_object('payment_status', 'PENDING', 'status', 'PENDING'),
+    jsonb_build_object('payment_status', 'PAID', 'status', v_order.status, 'payment_id', p_razorpay_payment_id),
+    jsonb_build_object('razorpay_payment_id', p_razorpay_payment_id, 'razorpay_order_id', p_razorpay_order_id)
+  );
+
+  select coalesce(
+    jsonb_agg(
+      jsonb_build_object(
+        'id', oi.id,
+        'productId', oi.product_id,
+        'serialNumber', oi.serial_number,
+        'name', oi.name,
+        'price', oi.price,
+        'quantity', oi.quantity,
+        'size', oi.size,
+        'image', oi.image_url
+      )
+      order by oi.created_at asc
+    ),
+    '[]'::jsonb
+  ) into v_items
+  from public.order_items as oi
+  where oi.order_id = v_order.id;
+
+  return jsonb_build_object(
+    'order', to_jsonb(v_order),
+    'items', v_items
+  );
+end;
+$$;
+
+revoke all on function public.storefront_verify_razorpay_payment(text, text, text, text) from public;
+grant execute on function public.storefront_verify_razorpay_payment(text, text, text, text) to service_role;
+
+-- 4. Create RPC public.storefront_cancel_pending_order to release inventory cleanly
+create or replace function public.storefront_cancel_pending_order(
+  p_order_number text,
+  p_reason text default 'Checkout dismissed or payment failed'
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_order record;
+  v_item record;
+  v_product_id uuid;
+begin
+  if p_order_number is null or length(trim(p_order_number)) = 0 then
+    raise exception '%', jsonb_build_object(
+      'code', 'VALIDATION_ERROR',
+      'message', 'A valid order number is required.'
+    )::text;
+  end if;
+
+  select *
+  into v_order
+  from public.orders
+  where order_number = upper(trim(p_order_number))
+  for update;
+
+  if not found then
+    raise exception '%', jsonb_build_object(
+      'code', 'ORDER_NOT_FOUND',
+      'message', 'Order ' || p_order_number || ' was not found.'
+    )::text;
+  end if;
+
+  -- Idempotent return if already CANCELLED
+  if v_order.status = 'CANCELLED' then
+    return true;
+  end if;
+
+  if v_order.payment_status = 'PAID' then
+    raise exception '%', jsonb_build_object(
+      'code', 'CANNOT_CANCEL_PAID_ORDER',
+      'message', 'Paid orders cannot be automatically cancelled via storefront dismissal.'
+    )::text;
+  end if;
+
+  -- Restore stock for each item in the order
+  for v_item in
+    select oi.serial_number, sum(oi.quantity)::integer as quantity
+    from public.order_items as oi
+    where oi.order_id = v_order.id
+    group by oi.serial_number
+  loop
+    select p.id into v_product_id
+    from public.products as p
+    where p.serial_number = v_item.serial_number
+    for update;
+
+    if found then
+      update public.products
+      set
+        stock = stock + v_item.quantity,
+        status = case
+          when status = 'SOLD_OUT' then 'ACTIVE'
+          else status
+        end,
+        updated_at = timezone('utc'::text, now())
+      where id = v_product_id;
+    end if;
+  end loop;
+
+  -- Mark order cancelled with note
+  update public.orders
+  set
+    status = 'CANCELLED',
+    notes = coalesce(notes, '') || ' | ' || coalesce(p_reason, 'Checkout dismissed'),
+    updated_at = timezone('utc'::text, now())
+  where id = v_order.id;
+
+  -- Audit log
+  insert into public.activity_audit_logs (
+    actor_id,
+    actor_role,
+    actor_email,
+    table_name,
+    record_id,
+    action,
+    before_state,
+    after_state,
+    diff
+  )
+  values (
+    coalesce(v_order.customer_id::text, 'guest'),
+    'system',
+    v_order.customer_email,
+    'orders',
+    v_order.id::text,
+    'ORDER_STATUS_UPDATE',
+    jsonb_build_object('status', v_order.status, 'payment_status', v_order.payment_status),
+    jsonb_build_object('status', 'CANCELLED', 'payment_status', v_order.payment_status),
+    jsonb_build_object('reason', p_reason, 'operation', 'ORDER_RESERVATION_CANCELLED')
+  );
+
+  return true;
+end;
+$$;
+
+revoke all on function public.storefront_cancel_pending_order(text, text) from public;
+grant execute on function public.storefront_cancel_pending_order(text, text) to service_role;
+
+
+========== supabase/migrations/20261205000000_p2_hardening_and_features.sql ==========
+-- ==============================================================================
+-- CircleUp Migration: P2 Hardening & Features
+-- 1. Atomic event registration locking capacity and unique email
+-- 2. UTR number & payment proof capture on orders + payment verification RPC
+-- 3. Daily payment reconciliation aggregate RPC
+-- 4. Admin order refund processing with stock restock support
+-- 5. Admin fulfillment creation with order status update
+-- 6. Marketing newsletter subscriptions with consent and unsubscribe tracking
+-- ==============================================================================
+
+-- ------------------------------------------------------------------------------
+-- 1. Atomic Event Registration
+-- ------------------------------------------------------------------------------
+create unique index if not exists idx_event_reg_unique_email
+  on public.event_registrations (event_id, lower(email));
+
+create or replace function public.register_for_event_atomic(
+  p_event_id uuid,
+  p_name text,
+  p_email text,
+  p_phone text,
+  p_notes text default ''
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_event public.events%rowtype;
+  v_reg public.event_registrations%rowtype;
+  v_clean_email text;
+  v_clean_name text;
+  v_clean_phone text;
+begin
+  if p_event_id is null then
+    raise exception '%', jsonb_build_object('code', 'VALIDATION_ERROR', 'message', 'Event ID is required.')::text using errcode = '22023';
+  end if;
+
+  v_clean_email := lower(trim(coalesce(p_email, '')));
+  v_clean_name := trim(coalesce(p_name, ''));
+  v_clean_phone := trim(coalesce(p_phone, ''));
+
+  if length(v_clean_name) < 2 or length(v_clean_name) > 100 then
+    raise exception '%', jsonb_build_object('code', 'VALIDATION_ERROR', 'message', 'Name must contain 2 to 100 characters.')::text using errcode = '22023';
+  end if;
+  if v_clean_email !~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' then
+    raise exception '%', jsonb_build_object('code', 'VALIDATION_ERROR', 'message', 'Valid email address is required.')::text using errcode = '22023';
+  end if;
+  if length(v_clean_phone) < 7 or length(v_clean_phone) > 20 then
+    raise exception '%', jsonb_build_object('code', 'VALIDATION_ERROR', 'message', 'Valid phone number is required.')::text using errcode = '22023';
+  end if;
+
+  -- Acquire exclusive row lock on the event to prevent concurrent registration race conditions
+  select * into v_event
+  from public.events
+  where id = p_event_id
+  for update;
+
+  if not found then
+    raise exception '%', jsonb_build_object('code', 'EVENT_NOT_FOUND', 'message', 'Event was not found.')::text using errcode = 'P0002';
+  end if;
+
+  if not v_event.is_registration_open then
+    raise exception '%', jsonb_build_object('code', 'EVENT_REGISTRATION_CLOSED', 'message', 'Registration for this event is closed.')::text using errcode = 'P0001';
+  end if;
+
+  if v_event.capacity is not null and v_event.registered_count >= v_event.capacity then
+    raise exception '%', jsonb_build_object('code', 'EVENT_CAPACITY_REACHED', 'message', 'This event has reached full capacity.')::text using errcode = 'P0001';
+  end if;
+
+  -- Check duplicate registration
+  if exists (
+    select 1 from public.event_registrations
+    where event_id = p_event_id and lower(email) = v_clean_email
+  ) then
+    raise exception '%', jsonb_build_object('code', 'DUPLICATE_REGISTRATION', 'message', 'A registration for this email has already been received for this event.')::text using errcode = '23505';
+  end if;
+
+  -- Insert registration
+  insert into public.event_registrations (
+    event_id, name, email, phone, notes
+  ) values (
+    p_event_id, v_clean_name, v_clean_email, v_clean_phone, coalesce(trim(p_notes), '')
+  )
+  returning * into v_reg;
+
+  -- Increment registered_count atomically
+  update public.events
+  set registered_count = registered_count + 1,
+      updated_at = timezone('utc'::text, now())
+  where id = p_event_id;
+
+  return jsonb_build_object(
+    'id', v_reg.id,
+    'eventId', v_reg.event_id,
+    'eventTitle', v_event.title,
+    'name', v_reg.name,
+    'email', v_reg.email,
+    'phone', v_reg.phone,
+    'notes', nullif(v_reg.notes, ''),
+    'createdAt', v_reg.created_at
+  );
+end;
+$$;
+
+revoke all on function public.register_for_event_atomic(uuid, text, text, text, text) from public, anon, authenticated;
+grant execute on function public.register_for_event_atomic(uuid, text, text, text, text) to service_role;
+
+-- ------------------------------------------------------------------------------
+-- 2. UTR Number, Payment Proof & Marketing Consent on Orders
+-- ------------------------------------------------------------------------------
+alter table public.orders
+  add column if not exists utr_number text,
+  add column if not exists payment_proof_url text,
+  add column if not exists marketing_consent boolean not null default false,
+  add column if not exists marketing_consent_at timestamptz;
+
+-- Update admin_mark_order_payment_received to capture UTR & proof
+create or replace function public.admin_mark_order_payment_received(
+  p_order_ref text,
+  p_actor_id text,
+  p_actor_email text,
+  p_actor_role text,
+  p_ip_address text default null,
+  p_user_agent text default null,
+  p_utr_number text default null,
+  p_payment_proof_url text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_order public.orders%rowtype;
+  v_items jsonb;
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    raise exception '%', jsonb_build_object('code', 'FORBIDDEN', 'message', 'Admin order operation is not authorized.')::text using errcode = '42501';
+  end if;
+  if p_order_ref is null or length(trim(p_order_ref)) not between 8 and 100
+     or not (trim(p_order_ref) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+             or upper(trim(p_order_ref)) ~ '^ORD-[A-Z0-9-]{8,80}$')
+     or p_actor_id is null or length(trim(p_actor_id)) = 0
+     or p_actor_role is null or p_actor_role <> 'owner' then
+    raise exception '%', jsonb_build_object('code', 'VALIDATION_ERROR', 'message', 'Owner payment verification request is invalid.')::text using errcode = '22023';
+  end if;
+
+  select o.* into v_order
+  from public.orders as o
+  where o.order_number = upper(trim(p_order_ref)) or o.id::text = trim(p_order_ref)
+  for update;
+  if not found then
+    raise exception '%', jsonb_build_object('code', 'ORDER_NOT_FOUND', 'message', 'Order was not found.')::text using errcode = 'P0002';
+  end if;
+  if v_order.payment_method = 'ONLINE_UPI' then
+    raise exception '%', jsonb_build_object('code', 'PAYMENT_PROVIDER_UNAVAILABLE', 'message', 'Online payment cannot be manually marked received; provider verification is unavailable.')::text using errcode = 'P0001';
+  end if;
+  if v_order.payment_method not in ('CASH_ON_DELIVERY', 'WHATSAPP_UPI') then
+    raise exception '%', jsonb_build_object('code', 'INVALID_MANUAL_PAYMENT_METHOD', 'message', 'This payment method cannot be manually verified.')::text using errcode = 'P0001';
+  end if;
+  if v_order.status not in ('CONFIRMED', 'SHIPPED', 'DELIVERED') then
+    raise exception '%', jsonb_build_object('code', 'INVALID_PAYMENT_ORDER_STATE', 'message', 'Payment cannot be recorded for an order in its current state.')::text using errcode = 'P0001';
+  end if;
+  if v_order.payment_status <> 'PENDING' then
+    raise exception '%', jsonb_build_object('code', 'PAYMENT_ALREADY_RECORDED', 'message', 'Payment has already been recorded for this order.')::text using errcode = 'P0001';
+  end if;
+
+  update public.orders as o
+  set payment_status = 'PAID',
+      utr_number = coalesce(nullif(trim(p_utr_number), ''), o.utr_number),
+      payment_proof_url = coalesce(nullif(trim(p_payment_proof_url), ''), o.payment_proof_url),
+      updated_at = timezone('utc'::text, now())
+  where o.id = v_order.id
+  returning o.* into v_order;
+
+  -- Required audit insert
+  insert into public.activity_audit_logs (
+    actor_id, actor_email, actor_role, table_name, record_id, action,
+    after_state, ip_address, user_agent
+  ) values (
+    p_actor_id, p_actor_email, p_actor_role, 'Order', v_order.order_number,
+    'ORDER_PAYMENT_VERIFIED',
+    jsonb_build_object(
+      'previousPaymentStatus', 'PENDING',
+      'paymentStatus', 'PAID',
+      'paymentMethod', v_order.payment_method,
+      'utrNumber', v_order.utr_number,
+      'paymentProofUrl', v_order.payment_proof_url
+    ),
+    coalesce(p_ip_address, '127.0.0.1'), left(coalesce(p_user_agent, 'CircleUp Admin'), 1024)
+  );
+
+  select coalesce(jsonb_agg(to_jsonb(oi) order by oi.id), '[]'::jsonb)
+  into v_items from public.order_items as oi where oi.order_id = v_order.id;
+  return jsonb_build_object('order', to_jsonb(v_order), 'order_items', v_items);
+end;
+$$;
+
+revoke all on function public.admin_mark_order_payment_received(text, text, text, text, text, text, text, text) from public, anon, authenticated;
+grant execute on function public.admin_mark_order_payment_received(text, text, text, text, text, text, text, text) to service_role;
+
+-- ------------------------------------------------------------------------------
+-- 3. Daily Payment Reconciliation View & RPC
+-- ------------------------------------------------------------------------------
+create or replace function public.admin_get_daily_reconciliation(
+  p_days integer default 30
+)
+returns table (
+  reconciliation_date date,
+  payment_method text,
+  payment_status text,
+  order_count bigint,
+  total_paise bigint,
+  verified_utr_count bigint
+)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    raise exception '%', jsonb_build_object('code', 'FORBIDDEN', 'message', 'Reconciliation report is not authorized.')::text using errcode = '42501';
+  end if;
+
+  return query
+  select
+    date_trunc('day', o.created_at)::date as reconciliation_date,
+    o.payment_method,
+    o.payment_status,
+    count(o.id)::bigint as order_count,
+    coalesce(sum(o.total_paise), 0)::bigint as total_paise,
+    count(o.utr_number)::bigint as verified_utr_count
+  from public.orders as o
+  where o.created_at >= (timezone('utc'::text, now()) - (coalesce(p_days, 30) || ' days')::interval)
+  group by 1, 2, 3
+  order by reconciliation_date desc, o.payment_method asc;
+end;
+$$;
+
+revoke all on function public.admin_get_daily_reconciliation(integer) from public, anon, authenticated;
+grant execute on function public.admin_get_daily_reconciliation(integer) to service_role;
+
+-- ------------------------------------------------------------------------------
+-- 4. Admin Refund Processing with Stock Restock
+-- ------------------------------------------------------------------------------
+create or replace function public.admin_process_order_refund(
+  p_order_ref text,
+  p_amount_paise bigint,
+  p_reason text,
+  p_routing_action text,
+  p_actor_id text,
+  p_actor_email text,
+  p_actor_role text,
+  p_ip_address text default null,
+  p_user_agent text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_order public.orders%rowtype;
+  v_item record;
+  v_refund public.refunds%rowtype;
+  v_new_payment_status text;
+  v_new_order_status text;
+  v_clean_action text;
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    raise exception '%', jsonb_build_object('code', 'FORBIDDEN', 'message', 'Admin refund operation is not authorized.')::text using errcode = '42501';
+  end if;
+  if p_actor_role is null or p_actor_role <> 'owner' then
+    raise exception '%', jsonb_build_object('code', 'FORBIDDEN', 'message', 'Only owners may process refunds.')::text using errcode = '42501';
+  end if;
+  if p_amount_paise is null or p_amount_paise <= 0 then
+    raise exception '%', jsonb_build_object('code', 'VALIDATION_ERROR', 'message', 'Refund amount must be greater than zero.')::text using errcode = '22023';
+  end if;
+
+  v_clean_action := upper(trim(coalesce(p_routing_action, 'RESTOCK')));
+  if v_clean_action not in ('RESTOCK', 'DRY_CLEAN', 'ALTERATION', 'DISCARD') then
+    v_clean_action := 'RESTOCK';
+  end if;
+
+  select o.* into v_order
+  from public.orders as o
+  where o.order_number = upper(trim(p_order_ref)) or o.id::text = trim(p_order_ref)
+  for update;
+
+  if not found then
+    raise exception '%', jsonb_build_object('code', 'ORDER_NOT_FOUND', 'message', 'Order was not found.')::text using errcode = 'P0002';
+  end if;
+
+  if v_order.payment_status not in ('PAID', 'PARTIALLY_REFUNDED') then
+    raise exception '%', jsonb_build_object('code', 'ORDER_NOT_PAID', 'message', 'Cannot refund an unpaid order.')::text using errcode = 'P0001';
+  end if;
+
+  if p_amount_paise > v_order.total_paise then
+    raise exception '%', jsonb_build_object('code', 'REFUND_EXCEEDS_TOTAL', 'message', 'Refund amount cannot exceed order total.')::text using errcode = '22023';
+  end if;
+
+  if p_amount_paise >= v_order.total_paise then
+    v_new_payment_status := 'REFUNDED';
+    v_new_order_status := 'REFUNDED';
+  else
+    v_new_payment_status := 'PARTIALLY_REFUNDED';
+    v_new_order_status := v_order.status;
+  end if;
+
+  -- Insert into public.refunds
+  insert into public.refunds (
+    order_id, amount_paise, reason, status, approved_by, routing_action
+  ) values (
+    v_order.id, p_amount_paise, trim(coalesce(p_reason, 'Customer requested refund')), 'APPROVED', p_actor_email, v_clean_action
+  )
+  returning * into v_refund;
+
+  -- Update order status
+  update public.orders
+  set payment_status = v_new_payment_status,
+      status = v_new_order_status,
+      updated_at = timezone('utc'::text, now())
+  where id = v_order.id
+  returning * into v_order;
+
+  -- If restock action chosen, restore inventory
+  if v_clean_action = 'RESTOCK' then
+    for v_item in select product_id, quantity from public.order_items where order_id = v_order.id loop
+      update public.products
+      set stock = stock + v_item.quantity,
+          status = case when status = 'SOLD_OUT' then 'ACTIVE' else status end,
+          updated_at = timezone('utc'::text, now())
+      where id = v_item.product_id;
+    end loop;
+  end if;
+
+  -- Insert audit log
+  insert into public.activity_audit_logs (
+    actor_id, actor_email, actor_role, table_name, record_id, action,
+    after_state, ip_address, user_agent
+  ) values (
+    p_actor_id, p_actor_email, p_actor_role, 'Refund', v_refund.id::text,
+    'ORDER_REFUNDED',
+    jsonb_build_object(
+      'orderNumber', v_order.order_number,
+      'refundAmountPaise', p_amount_paise,
+      'routingAction', v_clean_action,
+      'newPaymentStatus', v_new_payment_status
+    ),
+    coalesce(p_ip_address, '127.0.0.1'), left(coalesce(p_user_agent, 'CircleUp Admin'), 1024)
+  );
+
+  return jsonb_build_object(
+    'refund', to_jsonb(v_refund),
+    'order', to_jsonb(v_order)
+  );
+end;
+$$;
+
+revoke all on function public.admin_process_order_refund(text, bigint, text, text, text, text, text, text, text) from public, anon, authenticated;
+grant execute on function public.admin_process_order_refund(text, bigint, text, text, text, text, text, text, text) to service_role;
+
+-- ------------------------------------------------------------------------------
+-- 5. Admin Fulfillment Creation
+-- ------------------------------------------------------------------------------
+create or replace function public.admin_create_order_fulfillment(
+  p_order_ref text,
+  p_tracking_number text,
+  p_carrier text,
+  p_notes text default null,
+  p_actor_id text default null,
+  p_actor_email text default null,
+  p_actor_role text default null,
+  p_ip_address text default null,
+  p_user_agent text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_order public.orders%rowtype;
+  v_fulfillment public.fulfillments%rowtype;
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    raise exception '%', jsonb_build_object('code', 'FORBIDDEN', 'message', 'Admin fulfillment operation is not authorized.')::text using errcode = '42501';
+  end if;
+
+  select o.* into v_order
+  from public.orders as o
+  where o.order_number = upper(trim(p_order_ref)) or o.id::text = trim(p_order_ref)
+  for update;
+
+  if not found then
+    raise exception '%', jsonb_build_object('code', 'ORDER_NOT_FOUND', 'message', 'Order was not found.')::text using errcode = 'P0002';
+  end if;
+
+  insert into public.fulfillments (
+    order_id, tracking_number, carrier, status, shipped_at, notes
+  ) values (
+    v_order.id, trim(p_tracking_number), trim(p_carrier), 'SHIPPED', timezone('utc'::text, now()), nullif(trim(p_notes), '')
+  )
+  returning * into v_fulfillment;
+
+  -- Advance order status to SHIPPED if it was CONFIRMED or PACKED
+  if v_order.status in ('CONFIRMED', 'PACKED') then
+    update public.orders
+    set status = 'SHIPPED',
+        updated_at = timezone('utc'::text, now())
+    where id = v_order.id
+    returning * into v_order;
+  end if;
+
+  -- Insert audit log
+  insert into public.activity_audit_logs (
+    actor_id, actor_email, actor_role, table_name, record_id, action,
+    after_state, ip_address, user_agent
+  ) values (
+    coalesce(p_actor_id, 'system'), coalesce(p_actor_email, 'admin@circleuponline.com'), coalesce(p_actor_role, 'staff'),
+    'Fulfillment', v_fulfillment.id::text, 'ORDER_FULFILLED',
+    jsonb_build_object(
+      'orderNumber', v_order.order_number,
+      'trackingNumber', v_fulfillment.tracking_number,
+      'carrier', v_fulfillment.carrier,
+      'status', v_fulfillment.status
+    ),
+    coalesce(p_ip_address, '127.0.0.1'), left(coalesce(p_user_agent, 'CircleUp Admin'), 1024)
+  );
+
+  return jsonb_build_object(
+    'fulfillment', to_jsonb(v_fulfillment),
+    'order', to_jsonb(v_order)
+  );
+end;
+$$;
+
+revoke all on function public.admin_create_order_fulfillment(text, text, text, text, text, text, text, text, text) from public, anon, authenticated;
+grant execute on function public.admin_create_order_fulfillment(text, text, text, text, text, text, text, text, text) to service_role;
+
+-- ------------------------------------------------------------------------------
+-- 6. Marketing Newsletter Subscriptions & Consent
+-- ------------------------------------------------------------------------------
+create table if not exists public.newsletter_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  email text not null unique,
+  name text,
+  consent boolean not null default true,
+  consent_at timestamptz not null default timezone('utc'::text, now()),
+  source text not null default 'exit_intent',
+  unsubscribed boolean not null default false,
+  unsubscribed_at timestamptz,
+  ip_address text,
+  created_at timestamptz not null default timezone('utc'::text, now()),
+  updated_at timestamptz not null default timezone('utc'::text, now())
+);
+
+create index if not exists idx_newsletter_email on public.newsletter_subscriptions (lower(email));
+alter table public.newsletter_subscriptions enable row level security;
+
+-- Allow anon and authenticated to subscribe, but not read/modify existing entries
+revoke all on table public.newsletter_subscriptions from anon, authenticated;
+grant insert on table public.newsletter_subscriptions to anon, authenticated;
+grant all on table public.newsletter_subscriptions to service_role;
+
+drop policy if exists "Public can subscribe to newsletter" on public.newsletter_subscriptions;
+create policy "Public can subscribe to newsletter"
+  on public.newsletter_subscriptions for insert
+  to anon, authenticated
+  with check (true);

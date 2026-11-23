@@ -98,12 +98,13 @@ const checkoutState = vi.hoisted(() => {
         order.status = params.p_new_status;
         order.updated_at = new Date().toISOString();
         adminAuditRecords.push({ action: 'ORDER_STATUS_UPDATE', orderNumber: order.order_number, actor: params.p_actor_id });
-      } else if (name === 'admin_mark_order_payment_received') {
-        if (order.payment_method === 'ONLINE_UPI') return failure('PAYMENT_PROVIDER_UNAVAILABLE', 'Online payment cannot be manually marked received; provider verification is unavailable.');
+      } else if (name === 'admin_mark_order_payment_received' || name === 'admin_verify_order_payment') {
+        if (order.payment_method === 'ONLINE_UPI' || order.payment_method === 'RAZORPAY') return failure('PAYMENT_PROVIDER_UNAVAILABLE', 'Online payment cannot be manually marked received; provider verification is unavailable.');
         if (!['CASH_ON_DELIVERY', 'WHATSAPP_UPI'].includes(order.payment_method)) return failure('INVALID_MANUAL_PAYMENT_METHOD', 'This payment method cannot be manually verified.');
         if (!['CONFIRMED', 'SHIPPED', 'DELIVERED'].includes(order.status)) return failure('INVALID_PAYMENT_ORDER_STATE', 'Payment cannot be recorded for an order in its current state.');
         if (order.payment_status !== 'PENDING') return failure('PAYMENT_ALREADY_RECORDED', 'Payment has already been recorded for this order.');
         order.payment_status = 'PAID';
+        order.amount_paid_paise = params.p_confirmed_amount_paise || order.total_amount;
         order.updated_at = new Date().toISOString();
         adminAuditRecords.push({ action: 'ORDER_PAYMENT_VERIFIED', orderNumber: order.order_number, actor: params.p_actor_id });
       } else return failure('DATABASE_UNAVAILABLE', 'Unknown admin order RPC.');
@@ -504,7 +505,11 @@ describe('Products & Orders API', () => {
       .send(checkoutPayload([{ serialNumber: 'CU-001', quantity: 1 }]));
     checkoutState.setAdminAuditFailure(true);
     const failed = await request(app).put(`/api/admin/orders/${created.body.data.orderNumber}/payment-status`)
-      .set('Authorization', `Bearer ${ownerSession}`).set('X-CSRF-Token', 'phase1-owner-csrf').send({ paymentStatus: 'PAID' });
+      .set('Authorization', `Bearer ${ownerSession}`).set('X-CSRF-Token', 'phase1-owner-csrf').send({
+        paymentStatus: 'PAID',
+        utrNumber: 'UTR123456',
+        confirmedAmountPaise: 4000,
+      });
     expect(failed.status).toBe(503);
     expect(checkoutState.orders.get(created.body.data.orderNumber)?.payment_status).toBe('PENDING');
   });
@@ -559,8 +564,8 @@ describe('Products & Orders API', () => {
     });
     const after = checkoutState.orders.size;
 
-    expect(res.status).toBe(503);
-    expect(res.body.error.code).toBe('PAYMENT_PROVIDER_UNAVAILABLE');
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
     expect(res.body.data).toBeUndefined();
     expect(after).toBe(before);
   });
@@ -571,16 +576,22 @@ describe('Products & Orders API', () => {
     expect(created.status).toBe(201);
     expect(created.body.data.paymentStatus).toBe('PENDING');
 
+    const paymentPayload = {
+      paymentStatus: 'PAID',
+      utrNumber: 'UTR123456',
+      confirmedAmountPaise: 4000,
+    };
+
     const forbidden = await request(app).put(`/api/v1/admin/orders/${created.body.data.orderNumber}/payment-status`)
-      .set('Authorization', `Bearer ${staffSession}`).set('X-CSRF-Token', 'phase1-staff-csrf').send({ paymentStatus: 'PAID' });
+      .set('Authorization', `Bearer ${staffSession}`).set('X-CSRF-Token', 'phase1-staff-csrf').send(paymentPayload);
     expect(forbidden.status).toBe(403);
 
     const missingCsrf = await request(app).put(`/api/v1/admin/orders/${created.body.data.orderNumber}/payment-status`)
-      .set('Authorization', `Bearer ${ownerSession}`).send({ paymentStatus: 'PAID' });
+      .set('Authorization', `Bearer ${ownerSession}`).send(paymentPayload);
     expect(missingCsrf.status).toBe(403);
 
     const verified = await request(app).put(`/api/v1/admin/orders/${created.body.data.orderNumber}/payment-status`)
-      .set('Authorization', `Bearer ${ownerSession}`).set('X-CSRF-Token', 'phase1-owner-csrf').send({ paymentStatus: 'PAID' });
+      .set('Authorization', `Bearer ${ownerSession}`).set('X-CSRF-Token', 'phase1-owner-csrf').send(paymentPayload);
     expect(verified.status).toBe(200);
     expect(verified.body.data.paymentStatus).toBe('PAID');
     expect(verified.body.data.items).toHaveLength(1);
@@ -588,7 +599,7 @@ describe('Products & Orders API', () => {
     expect(checkoutState.adminAuditRecords.filter((record) => record.action === 'ORDER_PAYMENT_VERIFIED')).toHaveLength(1);
 
     const duplicateVerification = await request(app).put(`/api/v1/admin/orders/${created.body.data.orderNumber}/payment-status`)
-      .set('Authorization', `Bearer ${ownerSession}`).set('X-CSRF-Token', 'phase1-owner-csrf').send({ paymentStatus: 'PAID' });
+      .set('Authorization', `Bearer ${ownerSession}`).set('X-CSRF-Token', 'phase1-owner-csrf').send(paymentPayload);
     expect(duplicateVerification.status).toBe(400);
     expect(duplicateVerification.body.error.code).toBe('PAYMENT_ALREADY_RECORDED');
     expect(checkoutState.adminAuditRecords.filter((record) => record.action === 'ORDER_PAYMENT_VERIFIED')).toHaveLength(1);
@@ -602,7 +613,11 @@ describe('Products & Orders API', () => {
       row.status = status;
       row.payment_status = 'PENDING';
       const invalidStateAttempt = await request(app).put(`/api/v1/admin/orders/${cancelled.body.data.orderNumber}/payment-status`)
-        .set('Authorization', `Bearer ${ownerSession}`).set('X-CSRF-Token', 'phase1-owner-csrf').send({ paymentStatus: 'PAID' });
+        .set('Authorization', `Bearer ${ownerSession}`).set('X-CSRF-Token', 'phase1-owner-csrf').send({
+          paymentStatus: 'PAID',
+          utrNumber: 'UTR123456',
+          confirmedAmountPaise: 4000,
+        });
       expect(invalidStateAttempt.status).toBe(400);
       expect(invalidStateAttempt.body.error.code).toBe('INVALID_PAYMENT_ORDER_STATE');
     }
@@ -611,7 +626,11 @@ describe('Products & Orders API', () => {
       .send(checkoutPayload([{ serialNumber: 'CU-002', quantity: 1 }]));
     checkoutState.orders.get(unsupported.body.data.orderNumber)!.payment_method = 'ONLINE_UPI';
     const unsupportedAttempt = await request(app).put(`/api/v1/admin/orders/${unsupported.body.data.orderNumber}/payment-status`)
-      .set('Authorization', `Bearer ${ownerSession}`).set('X-CSRF-Token', 'phase1-owner-csrf').send({ paymentStatus: 'PAID' });
+      .set('Authorization', `Bearer ${ownerSession}`).set('X-CSRF-Token', 'phase1-owner-csrf').send({
+        paymentStatus: 'PAID',
+        utrNumber: 'UTR123456',
+        confirmedAmountPaise: 4000,
+      });
     expect(unsupportedAttempt.status).toBe(400);
     expect(unsupportedAttempt.body.error.code).toBe('PAYMENT_PROVIDER_UNAVAILABLE');
 
@@ -619,17 +638,45 @@ describe('Products & Orders API', () => {
       .send(checkoutPayload([{ serialNumber: 'CU-003', quantity: 1 }]));
     checkoutState.orders.get(invalidMethod.body.data.orderNumber)!.payment_method = 'UNKNOWN_METHOD';
     const invalidMethodAttempt = await request(app).put(`/api/v1/admin/orders/${invalidMethod.body.data.orderNumber}/payment-status`)
-      .set('Authorization', `Bearer ${ownerSession}`).set('X-CSRF-Token', 'phase1-owner-csrf').send({ paymentStatus: 'PAID' });
+      .set('Authorization', `Bearer ${ownerSession}`).set('X-CSRF-Token', 'phase1-owner-csrf').send({
+        paymentStatus: 'PAID',
+        utrNumber: 'UTR123456',
+        confirmedAmountPaise: 4000,
+      });
     expect(invalidMethodAttempt.status).toBe(400);
     expect(invalidMethodAttempt.body.error.code).toBe('INVALID_MANUAL_PAYMENT_METHOD');
   });
 
   it('allows an owner to record a COD payment after collection', async () => {
-    const created = await checkoutRequest().set('Idempotency-Key', 'cod-payment-verified-key-01')
-      .send(checkoutPayload([{ serialNumber: 'CU-002', quantity: 1 }], undefined, 'CASH_ON_DELIVERY'));
-    expect(created.status).toBe(201);
-    const verified = await request(app).put(`/api/v1/admin/orders/${created.body.data.orderNumber}/payment-status`)
-      .set('Authorization', `Bearer ${ownerSession}`).set('X-CSRF-Token', 'phase1-owner-csrf').send({ paymentStatus: 'PAID' });
+    // Storefront checkout disallows creating new COD orders (permanently removed)
+    // However, existing/legacy COD orders can still be settled and attested by owner
+    const codOrderNumber = 'ORD-LEGACY-COD-01';
+    checkoutState.orders.set(codOrderNumber, {
+      id: 'order-legacy-cod-01',
+      order_number: codOrderNumber,
+      customer_id: 'cust-1',
+      customer_name: 'COD Buyer',
+      customer_email: 'cod@example.com',
+      customer_phone: '+919876543210',
+      total_amount: 4000,
+      subtotal: 4000,
+      discount_amount: 0,
+      shipping_amount: 0,
+      status: 'CONFIRMED',
+      payment_status: 'PENDING',
+      payment_method: 'CASH_ON_DELIVERY',
+      shipping_address: { addressLine: '42 Test Lane', city: 'Mumbai', state: 'Maharashtra', postalCode: '400050' },
+      order_items: [{ id: 'item-1', product_id: 'prod-1', serial_number: 'CU-002', name: 'Product CU-002', price: 4000, quantity: 1 }],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    const verified = await request(app).put(`/api/v1/admin/orders/${codOrderNumber}/payment-status`)
+      .set('Authorization', `Bearer ${ownerSession}`).set('X-CSRF-Token', 'phase1-owner-csrf').send({
+        paymentStatus: 'PAID',
+        utrNumber: 'CASH-RECEIPT-001',
+        confirmedAmountPaise: 4000,
+      });
     expect(verified.status).toBe(200);
     expect(verified.body.data.paymentMethod).toBe('CASH_ON_DELIVERY');
     expect(verified.body.data.paymentStatus).toBe('PAID');
@@ -642,8 +689,12 @@ describe('Products & Orders API', () => {
     checkoutState.setAdminAuditFailure(true);
     try {
       const res = await request(app).put(`/api/v1/admin/orders/${created.body.data.orderNumber}/payment-status`)
-        .set('Authorization', `Bearer ${ownerSession}`).set('X-CSRF-Token', 'phase1-owner-csrf').send({ paymentStatus: 'PAID' });
-    expect(res.status).toBe(503);
+        .set('Authorization', `Bearer ${ownerSession}`).set('X-CSRF-Token', 'phase1-owner-csrf').send({
+          paymentStatus: 'PAID',
+          utrNumber: 'UTR123456',
+          confirmedAmountPaise: 4000,
+        });
+      expect(res.status).toBe(503);
       expect(checkoutState.orders.get(created.body.data.orderNumber)?.payment_status).toBe('PENDING');
     } finally {
       checkoutState.setAdminAuditFailure(false);

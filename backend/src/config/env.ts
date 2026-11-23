@@ -40,6 +40,8 @@ const INSECURE_SECRET_PLACEHOLDERS = new Set([
   'replace-with-supabase-jwt-secret-from-dashboard',
   'replace-with-supabase-anon-key',
   'replace-with-supabase-service-role-key',
+  'replace-with-your-key',
+  'replace-with-your-secret',
   'default-secret-do-not-use-in-production',
 ]);
 
