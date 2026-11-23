@@ -69,10 +69,25 @@ grant all on public.activity_audit_logs to service_role;
 -- ------------------------------------------------------------------------------
 -- 5. Trigger Functions: Revoke execution on internal trigger functions from PUBLIC/anon/authenticated
 -- ------------------------------------------------------------------------------
-revoke all on function public.update_products_timestamp() from public, anon, authenticated;
-revoke all on function public.handle_new_user() from public, anon, authenticated;
-revoke all on function public.derive_product_category_code() from public, anon, authenticated;
-revoke all on function public.fn_activity_audit_log() from public, anon, authenticated;
-revoke all on function public.fn_site_settings_bump_version() from public, anon, authenticated;
-revoke all on function public.fn_redact_audit_json(jsonb) from public, anon, authenticated;
+do $$
+begin
+  if to_regproc('public.update_products_timestamp') is not null then
+    execute 'revoke all on function public.update_products_timestamp() from public, anon, authenticated';
+  end if;
+  if to_regproc('public.handle_new_user') is not null then
+    execute 'revoke all on function public.handle_new_user() from public, anon, authenticated';
+  end if;
+  if to_regproc('public.derive_product_category_code') is not null then
+    execute 'revoke all on function public.derive_product_category_code() from public, anon, authenticated';
+  end if;
+  if to_regproc('public.fn_activity_audit_log') is not null then
+    execute 'revoke all on function public.fn_activity_audit_log() from public, anon, authenticated';
+  end if;
+  if to_regproc('public.fn_site_settings_bump_version') is not null then
+    execute 'revoke all on function public.fn_site_settings_bump_version() from public, anon, authenticated';
+  end if;
+  if to_regproc('public.fn_redact_audit_json') is not null then
+    execute 'revoke all on function public.fn_redact_audit_json(jsonb) from public, anon, authenticated';
+  end if;
+end $$;
 
