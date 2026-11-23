@@ -76,9 +76,10 @@ insert into public.activity_audit_logs (
   'system',
   'products',
   'all',
-  'PRICE_RECONCILIATION_RUPEES_TO_PAISE',
+  'PRODUCT_UPDATE',
   jsonb_build_object(
     'target', 'products_and_rental_catalog_items',
+    'operation', 'PRICE_RECONCILIATION_RUPEES_TO_PAISE',
     'rule', 'convert_unmultiplied_rupees_to_integer_paise',
     'example_item_160_paise', 70000,
     'applied_at', timezone('utc'::text, now())
