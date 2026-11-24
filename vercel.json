@@ -73,6 +73,7 @@
       "root": "backend",
       "framework": "express",
       "entrypoint": "src/server.ts",
+      "outputDirectory": ".",
       "buildCommand": "npm --prefix .. run build --workspace=@circleup/shared && npm run build"
     },
     "frontend": {
