@@ -1,10 +1,11 @@
 import { Check, Copy, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '@/context/StoreContext';
 import { SpiralBinding } from '@/components/ui/SpiralBinding';
-import { useExitIntentOffer } from '@/services/storefrontSettingsService';
+import { useStorefrontSettings } from '@/services/storefrontSettingsService';
+import { readStorage, writeStorage } from '@/services/storage';
 
 /**
  * Exit-intent overlay styled after CircleUp's Forest-Green & Warm Cream store
@@ -13,7 +14,8 @@ import { useExitIntentOffer } from '@/services/storefrontSettingsService';
  */
 export function ExitIntentModal() {
   const { totals, isSearchOpen, applyPromoCode, showNotice } = useStore();
-  const exitOffer = useExitIntentOffer();
+  const { exitOffer } = useStorefrontSettings();
+  const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
   const hasTriggeredRef = useRef(false);
   const navigate = useNavigate();
@@ -21,11 +23,17 @@ export function ExitIntentModal() {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    if (isSearchOpen || typeof document === 'undefined') return;
+    if (isSearchOpen || !exitOffer || !exitOffer.targetPages.some((page) => {
+      const target = page.trim().replace(/^\//, '');
+      return target === 'all' || target === pathname.slice(1) || (target === 'home' && pathname === '/');
+    })) return;
+    const cooldownKey = `circleup_exit_offer_${exitOffer.code}`;
 
     const triggerOnce = () => {
       if (hasTriggeredRef.current) return;
+      if (Date.now() - readStorage(cooldownKey, 0) < exitOffer.cooldownHours * 3_600_000) return;
       hasTriggeredRef.current = true;
+      writeStorage(cooldownKey, Date.now());
       setOpen(true);
     };
 
@@ -37,7 +45,7 @@ export function ExitIntentModal() {
     return () => {
       document.removeEventListener('mouseout', handleMouseOut);
     };
-  }, [isSearchOpen]);
+  }, [exitOffer, isSearchOpen, pathname]);
 
   useEffect(() => {
     if (!open) return;
@@ -56,11 +64,10 @@ export function ExitIntentModal() {
     return () => { window.removeEventListener('keydown', onKey); previousFocus?.focus(); };
   }, [open]);
 
-  if (!open || typeof document === 'undefined') return null;
+  if (!open || !exitOffer || typeof document === 'undefined') return null;
 
   const hasItems = totals.itemCount > 0;
-  const code = exitOffer?.code || '';
-  const codeDesc = exitOffer?.badgeText || 'Discover something one of a kind';
+  const { code, badgeText } = exitOffer;
 
   const copyCode = async () => {
     if (!code) return;
@@ -74,7 +81,6 @@ export function ExitIntentModal() {
     if (hasItems) {
       navigate('/cart');
     } else {
-      if (code) showNotice(`Code ${code} saved. It will be verified at checkout.`);
       navigate('/new-arrivals');
     }
   };
@@ -106,19 +112,15 @@ export function ExitIntentModal() {
           <p className="exit-offer-kicker">A little something for your next find</p>
 
           <h2 id="exit-offer-title" className="exit-offer-title">
-            {hasItems
-              ? `Your ${totals.itemCount} curated piece${totals.itemCount > 1 ? 's are' : ' is'} still waiting`
-              : 'Your next favorite find is waiting'}
+            {exitOffer.headline}
           </h2>
 
           <p className="exit-offer-copy">
-            {hasItems
-              ? 'Take a little extra off your bag before checking out.'
-              : 'Take a small thank-you toward something one of a kind.'}
+            {exitOffer.subtext}
           </p>
 
           {code && <div className="exit-offer-coupon">
-            <p className="exit-offer-code-label">{codeDesc}</p>
+            <p className="exit-offer-code-label">{badgeText}</p>
             <div className="exit-offer-code-row">
               <p className="exit-offer-code">{code}</p>
               <button type="button" onClick={copyCode} className="exit-offer-copy-button">

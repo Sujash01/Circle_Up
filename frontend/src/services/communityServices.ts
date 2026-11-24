@@ -14,14 +14,6 @@ const EVENT_REGS_KEY = 'circleup_event_regs_v1';
 const COMMUNITY_KEY = 'circleup_community_posts_v1';
 
 export const reviewService = {
-  async getApprovedReviews(): Promise<ReviewItem[]> {
-    try {
-      return await storefrontApi.getReviews();
-    } catch {
-      return this.getAllReviews();
-    }
-  },
-
   getAllReviews(): ReviewItem[] {
     const local = readStorage<ReviewItem[]>(REVIEWS_KEY, []);
     const safeLocal = Array.isArray(local) ? local : [];

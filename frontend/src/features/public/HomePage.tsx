@@ -783,7 +783,7 @@ export function HomePage() {
           <div aria-hidden className="paper-ambient-sheen" />
 
           <div className="home-vine-footer relative z-20">
-            <StorefrontTopBanner text={homepageData?.announcementText} />
+            <StorefrontTopBanner />
             <StorefrontHeader preserveHomeHeader />
             <div className="home-vine-frame relative">
               <main id="main" className="relative z-20">

@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 import { subscribeToScrollFrames } from '@/lib/scrollScheduler';
 import { CHECKOUT_SHIPPING, formatPrice } from '@circleup/shared';
 import { productService } from '@/services/productService';
-import { useHeaderPromo } from '@/services/storefrontSettingsService';
+import { useStorefrontSettings } from '@/services/storefrontSettingsService';
 
 const pad = 'px-5 sm:px-10 lg:px-14 xl:px-20 2xl:px-28 max-w-[2000px] mx-auto';
 
@@ -55,10 +55,12 @@ const NAV_GROUPS = [
   },
 ];
 
-export function StorefrontTopBanner({ text }: { text?: string }) {
-  const promo = useHeaderPromo();
-  if (!promo.isActive && !text) return null;
-  const announcement = (text || promo.text)?.replace(
+export function StorefrontTopBanner() {
+  const { header: promo } = useStorefrontSettings();
+  const { showNotice } = useStore();
+  if (!promo.isActive) return null;
+  const { code } = promo;
+  const announcement = promo.text.replace(
     /free (?:standard )?(?:shipping|delivery) (?:on orders |for orders )?(?:(?:above|over|from|of|at least) )?₹\s*[\d,]+(?:\.\d{2})?(?:\+| or more| and above)?(?: after discounts)?/gi,
     `Free shipping on orders of ${formatPrice(CHECKOUT_SHIPPING.freeThresholdPaise)} or more after discounts`,
   );
@@ -76,6 +78,16 @@ export function StorefrontTopBanner({ text }: { text?: string }) {
           <span>Plastic-free packaging, always</span>
         </>
       )}
+      {code ? (
+        <button type="button" className="underline" onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(code);
+            showNotice(`Code ${code} copied.`);
+          } catch {
+            showNotice(`Use code ${code} in your bag.`);
+          }
+        }}>{promo.ctaLabel || 'Copy code'}</button>
+      ) : <Link to={promo.link} className="underline">Shop finds</Link>}
     </div>
   );
 }

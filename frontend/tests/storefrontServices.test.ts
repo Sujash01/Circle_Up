@@ -143,14 +143,15 @@ describe('CircleUp Storefront Services & LocalStorage Persistence', () => {
     expect(reloaded.items).toHaveLength(1);
     expect(reloaded.promoCode).toBe('CIRCLE20');
 
-    const wa = cartService.buildWhatsAppCheckout(reloaded, 'Deliver to Bandra');
+    const wa = cartService.buildWhatsAppCheckout(reloaded, 'Deliver to Bandra', undefined, '919111222333');
     expect(wa.totals.subtotal).toBe(495000);
     expect(wa.totals.discount).toBe(0);
     expect(wa.totals.estimatedTotal).toBe(495000);
     expect(wa.message).toContain('₹4,950');
     expect(wa.message).toContain(reloaded.cartId);
     expect(wa.message).toContain('Denim Jumpsuit Co-Ord Set');
-    expect(wa.url).toContain('https://wa.me/');
+    expect(wa.url).toContain('https://wa.me/919111222333?text=');
+    expect(cartService.buildWhatsAppCheckout(reloaded, '', undefined, '910000000000').url).toBeUndefined();
   });
 
   it('persists wishlist items across reloads', () => {

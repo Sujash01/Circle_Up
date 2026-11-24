@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { getSupabaseAdminClient, isSupabaseConfigured } from './supabase.service.js';
 import { ServiceUnavailableError } from '../errors/AppError.js';
+import { env } from '../config/env.js';
 
 export const reviewSubmissionSchema = z.object({
   displayName: z.string().trim().min(2, 'Display name must be at least 2 characters').max(80),
@@ -41,6 +42,7 @@ function mapReview(row: ReviewRow) {
 
 // In-memory fallback records (used strictly in offline test environments when Supabase is unconfigured)
 const mockReviews: ReviewRow[] = [];
+const unavailable = () => new ServiceUnavailableError('Reviews are temporarily unavailable. Please try again later.', 'DATABASE_UNAVAILABLE');
 
 export const reviewService = {
   async listApprovedReviews() {
@@ -52,12 +54,11 @@ export const reviewService = {
         .eq('status', 'APPROVED')
         .order('created_at', { ascending: false });
 
-      if (error) {
-        throw new ServiceUnavailableError(`Failed to fetch customer reviews: ${error.message}`, 'DATABASE_UNAVAILABLE');
-      }
+      if (error || !Array.isArray(data)) throw unavailable();
       return (data || []).map((row) => mapReview(row as ReviewRow));
     }
 
+    if (env.NODE_ENV !== 'test') throw unavailable();
     return mockReviews.filter((r) => r.status === 'APPROVED').map(mapReview);
   },
 
@@ -80,13 +81,12 @@ export const reviewService = {
         .select()
         .single();
 
-      if (error) {
-        throw new ServiceUnavailableError(`Failed to submit review: ${error.message}`, 'DATABASE_UNAVAILABLE');
-      }
+      if (error || !data) throw unavailable();
       return mapReview(data as ReviewRow);
     }
 
-    // Offline mock fallback
+    if (env.NODE_ENV !== 'test') throw unavailable();
+
     const mockRecord: ReviewRow = {
       id: `rev-${Date.now().toString(36)}`,
       display_name: parsed.displayName,

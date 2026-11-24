@@ -7,7 +7,8 @@ import { EmptyState } from '@/components/storefront/EmptyState';
 import { Blob } from '@/components/ui/Blob';
 import { useStore } from '@/context/StoreContext';
 import { cn } from '@/lib/utils';
-import { cartService } from '@/services/cartService';
+import { cartService, getCartItemSerialNumber } from '@/services/cartService';
+import { useStorefrontSettings } from '@/services/storefrontSettingsService';
 import { getCheckoutErrorMessage, getCheckoutPaymentLabel, orderService } from '@/services/orderService';
 import { storefrontApi } from '@/services/storefrontApi';
 
@@ -95,7 +96,9 @@ export function CartPage() {
   const [promoInput, setPromoInput] = useState(cart.promoCode ?? '');
   const [promoError, setPromoError] = useState('');
   const [promoPreview, setPromoPreview] = useState<{
-    code: string;
+    requestedCode: string | undefined;
+    automaticCodes: string[];
+    appliedCode?: string;
     subtotal: number;
     discount: number;
     message: string;
@@ -123,11 +126,15 @@ export function CartPage() {
   });
 
   const authUser = useSelector((state: RootState) => state.auth.user);
-  const promoCode = cart.promoCode;
+  const { automaticCodes, whatsappNumber } = useStorefrontSettings();
+  const manualCode = cart.promoCode;
   const { subtotal, itemCount } = bagTotals;
-  const currentPromo = itemCount > 0 && promoPreview && promoPreview.code === promoCode
-    && promoPreview.subtotal === subtotal ? promoPreview : undefined;
-  const totals = currentPromo?.discount ? cartService.calculateTotals(cart, currentPromo.discount) : bagTotals;
+  const currentPromo = itemCount > 0 && promoPreview && promoPreview.requestedCode === manualCode
+    && (manualCode || promoPreview.automaticCodes === automaticCodes) && promoPreview.subtotal === subtotal
+    ? promoPreview : undefined;
+  const appliedCode = currentPromo?.appliedCode;
+  const totals = currentPromo?.discount
+    ? cartService.calculateTotals({ ...cart, promoCode: appliedCode }, currentPromo.discount) : bagTotals;
   const checkoutDeliveryFee = totals.deliveryFee;
   const checkoutTotal = totals.estimatedTotal;
   const showCheckout = Boolean(onlinePaymentAvailable && isCheckoutModalOpen && cart.items.length);
@@ -136,22 +143,34 @@ export function CartPage() {
   const checkoutTitleRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
-    if (!promoCode || itemCount === 0) return;
+    if (itemCount === 0 || (!manualCode && automaticCodes.length === 0)) return;
     const controller = new AbortController();
-    void storefrontApi.validateCoupon(promoCode, subtotal, controller.signal).then((result) => {
-      if (controller.signal.aborted) return;
-      setPromoPreview({
-        code: promoCode,
-        subtotal,
-        discount: result.valid ? result.discountInPaise : 0,
-        message: result.message,
-      });
-    }).catch(() => {
-      if (controller.signal.aborted) return;
-      setPromoPreview({ code: promoCode, subtotal, discount: 0, message: 'Could not verify the promo code. The estimate excludes the discount.' });
-    });
+    const inputs = { requestedCode: manualCode, automaticCodes, subtotal };
+    const validate = async () => {
+      try {
+        for (const code of manualCode ? [manualCode] : automaticCodes) {
+          const result = await storefrontApi.validateCoupon(code, subtotal, controller.signal);
+          if (controller.signal.aborted) return;
+          if (result.valid || manualCode) {
+            setPromoPreview({
+              ...inputs,
+              appliedCode: result.valid ? result.code : undefined,
+              discount: result.valid ? result.discountInPaise : 0,
+              message: result.message,
+            });
+            return;
+          }
+        }
+        if (!controller.signal.aborted) setPromoPreview({ ...inputs, discount: 0, message: '' });
+      } catch {
+        if (!controller.signal.aborted) {
+          setPromoPreview({ ...inputs, discount: 0, message: 'Could not verify the promo code. The estimate excludes the discount.' });
+        }
+      }
+    };
+    void validate();
     return () => controller.abort();
-  }, [promoCode, subtotal, itemCount]);
+  }, [manualCode, automaticCodes, subtotal, itemCount]);
 
   useEffect(() => {
     document.title = 'Shopping Bag — CircleUp';
@@ -345,7 +364,7 @@ export function CartPage() {
     );
   }
 
-  const whatsapp = cartService.buildWhatsAppCheckout(cart, customerNote, totals);
+  const whatsapp = cartService.buildWhatsAppCheckout(cart, customerNote, totals, whatsappNumber);
 
   const handlePromoSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -360,9 +379,9 @@ export function CartPage() {
   const handleCopyMessage = async () => {
     try {
       await navigator.clipboard.writeText(whatsapp.message);
-      showNotice('WhatsApp order summary copied to clipboard.');
+      showNotice('WhatsApp enquiry copied to clipboard.');
     } catch {
-      showNotice('Could not access clipboard automatically; select and copy the preview below.', 'error');
+      showNotice('Could not copy your WhatsApp enquiry. Please try again.', 'error');
     }
   };
 
@@ -380,7 +399,7 @@ export function CartPage() {
       const placed = await orderService.createOrder({
         ...delivery,
         items: cart.items.map((item) => ({
-          serialNumber: item.productId.toUpperCase(),
+          serialNumber: getCartItemSerialNumber(item),
           name: item.name,
           price: item.unitPrice,
           quantity: item.quantity,
@@ -391,7 +410,7 @@ export function CartPage() {
         discount: totals.discount,
         shippingFee: checkoutDeliveryFee,
         totalAmount: checkoutTotal,
-        promoCode: cart.promoCode,
+        promoCode: manualCode || appliedCode,
         paymentMethod: 'RAZORPAY',
         notes: customerNote,
         customerId: authUser?.id,
@@ -565,7 +584,7 @@ export function CartPage() {
                       {item.name}
                     </Link>
                     <span className="font-mono text-[0.68rem] text-terracotta font-semibold uppercase">
-                      SERIAL: {item.productId.toUpperCase()}
+                      SERIAL: {getCartItemSerialNumber(item)}
                     </span>
                   </div>
                   <span className="font-bold text-primary tabular-nums shrink-0">
@@ -654,7 +673,7 @@ export function CartPage() {
               </button>
             </div>
             {promoError && <p className="text-[0.72rem] text-destructive">{promoError}</p>}
-            {cart.promoCode && (
+            {(manualCode || appliedCode) && (
               <p className="text-[0.72rem] text-primary" role="status">
                 {currentPromo?.message ?? 'Checking promo code. The estimate excludes the discount until it is verified.'}
               </p>
@@ -669,7 +688,7 @@ export function CartPage() {
             </div>
             {totals.discount > 0 && (
               <div className="flex justify-between text-primary">
-                <span>Discount ({totals.discountLabel || cart.promoCode})</span>
+                <span>Discount ({totals.discountLabel})</span>
                 <span className="tabular-nums font-medium">-{formatPrice(totals.discount)}</span>
               </div>
             )}
@@ -720,7 +739,7 @@ export function CartPage() {
               </button>
             </div>
 
-            <a
+            {whatsapp.url ? <a
               href={whatsapp.url}
               target="_blank"
               rel="noopener noreferrer"
@@ -728,7 +747,14 @@ export function CartPage() {
             >
               <WhatsAppIcon className="size-4" />
               <span>WhatsApp Enquiry</span>
-            </a>
+            </a> : (
+              <>
+                <button type="button" disabled className="w-full border border-foreground/20 px-6 py-3.5 text-xs font-semibold uppercase tracking-widest opacity-60">
+                  WhatsApp Enquiry
+                </button>
+                <p className="text-xs text-muted-foreground">WhatsApp enquiries are currently unavailable.</p>
+              </>
+            )}
           </div>
         </aside>
       </div>
@@ -1009,7 +1035,7 @@ export function CartPage() {
                   </div>
                   {totals.discount > 0 && (
                     <div className="flex justify-between text-terracotta">
-                      <span>Promo Discount ({cart.promoCode})</span>
+                      <span>Promo Discount ({totals.discountLabel})</span>
                       <span className="tabular-nums">-{formatPrice(totals.discount)}</span>
                     </div>
                   )}
@@ -1022,7 +1048,7 @@ export function CartPage() {
                     <span className="text-primary tabular-nums">{formatPrice(checkoutTotal)}</span>
                   </div>
                 </div>
-                {cart.promoCode && (
+                {(manualCode || appliedCode) && (
                   <p className="text-muted-foreground">The final amount includes any verified promo discount and the resulting shipping fee.</p>
                 )}
 
@@ -1052,7 +1078,7 @@ export function CartPage() {
                   >
                     {isSubmittingOrder
                       ? 'Launching Secure Payment...'
-                      : cart.promoCode ? 'Continue to Razorpay' : `Pay with Razorpay · ${formatPrice(checkoutTotal)}`}
+                      : manualCode || appliedCode ? 'Continue to Razorpay' : `Pay with Razorpay · ${formatPrice(checkoutTotal)}`}
                   </button>
                 </div>
 

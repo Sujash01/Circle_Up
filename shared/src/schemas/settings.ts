@@ -36,13 +36,43 @@ export const siteSettingsSchema = z.object({
   customDrop: customDropOptionSchema.default(() => customDropOptionSchema.parse({})),
   storeAddress: z.string().default('CircleUp Studio Courtyard, Sector 7, Chandigarh'),
   contactEmail: z.string().email().default('care@circleuponline.com'),
-  contactPhone: z.string().default('+91 98765 43210'),
+  contactPhone: z.string().default(''),
   whatsappNumber: z.string().default(''),
   isWhatsappVerified: z.boolean().default(false),
   contentVersion: z.number().int().default(1),
   updatedAt: z.string().optional(),
 });
 export type SiteSettings = z.infer<typeof siteSettingsSchema>;
+
+export function normalizeBusinessWhatsappNumber(value: string | undefined): string {
+  if (!value || !/^\+?[\d ()-]+$/.test(value.trim())) return '';
+  const digits = value.replace(/\D/g, '');
+  const placeholders = ['919876543210', '910000000000', '1234567890', '9876543210'];
+  return /^[1-9]\d{9,14}$/.test(digits) && !placeholders.includes(digits) ? digits : '';
+}
+
+export const storefrontLinkSchema = z.string().regex(/^\/(?![/\\])[^\s\\]*$/);
+
+export const storefrontSettingsSchema = z.object({
+  header: z.object({
+    text: z.string(),
+    link: storefrontLinkSchema,
+    code: z.string().optional(),
+    ctaLabel: z.string().optional(),
+    isActive: z.boolean(),
+  }).strict(),
+  exitOffer: z.object({
+    code: z.string(),
+    headline: z.string(),
+    subtext: z.string(),
+    badgeText: z.string(),
+    targetPages: z.array(z.string()),
+    cooldownHours: z.number().nonnegative(),
+  }).strict().nullable(),
+  automaticCodes: z.array(z.string()),
+  whatsappNumber: z.string().refine((value) => normalizeBusinessWhatsappNumber(value) === value),
+}).strict();
+export type StorefrontSettings = z.infer<typeof storefrontSettingsSchema>;
 
 export const siteSettingsUpdateSchema = z.object({
   announcementText: z.string().optional(),
@@ -59,7 +89,10 @@ export const siteSettingsUpdateSchema = z.object({
   // Returned by GET /settings and sent back by the existing admin form; these are read-only.
   contentVersion: z.number().int().optional(),
   updatedAt: z.string().optional(),
-}).strict();
+}).strict().refine(
+  (settings) => settings.isWhatsappVerified !== true || Boolean(normalizeBusinessWhatsappNumber(settings.whatsappNumber)),
+  { path: ['whatsappNumber'], message: 'Enter a valid business WhatsApp number before marking it verified.' },
+);
 
 export type SiteSettingsUpdate = z.infer<typeof siteSettingsUpdateSchema>;
 

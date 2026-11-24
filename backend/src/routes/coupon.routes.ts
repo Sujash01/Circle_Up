@@ -5,5 +5,6 @@ import { noStoreCache } from '../middleware/cacheControl.js';
 
 export const couponRouter = Router();
 
+couponRouter.get('/promotions', noStoreCache, couponController.storefrontSettings);
 couponRouter.post('/validate', couponRateLimiter, noStoreCache, couponController.validate);
 

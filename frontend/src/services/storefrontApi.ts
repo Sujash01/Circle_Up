@@ -1,6 +1,6 @@
 import axios, { type AxiosRequestConfig } from 'axios';
 import { normalizeApiError } from './apiClient';
-import { couponValidateResultSchema } from '@circleup/shared';
+import { couponValidateResultSchema, storefrontSettingsSchema, type StorefrontSettings } from '@circleup/shared';
 import type {
   CouponValidateResult,
   Order,
@@ -158,8 +158,18 @@ async function fetchWithSwr<T>(
   return fetchNetwork(retries);
 }
 
+async function fetchPublicList<T>(url: string, signal?: AbortSignal): Promise<T[]> {
+  const { data } = await axios.get<{ success: true; data: T[] }>(url, { signal, timeout: 12000 });
+  if (data?.success !== true || !Array.isArray(data.data)) throw new Error('Invalid list response');
+  return data.data;
+}
+
 // === CENTRAL PUBLIC STOREFRONT API ===
 export const storefrontApi = {
+  async getStorefrontSettings(): Promise<StorefrontSettings> {
+    const response = await axios.get('/api/coupons/promotions', { timeout: 12000 });
+    return storefrontSettingsSchema.parse(response.data.data);
+  },
   /**
    * Fetches the unified homepage payload in a single round-trip without waterfall.
    */
@@ -242,20 +252,14 @@ export const storefrontApi = {
    * Curated circular rentals rail.
    */
   async getRentals(signal?: AbortSignal): Promise<unknown[]> {
-    return fetchWithSwr<unknown[]>('/api/rentals', {
-      signal,
-      maxAgeMs: 120_000,
-    });
+    return fetchPublicList('/api/rentals', signal);
   },
 
   /**
    * Community pop-ups and swap meets events.
    */
   async getEvents(signal?: AbortSignal): Promise<import('@/types/storefront').EventItem[]> {
-    const events = await fetchWithSwr<Record<string, unknown>[]>('/api/events', {
-      signal,
-      maxAgeMs: 120_000,
-    });
+    const events = await fetchPublicList<Record<string, unknown>>('/api/events', signal);
     return events.map(mapEventForStorefront);
   },
 
@@ -292,10 +296,7 @@ export const storefrontApi = {
    * Reviews endpoints backed by Supabase with moderation (Resolves P1-8 & P1-9).
    */
   async getReviews(signal?: AbortSignal): Promise<import('@/types/storefront').ReviewItem[]> {
-    return fetchWithSwr<import('@/types/storefront').ReviewItem[]>('/api/reviews', {
-      signal,
-      maxAgeMs: 60_000,
-    });
+    return fetchPublicList('/api/reviews', signal);
   },
 
   async submitReview(body: {

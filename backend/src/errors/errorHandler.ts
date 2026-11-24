@@ -77,6 +77,7 @@ export function errorHandler(
     );
   }
 
+  res.setHeader('Cache-Control', 'no-store');
   res.status(normalized.statusCode).json({
     success: false,
     error: {

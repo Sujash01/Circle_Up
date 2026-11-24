@@ -15,7 +15,7 @@ import { adminApi } from '../services/adminApi';
 import { useAdminToast } from '../context/AdminToastContext';
 import { useAdminAuth } from '../context/AdminAuthContext';
 import { AdminCardSkeleton } from '../components/AdminSkeleton';
-import type { SiteSettings } from '@circleup/shared';
+import { normalizeBusinessWhatsappNumber, type SiteSettings } from '@circleup/shared';
 
 export default function SiteSettingsPage() {
   const { isOwner } = useAdminAuth();
@@ -399,17 +399,28 @@ export default function SiteSettingsPage() {
               </div>
 
               <div>
-                <label className="block font-semibold text-cocoa mb-1">WhatsApp Concierge Number</label>
+                <label htmlFor="business-whatsapp" className="block font-semibold text-cocoa mb-1">WhatsApp Concierge Number</label>
                 <input
-                  type="text"
+                  id="business-whatsapp"
+                  type="tel"
                   value={settings.whatsappNumber || ''}
-                  onChange={(e) => setSettings({ ...settings, whatsappNumber: e.target.value })}
+                  onChange={(e) => {
+                    const whatsappNumber = e.target.value;
+                    setSettings((current) => ({
+                      ...current,
+                      whatsappNumber,
+                      isWhatsappVerified: normalizeBusinessWhatsappNumber(current.whatsappNumber) === normalizeBusinessWhatsappNumber(whatsappNumber)
+                        ? current.isWhatsappVerified
+                        : false,
+                    }));
+                  }}
                   className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-cocoa focus:border-primary focus:outline-none"
                 />
                 <label className="mt-2 flex items-center gap-2 text-cocoa">
                   <input
                     type="checkbox"
                     checked={settings.isWhatsappVerified ?? false}
+                    disabled={!normalizeBusinessWhatsappNumber(settings.whatsappNumber)}
                     onChange={(e) => setSettings({ ...settings, isWhatsappVerified: e.target.checked })}
                   />
                   Verified for checkout

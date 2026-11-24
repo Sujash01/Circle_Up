@@ -1,15 +1,22 @@
-import { calculateCheckoutDeliveryFee, formatPrice } from '@circleup/shared';
+import { calculateCheckoutDeliveryFee, formatPrice, normalizeBusinessWhatsappNumber } from '@circleup/shared';
 import type { CartItem, CartState, Product, ProductVariant } from '@/types/storefront';
 export type { CartItem, CartState };
 import { readStorage, writeStorage } from './storage';
+import { productService } from './productService';
 
 const CART_STORAGE_KEY = 'circleup_cart_v1';
 
-/**
- * Configurable placeholder WhatsApp business number (replace before production launch).
- */
-export const WHATSAPP_BUSINESS_NUMBER =
-  import.meta.env.VITE_WHATSAPP_NUMBER || '910000000000';
+export function buildBusinessWhatsappUrl(businessNumber: string | undefined, message?: string): string | undefined {
+  const number = normalizeBusinessWhatsappNumber(businessNumber);
+  if (!number) return undefined;
+  const destination = `https://wa.me/${number}`;
+  return message ? `${destination}?text=${encodeURIComponent(message)}` : destination;
+}
+
+export function getCartItemSerialNumber(item: CartItem): string {
+  return item.serialNumber || productService.getProductById(item.productId)?.serialNumber
+    || productService.getProductBySlug(item.slug)?.serialNumber || item.productId.toUpperCase();
+}
 
 export function generateCartId(): string {
   const now = new Date();
@@ -76,6 +83,7 @@ export const cartService = {
           {
             key,
             productId: product.id,
+            serialNumber: product.serialNumber,
             slug: product.slug,
             name: product.name,
             image: product.images[0] ?? '',
@@ -157,15 +165,15 @@ export const cartService = {
     };
   },
 
-  buildWhatsAppCheckout(state: CartState, customerNote = '', estimatedTotals?: CartTotals): {
+  buildWhatsAppCheckout(state: CartState, customerNote = '', estimatedTotals?: CartTotals, businessNumber?: string): {
     message: string;
-    url: string;
+    url: string | undefined;
     totals: CartTotals;
   } {
     const totals = estimatedTotals ?? this.calculateTotals(state);
     const itemLines = state.items.map(
       (item, idx) =>
-        `${idx + 1}. ${item.name} (${item.variantLabel}) x${item.quantity} — ${formatPrice(
+        `${idx + 1}. ${item.name} (Ref: ${getCartItemSerialNumber(item)}, Size: ${item.size}) x${item.quantity} — ${formatPrice(
           item.unitPrice * item.quantity,
         )}`,
     );
@@ -188,21 +196,33 @@ export const cartService = {
     ];
 
     const message = lines.join('\n');
-    const url = `https://wa.me/${WHATSAPP_BUSINESS_NUMBER}?text=${encodeURIComponent(message)}`;
-    return { message, url, totals };
+    return { message, url: buildBusinessWhatsappUrl(businessNumber, message), totals };
   },
 
-  buildProductWhatsAppUrl(product: Product, variantLabel?: string): string {
+  buildProductWhatsAppUrl(
+    product: Product,
+    variantLabel?: string,
+    businessNumber?: string,
+    selection?: { size: string; quantity: number; unitPrice: number },
+  ): string | undefined {
+    const quantity = selection?.quantity ?? 1;
+    const unitPrice = selection?.unitPrice ?? product.price;
+    const subtotal = unitPrice * quantity;
+    const shipping = calculateCheckoutDeliveryFee(subtotal, quantity);
     const lines = [
       'Hi CircleUp! I would like to enquire about this piece:',
       `• ${product.name}${variantLabel ? ` (${variantLabel})` : ''}`,
-      `• Price: ${formatPrice(product.price)}`,
+      `• Price: ${formatPrice(unitPrice)}`,
       `• Ref: ${product.serialNumber || product.id.toUpperCase()}`,
-      `• Link: ${typeof window !== 'undefined' ? window.location.href : `https://circleup.in/product/${product.slug}`}`,
+      ...(selection ? [`• Size: ${selection.size}`] : []),
+      `• Quantity: ${quantity}`,
+      `Estimated Shipping: ${formatPrice(shipping)}`,
+      `Estimated Total: ${formatPrice(subtotal + shipping)}`,
+      `• Link: ${typeof window !== 'undefined' ? window.location.href : `https://circleuponline.com/product/${product.slug}`}`,
       '',
       'Is this piece currently available?',
     ];
-    return `https://wa.me/${WHATSAPP_BUSINESS_NUMBER}?text=${encodeURIComponent(lines.join('\n'))}`;
+    return buildBusinessWhatsappUrl(businessNumber, lines.join('\n'));
   },
 };
 

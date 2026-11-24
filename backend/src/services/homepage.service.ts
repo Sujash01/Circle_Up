@@ -120,7 +120,7 @@ export const homepageService = {
         storeAddress: settings.storeAddress,
         contactEmail: settings.contactEmail,
         contactPhone: settings.contactPhone,
-        whatsappNumber: getConfiguredWhatsappNumber(settings.whatsappNumber),
+        whatsappNumber: settings.isWhatsappVerified ? getConfiguredWhatsappNumber(settings.whatsappNumber) : '',
         contentVersion: settings.contentVersion,
       },
     };

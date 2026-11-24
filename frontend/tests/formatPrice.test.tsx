@@ -231,14 +231,14 @@ describe('P0-1 Monetary Specification & Integer Paise Formatting', () => {
     const waCheckout = cartService.buildWhatsAppCheckout(cartState, 'Please deliver soon');
     expect(waCheckout.totals.subtotal).toBe(55000);
     expect(waCheckout.totals.estimatedTotal).toBe(64000);
-    expect(waCheckout.message).toContain('1. Vintage Uniqlo Zipper Hoodie (Size M) x1 — ₹550');
+    expect(waCheckout.message).toMatch(/1\. Vintage Uniqlo Zipper Hoodie \(Ref: .+, Size: M\) x1 — ₹550/);
     expect(waCheckout.message).toContain('Subtotal: ₹550');
     expect(waCheckout.message).toContain('Estimated Shipping: ₹90');
     expect(waCheckout.message).toContain('Estimated Total: ₹640');
     expect(waCheckout.message).not.toContain('₹55,000');
 
-    const waProduct = cartService.buildProductWhatsAppUrl(TEST_PRODUCT_550, 'Size M');
-    const decodedUrl = decodeURIComponent(waProduct);
+    const waProduct = cartService.buildProductWhatsAppUrl(TEST_PRODUCT_550, 'Size M', '919111222333');
+    const decodedUrl = decodeURIComponent(waProduct ?? '');
     expect(decodedUrl).toContain('• Price: ₹550');
     expect(decodedUrl).not.toContain('₹55,000');
   });
@@ -323,8 +323,8 @@ describe('P0-1 Monetary Specification & Integer Paise Formatting', () => {
     pdpHost.remove();
 
     // 3. Test WhatsApp Enquiry message
-    const waProduct = cartService.buildProductWhatsAppUrl(TEST_LATEX_BODYSUIT, 'XS-S');
-    const decodedUrl = decodeURIComponent(waProduct);
+    const waProduct = cartService.buildProductWhatsAppUrl(TEST_LATEX_BODYSUIT, 'XS-S', '919111222333');
+    const decodedUrl = decodeURIComponent(waProduct ?? '');
     expect(decodedUrl).toContain('Latex bodysuit');
     expect(decodedUrl).toContain('• Price: ₹700');
     expect(decodedUrl).not.toContain('• Price: ₹7\n');

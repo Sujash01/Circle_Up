@@ -54,6 +54,23 @@ vi.mock('../../src/repositories/settings.repository.js', () => ({
 }));
 vi.mock('../../src/repositories/coupon.repository.js', () => ({
   couponRepository: {
+    listPromotions: async () => {
+      const publicCoupon = {
+        code: 'PUBLIC10', discountType: 'PERCENTAGE', value: 10,
+        isActive: true, targetTier: 'ALL', appliesTo: 'ALL', usageCount: 0, usageLimit: 30,
+        headerBannerText: 'Weekend offer', headerCtaLabel: 'Copy PUBLIC10', showInHeader: true,
+        showInExitIntent: true, autoApply: true, popupHeadline: 'Save this weekend',
+        targetPages: ['cart'], cooldownHours: 12, perCustomerLimit: 1,
+      };
+      return [
+        { ...publicCoupon, code: 'PRIVATEVIP', targetTier: 'VIP' },
+        { ...publicCoupon, code: 'PRIVATEPRODUCT', appliesTo: 'SPECIFIC_PRODUCTS' },
+        { ...publicCoupon, code: 'EXPIRED', expiresAt: '2000-01-01T00:00:00Z' },
+        { ...publicCoupon, code: 'FUTURE', startsAt: '2999-01-01T00:00:00Z' },
+        { ...publicCoupon, code: 'EXHAUSTED', usageCount: 30 },
+        publicCoupon,
+      ];
+    },
     findByCode: async (code: string) => {
       const rows: Record<string, any> = {
         THRIFT10: { code: 'THRIFT10', discountType: 'PERCENTAGE', value: 10, minOrderAmount: 100000, maxDiscountAmount: 50000, isActive: true, usageCount: 0, usageLimit: 1000 },
@@ -75,6 +92,25 @@ import { createApp } from '../../src/app.js';
 const app = createApp();
 
 describe('Phase 2 API Endpoints', () => {
+  it('serves only eligible public promotion fields and a verified non-placeholder WhatsApp contact', async () => {
+    const previous = { ...settingsState.data };
+    try {
+      settingsState.data.whatsappNumber = '919111222333';
+      const unverified = await request(app).get('/api/coupons/promotions').expect(200);
+      expect(unverified.body.data.whatsappNumber).toBe('');
+      settingsState.data.isWhatsappVerified = true;
+      const response = await request(app).get('/api/v1/coupons/promotions').expect(200);
+      expect(response.headers['cache-control']).toContain('no-store');
+      expect(response.body.data).toEqual({
+        header: { text: 'Weekend offer', link: '/new-arrivals', code: 'PUBLIC10', ctaLabel: 'Copy PUBLIC10', isActive: true },
+        exitOffer: { code: 'PUBLIC10', headline: 'Save this weekend', subtext: 'Take a small thank-you toward something one of a kind.', badgeText: '10% off', targetPages: ['cart'], cooldownHours: 12 },
+        automaticCodes: ['PUBLIC10'],
+        whatsappNumber: '919111222333',
+      });
+    } finally {
+      Object.assign(settingsState.data, previous);
+    }
+  });
   describe('GET /api/homepage & /api/v1/homepage', () => {
     it('returns unified homepage payload with cache headers', async () => {
       const res = await request(app).get('/api/homepage');

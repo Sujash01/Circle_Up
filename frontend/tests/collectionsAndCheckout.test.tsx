@@ -11,11 +11,14 @@ import { CartPage } from '../src/features/public/CartPage';
 import { SearchPage } from '../src/features/public/SearchPage';
 import { WishlistPage } from '../src/features/public/WishlistPage';
 import { StorefrontHeader, StorefrontTopBanner } from '../src/components/storefront/StorefrontChrome';
+import { ExitIntentModal } from '../src/components/storefront/ExitIntentModal';
 import { productService } from '../src/services/productService';
 import { cartService, type CartState } from '../src/services/cartService';
 import { orderService } from '../src/services/orderService';
 import { storefrontApi } from '../src/services/storefrontApi';
 import { wishlistService } from '../src/services/wishlistService';
+import * as storefrontSettings from '../src/services/storefrontSettingsService';
+import type { StorefrontSettings } from '@circleup/shared';
 import type { Product } from '../src/types/storefront';
 
 const TEST_PRODUCTS: Product[] = [
@@ -67,6 +70,13 @@ const TEST_PRODUCTS: Product[] = [
   },
 ];
 
+const publicSettings: StorefrontSettings = {
+  header: { text: 'Configured announcement', link: '/new-arrivals', isActive: true },
+  automaticCodes: [],
+  exitOffer: null,
+  whatsappNumber: '916280746336',
+};
+
 describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
   const dialog = HTMLDialogElement.prototype;
   const originalDialogMethods = new Map(['showModal', 'close'].map((key) => [
@@ -83,6 +93,7 @@ describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
   });
 
   beforeEach(() => {
+    vi.spyOn(storefrontSettings, 'useStorefrontSettings').mockReturnValue(publicSettings);
     productService.setProducts(TEST_PRODUCTS);
     cartService.clearCart();
     Object.defineProperties(dialog, {
@@ -185,13 +196,42 @@ describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
     const host = document.createElement('div');
     const root = createRoot(host);
     try {
-      act(() => root.render(<StorefrontTopBanner text={`Curated Vintage Drops Every Friday · ${legacy}`} />));
+      vi.mocked(storefrontSettings.useStorefrontSettings).mockReturnValue({
+        ...publicSettings,
+        header: { ...publicSettings.header, text: `Curated Vintage Drops Every Friday · ${legacy}` },
+      });
+      act(() => root.render(<StoreProvider><MemoryRouter><StorefrontTopBanner /></MemoryRouter></StoreProvider>));
       expect(host.textContent).toContain('Curated Vintage Drops Every Friday');
       expect(host.textContent).toContain('₹1,000 or more after discounts');
       expect(host.textContent).not.toContain('₹2,500');
       expect(host.textContent).not.toContain('₹1,500');
     } finally {
       act(() => root.unmount());
+    }
+  });
+
+  it('uses the configured header and exit promotion copy and saves the claimed code', () => {
+    vi.mocked(storefrontSettings.useStorefrontSettings).mockReturnValue({
+      ...publicSettings,
+      header: { ...publicSettings.header, text: 'This weekend only', code: 'PUBLIC10', ctaLabel: 'Copy PUBLIC10' },
+      exitOffer: { code: 'PUBLIC10', headline: 'A weekend offer', subtext: 'Browse the sale', badgeText: '10% off', targetPages: ['home'], cooldownHours: 24 },
+    });
+    const host = document.createElement('div');
+    const root = createRoot(host);
+    try {
+      act(() => root.render(<StoreProvider><MemoryRouter><StorefrontTopBanner /><ExitIntentModal /></MemoryRouter></StoreProvider>));
+      expect(host.textContent).toContain('This weekend only');
+      expect(host.textContent).toContain('Copy PUBLIC10');
+      act(() => document.dispatchEvent(new MouseEvent('mouseout', { clientY: 0 })));
+      const modal = document.querySelector('[aria-labelledby="exit-offer-title"]');
+      expect(modal?.textContent).toContain('A weekend offer');
+      expect(modal?.textContent).toContain('Browse the sale');
+      act(() => modal?.querySelector<HTMLButtonElement>('.exit-offer-claim')?.click());
+      expect(cartService.loadCart().promoCode).toBe('PUBLIC10');
+      expect(document.querySelector('[aria-labelledby="exit-offer-title"]')).toBeNull();
+    } finally {
+      act(() => root.unmount());
+      localStorage.removeItem('circleup_exit_offer_PUBLIC10');
     }
   });
 
@@ -253,10 +293,62 @@ describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
       expect(host.textContent).toContain('₹90');
       expect(host.textContent).toContain('₹1,089.99');
       const enquiry = host.querySelector<HTMLAnchorElement>('a[href^="https://wa.me/"]');
-      const message = enquiry && new URL(enquiry.href).searchParams.get('text');
+      const destination = enquiry && new URL(enquiry.href);
+      expect(destination && `${destination.origin}${destination.pathname}`).toBe('https://wa.me/916280746336');
+      const message = destination?.searchParams.get('text');
       expect(message).toContain('Discount (DROP): -₹1.01');
+      expect(message).toContain('Artisan Embroidered Vest (Ref: BN-001, Size: M) x1');
       expect(message).toContain('Estimated Shipping: ₹90');
       expect(message).toContain('Estimated Total: ₹1,089.99');
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+
+  it('validates automatic offers in priority order and uses one quote for the bag and WhatsApp without placing an order', async () => {
+    vi.mocked(storefrontSettings.useStorefrontSettings).mockReturnValue({
+      ...publicSettings, automaticCodes: ['MINIMUM', 'AUTO10'],
+    });
+    vi.spyOn(orderService, 'getRazorpayAvailability').mockResolvedValue({ available: false });
+    const createOrder = vi.spyOn(orderService, 'createOrder');
+    const validate = vi.spyOn(storefrontApi, 'validateCoupon')
+      .mockResolvedValueOnce({ code: 'MINIMUM', valid: false, discountInPaise: 0, message: 'Minimum order needed' })
+      .mockResolvedValueOnce({ code: 'AUTO10', valid: true, discountInPaise: 101, message: 'Automatic discount applied' });
+    saveCartWithTestItem(100100);
+    const host = document.createElement('div');
+    const root = createRoot(host);
+    try {
+      await act(async () => root.render(
+        <Provider store={store}><StoreProvider><MemoryRouter><CartPage /></MemoryRouter></StoreProvider></Provider>,
+      ));
+      expect(validate.mock.calls.map(([code]) => code)).toEqual(['MINIMUM', 'AUTO10']);
+      expect(host.textContent).toContain('₹1,089.99');
+      const link = host.querySelector<HTMLAnchorElement>('a[href^="https://wa.me/"]');
+      const message = link && new URL(link.href).searchParams.get('text');
+      expect(message).toContain('Discount (AUTO10): -₹1.01');
+      expect(message).toContain('Estimated Shipping: ₹90');
+      expect(message).toContain('Estimated Total: ₹1,089.99');
+      expect(createOrder).not.toHaveBeenCalled();
+      expect(cartService.loadCart().promoCode).toBeUndefined();
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+
+  it('keeps the enquiry option visible without a link when the verified contact is unavailable', async () => {
+    vi.mocked(storefrontSettings.useStorefrontSettings).mockReturnValue({ ...publicSettings, whatsappNumber: '' });
+    vi.spyOn(orderService, 'getRazorpayAvailability').mockResolvedValue({ available: false });
+    saveCartWithTestItem();
+    const host = document.createElement('div');
+    const root = createRoot(host);
+    try {
+      await act(async () => root.render(
+        <Provider store={store}><StoreProvider><MemoryRouter><CartPage /></MemoryRouter></StoreProvider></Provider>,
+      ));
+      const enquiry = [...host.querySelectorAll('button')].find((button) => button.textContent?.trim() === 'WhatsApp Enquiry');
+      expect(enquiry?.disabled).toBe(true);
+      expect(host.querySelector('a[href^="https://wa.me/"]')).toBeNull();
+      expect(host.textContent).toContain('WhatsApp enquiries are currently unavailable.');
     } finally {
       act(() => root.unmount());
     }

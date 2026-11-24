@@ -1,5 +1,6 @@
 import {
   siteSettingsSchema,
+  normalizeBusinessWhatsappNumber,
   type SiteSettings,
   type SiteSettingsUpdate,
 } from '@circleup/shared';
@@ -55,12 +56,7 @@ function unavailable(): ServiceUnavailableError {
   );
 }
 
-export function getConfiguredWhatsappNumber(value: string | undefined): string {
-  const digits = (value || '').replace(/\D/g, '');
-  // These numbers have appeared as repository defaults/placeholders; never expose them as payment contacts.
-  if (!/^[1-9]\d{9,14}$/.test(digits) || ['919876543210', '910000000000'].includes(digits)) return '';
-  return digits;
-}
+export const getConfiguredWhatsappNumber = normalizeBusinessWhatsappNumber;
 
 export const settingsRepository = {
   async getSettings(): Promise<SiteSettings> {
@@ -86,9 +82,13 @@ export const settingsRepository = {
 
   async updateSettings(settings: SiteSettingsUpdate): Promise<SiteSettings> {
     const client = getSupabaseAdminClient();
+    const update = toDatabaseRow(settings);
+    if (settings.whatsappNumber !== undefined && settings.isWhatsappVerified === undefined) {
+      update.is_whatsapp_verified = false;
+    }
     const { data, error } = await client
       .from('site_settings')
-      .upsert({ id: 'default', ...toDatabaseRow(settings) })
+      .upsert({ id: 'default', ...update })
       .select('*')
       .single();
 

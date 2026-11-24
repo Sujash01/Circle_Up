@@ -12,6 +12,7 @@ import { formatPrice } from '@circleup/shared';
 import { cartService } from '@/services/cartService';
 import { productService, useCatalogVersion } from '@/services/productService';
 import { storefrontApi } from '@/services/storefrontApi';
+import { useStorefrontSettings } from '@/services/storefrontSettingsService';
 import {
   INVENTORY_CATEGORIES,
   INVENTORY_STATUSES,
@@ -28,6 +29,7 @@ function WhatsAppIcon({ className = 'size-4' }: { className?: string }) {
 }
 
 export function ProductDetailPage() {
+  const { whatsappNumber } = useStorefrontSettings();
   const { slug = '' } = useParams();
   const catalogVersion = useCatalogVersion();
   const product: Product | undefined = useMemo(() => {
@@ -158,6 +160,8 @@ export function ProductDetailPage() {
   const whatsappEnquiryUrl = cartService.buildProductWhatsAppUrl(
     product,
     selectedVariant?.label,
+    whatsappNumber,
+    { size: selectedVariant?.size ?? product.sizes[0] ?? 'One Size', quantity, unitPrice: selectedVariant?.priceOverride ?? product.price },
   );
 
   const handleAddToBag = () => {
@@ -450,7 +454,7 @@ export function ProductDetailPage() {
 
           {/* Action buttons - 2 clean options: Enquire on WhatsApp (WhatsApp Green) & Add to Cart */}
           <div className="flex flex-col sm:flex-row gap-3 pt-2">
-            <a
+            {whatsappEnquiryUrl && <a
               href={whatsappEnquiryUrl}
               target="_blank"
               rel="noopener noreferrer"
@@ -458,7 +462,7 @@ export function ProductDetailPage() {
             >
               <WhatsAppIcon className="size-4" />
               <span>Enquire on WhatsApp</span>
-            </a>
+            </a>}
 
             <button
               type="button"

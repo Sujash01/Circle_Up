@@ -1,24 +1,13 @@
-import { useEffect, useState } from 'react';
 import { Calendar, Clock, MapPin } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { eventService } from '@/services/communityServices';
 import { storefrontApi } from '@/services/storefrontApi';
+import { useStorefrontList } from '@/services/useStorefrontList';
+import { StorefrontListStatus } from '@/components/storefront/StorefrontListStatus';
 
 export function EventsPage() {
-  const [events, setEvents] = useState<Awaited<ReturnType<typeof eventService.getAllEvents>>>([]);
-  const [loadError, setLoadError] = useState('');
+  const events = useStorefrontList(storefrontApi.getEvents);
   const savedRegistrations = eventService.getRegistrations();
-
-  useEffect(() => {
-    const ac = new AbortController();
-    storefrontApi
-      .getEvents(ac.signal)
-      .then((apiEvents) => {
-        setEvents(apiEvents as typeof events);
-      })
-      .catch(() => setLoadError('Events could not be loaded. Please try again later.'));
-    return () => ac.abort();
-  }, []);
 
   return (
     <div className="space-y-14">
@@ -38,11 +27,9 @@ export function EventsPage() {
       </header>
 
       <div className="space-y-14">
-        {loadError && <p role="alert" className="text-sm text-destructive">{loadError}</p>}
-        {!loadError && events.length === 0 && <p className="text-sm text-foreground/75">There are no events to display right now.</p>}
-        {loadError && <p role="alert" className="text-sm text-destructive">{loadError}</p>}
-        {!loadError && events.length === 0 && <p className="text-sm text-foreground/75">There are no events to display right now.</p>}
-        {events.map((evt, idx) => (
+        {events.status !== 'ready' && <StorefrontListStatus status={events.status} label="events" onRetry={events.retry} />}
+        {events.status === 'ready' && events.items.length === 0 && <p className="text-sm text-foreground/75">There are no events to display right now.</p>}
+        {events.status === 'ready' && events.items.map((evt, idx) => (
           <article
             key={evt.id}
             className="grid gap-8 lg:grid-cols-[1fr_1.05fr] items-center pb-12 border-b border-foreground/15 last:border-b-0"

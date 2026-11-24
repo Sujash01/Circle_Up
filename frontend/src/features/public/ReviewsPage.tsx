@@ -1,13 +1,14 @@
 import { Star } from 'lucide-react';
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { reviewService } from '@/services/communityServices';
+import { storefrontApi } from '@/services/storefrontApi';
+import { useStorefrontList } from '@/services/useStorefrontList';
+import { StorefrontListStatus } from '@/components/storefront/StorefrontListStatus';
 import { productService } from '@/services/productService';
-import type { ReviewItem } from '@/types/storefront';
 
 export function ReviewsPage() {
-  const [reviews, setReviews] = useState<ReviewItem[]>(() => reviewService.getAllReviews());
+  const reviews = useStorefrontList(storefrontApi.getReviews);
   const [ratingFilter, setRatingFilter] = useState<number>(0);
 
   const [displayName, setDisplayName] = useState('');
@@ -19,26 +20,10 @@ export function ReviewsPage() {
   const [submittedNotice, setSubmittedNotice] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  useEffect(() => {
-    let active = true;
-    reviewService.getApprovedReviews().then((data) => {
-      if (active && Array.isArray(data)) {
-        setReviews(data);
-      }
-    }).catch(() => {
-      // Keep existing reviews
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
-
   const allProducts = productService.getAllProducts();
-
-  const visibleReviews = useMemo(
-    () => (ratingFilter === 0 ? reviews : reviews.filter((r) => r.rating === ratingFilter)),
-    [reviews, ratingFilter],
-  );
+  const visibleReviews = reviews.status === 'ready'
+    ? reviews.items.filter((review) => ratingFilter === 0 || review.rating === ratingFilter)
+    : [];
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -61,7 +46,7 @@ export function ReviewsPage() {
     const linkedProduct = productSlug ? productService.getProductBySlug(productSlug) : undefined;
     setIsSubmitting(true);
     try {
-      await reviewService.submitReview({
+      await storefrontApi.submitReview({
         displayName,
         rating,
         title,
@@ -70,16 +55,14 @@ export function ReviewsPage() {
         productName: linkedProduct?.name,
       });
 
-      const updated = await reviewService.getApprovedReviews();
-      setReviews(updated);
       setDisplayName('');
       setTitle('');
       setComment('');
       setProductSlug('');
       setRating(5);
       setSubmittedNotice(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not submit review. Please try again.');
+    } catch {
+      setError('Could not submit your review. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -121,11 +104,13 @@ export function ReviewsPage() {
       <div className="grid gap-12 lg:grid-cols-[1.15fr_0.85fr] items-start">
         {/* Editorial testimonial list */}
         <div className="divide-y divide-foreground/15">
-          {visibleReviews.length === 0 ? (
+          {reviews.status !== 'ready' ? (
+            <StorefrontListStatus status={reviews.status} label="reviews" onRetry={reviews.retry} />
+          ) : visibleReviews.length === 0 ? (
             <div className="py-12 text-center rounded-2xl border border-dashed border-foreground/20 p-8 space-y-2">
-              <p className="font-display text-xl text-cocoa">No Reviews Yet</p>
+              <p className="font-display text-xl text-cocoa">{reviews.items.length === 0 ? 'No Reviews Yet' : 'No reviews match this rating'}</p>
               <p className="text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
-                Be the first to share your thrift thoughts or feedback about pieces you discovered.
+                {reviews.items.length === 0 ? 'Be the first to share your feedback.' : 'Select another rating to see more reviews.'}
               </p>
             </div>
           ) : (

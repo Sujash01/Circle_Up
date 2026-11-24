@@ -1,9 +1,12 @@
 import { useState, type FormEvent } from 'react';
 import { apiClient } from '@/services/apiClient';
-import { WHATSAPP_BUSINESS_NUMBER } from '@/services/cartService';
+import { buildBusinessWhatsappUrl } from '@/services/cartService';
+import { useStorefrontSettings } from '@/services/storefrontSettingsService';
 import type { ContactSubmission } from '@/types/storefront';
 
 export function ContactPage() {
+  const { whatsappNumber } = useStorefrontSettings();
+  const whatsappUrl = buildBusinessWhatsappUrl(whatsappNumber);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [subject, setSubject] = useState('');
@@ -81,7 +84,11 @@ export function ContactPage() {
               <br />
               Instagram: @CircleUp
               <br />
-              WhatsApp Checkout Line: +{WHATSAPP_BUSINESS_NUMBER}
+              {whatsappUrl ? (
+                <a href={whatsappUrl} target="_blank" rel="noopener noreferrer" className="underline">
+                  WhatsApp enquiry line: +{whatsappNumber}
+                </a>
+              ) : 'WhatsApp enquiries are currently unavailable.'}
             </p>
           </div>
 

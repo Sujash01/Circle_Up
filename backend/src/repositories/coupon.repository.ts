@@ -78,6 +78,16 @@ function toRow(input: CouponInput): Record<string, unknown> {
 }
 
 export const couponRepository = {
+  async listPromotions(): Promise<CouponRecord[]> {
+    const { data, error } = await getSupabaseAdminClient().from('coupons')
+      .select('code, description, discount_type, discount_value, is_active, starts_at, ends_at, usage_limit, usage_count, target_tier, applies_to, show_in_header, header_banner_text, header_cta_label, auto_apply, show_in_exit_intent, popup_headline, popup_subtext, popup_badge_text, target_pages, cooldown_hours')
+      .eq('is_active', true)
+      .or('show_in_header.eq.true,show_in_exit_intent.eq.true,auto_apply.eq.true')
+      .order('header_priority', { ascending: false })
+      .order('created_at', { ascending: false });
+    if (error || !Array.isArray(data)) throw unavailable();
+    return data.map(mapCouponRow);
+  },
   async list(): Promise<CouponRecord[]> {
     const { data, error } = await getSupabaseAdminClient().from('coupons').select('*').order('created_at', { ascending: false });
     if (error || !Array.isArray(data)) throw unavailable();

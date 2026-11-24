@@ -60,8 +60,8 @@ export function toEventRow(input: Partial<EventRecord>) {
   };
 }
 
-function fail(error: unknown): never {
-  throw new ServiceUnavailableError(error instanceof Error ? error.message : 'Events database is unavailable.', 'DATABASE_UNAVAILABLE');
+function fail(_error: unknown): never {
+  throw new ServiceUnavailableError('Events are temporarily unavailable. Please try again later.', 'DATABASE_UNAVAILABLE');
 }
 
 export const eventRepository = {

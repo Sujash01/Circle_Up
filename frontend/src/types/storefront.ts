@@ -112,6 +112,7 @@ export interface SimulatedRentalRequest {
 export interface CartItem {
   key: string; // `${productId}::${variantId}`
   productId: string;
+  serialNumber?: string;
   slug: string;
   name: string;
   image: string;

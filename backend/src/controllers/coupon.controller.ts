@@ -4,6 +4,13 @@ import { sendSuccess } from '../utils/apiResponse.js';
 import { couponValidatePayloadSchema } from '@circleup/shared';
 
 export const couponController = {
+  async storefrontSettings(_req: Request, res: Response, next: NextFunction) {
+    try {
+      return sendSuccess(res, await couponService.getStorefrontSettings());
+    } catch (error) {
+      next(error);
+    }
+  },
   async validate(req: Request, res: Response, next: NextFunction) {
     try {
       const parsed = couponValidatePayloadSchema.parse(req.body);

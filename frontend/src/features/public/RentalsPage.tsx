@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { EmptyState } from '@/components/storefront/EmptyState';
 import { cn } from '@/lib/utils';
 import { formatPrice, normalizePriceToPaise } from '@circleup/shared';
 import { rentalService } from '@/services/rentalService';
 import { storefrontApi } from '@/services/storefrontApi';
+import { useStorefrontList } from '@/services/useStorefrontList';
+import { StorefrontListStatus } from '@/components/storefront/StorefrontListStatus';
 import type { RentalProduct, SimulatedRentalRequest } from '@/types/storefront';
 
 function mapApiRentalToProduct(raw: unknown): RentalProduct {
@@ -37,6 +39,8 @@ function mapApiRentalToProduct(raw: unknown): RentalProduct {
   };
 }
 
+const loadRentals = async (signal: AbortSignal) => (await storefrontApi.getRentals(signal)).map(mapApiRentalToProduct);
+
 function addDaysIso(startIso: string, deltaDays: number): string {
   const [y, m, d] = startIso.split('-').map(Number);
   if (!y || !m || !d) return startIso;
@@ -46,28 +50,15 @@ function addDaysIso(startIso: string, deltaDays: number): string {
 
 export function RentalsPage() {
   const navigate = useNavigate();
-  const [rentals, setRentals] = useState<RentalProduct[]>(() => rentalService.getAllRentalProducts());
-  const [loadError, setLoadError] = useState('');
-
-  useEffect(() => {
-    const ac = new AbortController();
-    storefrontApi
-      .getRentals(ac.signal)
-      .then((apiRentals) => {
-        if (Array.isArray(apiRentals) && apiRentals.length > 0) {
-          setRentals(apiRentals.map(mapApiRentalToProduct));
-        }
-      })
-      .catch(() => setLoadError('Rental items could not be loaded. Please try again later.'));
-    return () => ac.abort();
-  }, []);
-
-  const [selectedId, setSelectedId] = useState<string>(rentals[0]?.id ?? '');
+  const catalog = useStorefrontList(loadRentals);
+  const rentals = catalog.status === 'ready' ? catalog.items : [];
+  const [selectedId, setSelectedId] = useState('');
   const selectedProduct: RentalProduct | undefined =
     rentals.find((r) => r.id === selectedId) ?? rentals[0];
 
   const todayIso = new Date().toISOString().slice(0, 10);
-  const [size, setSize] = useState<string>(selectedProduct?.sizes[0] ?? 'One Size');
+  const [sizeChoice, setSize] = useState('');
+  const size = selectedProduct?.sizes.includes(sizeChoice) ? sizeChoice : selectedProduct?.sizes[0] ?? 'One Size';
   const [startDate, setStartDate] = useState<string>(addDaysIso(todayIso, 2));
   const [endDate, setEndDate] = useState<string>(addDaysIso(todayIso, 4));
   const [customerName, setCustomerName] = useState('');
@@ -101,12 +92,12 @@ export function RentalsPage() {
             Rent editorial pieces, jackets, and statement sets for your special occasions.
           </p>
         </header>
-        <EmptyState
-          title="Rental collection being refreshed"
-          description={loadError || 'Our circular rental pieces are currently being inspected and dry-cleaned. Please check back soon or browse our ready-to-wear arrivals.'}
+        {catalog.status !== 'ready' ? <StorefrontListStatus status={catalog.status} label="rental items" onRetry={catalog.retry} /> : <EmptyState
+          title="No rental items available"
+          description="Check back soon or browse our ready-to-wear arrivals."
           actionLabel="Browse New Arrivals"
           onAction={() => navigate('/new-arrivals')}
-        />
+        />}
       </div>
     );
   }

@@ -178,6 +178,32 @@ describe('Site settings persistence and API contract', () => {
     expect(mockState.upsert).not.toHaveBeenCalled();
   });
 
+  it('publishes the official number only after an owner explicitly verifies it', async () => {
+    const official = '+916280746336';
+    const update = (data: Record<string, unknown>) => request(app)
+      .put('/api/admin/settings')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .set('X-CSRF-Token', 'settings-owner-csrf')
+      .send(data);
+
+    await update({ whatsappNumber: official }).expect(200);
+    expect(mockState.row).toMatchObject({ id: 'default', whatsapp_number: official, is_whatsapp_verified: false });
+    const unverified = await request(app).get('/api/coupons/promotions').expect(200);
+    expect(unverified.body.data.whatsappNumber).toBe('');
+
+    const invalid = await update({ whatsappNumber: '910000000000', isWhatsappVerified: true }).expect(400);
+    expect(invalid.body.error.code).toBe('VALIDATION_ERROR');
+    expect(mockState.row.whatsapp_number).toBe(official);
+
+    await update({ whatsappNumber: official, isWhatsappVerified: true }).expect(200);
+    expect(mockState.upsert).toHaveBeenLastCalledWith({
+      id: 'default', whatsapp_number: official, is_whatsapp_verified: true,
+    });
+    const verified = await request(app).get('/api/coupons/promotions').expect(200);
+    expect(verified.body.data.whatsappNumber).toBe('916280746336');
+    expect((await homepageService.getHomepagePayload()).siteSettings.whatsappNumber).toBe('916280746336');
+  });
+
   it('returns a storage error without synthetic fallback when Supabase fails', async () => {
     mockState.setError({ message: 'database unavailable' });
     const response = await request(app).get('/api/admin/settings').set('Authorization', `Bearer ${ownerToken}`);
