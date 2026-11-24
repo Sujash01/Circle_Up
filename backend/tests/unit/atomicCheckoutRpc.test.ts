@@ -769,14 +769,14 @@ describe('Milestone 1, Step 2: Atomic Checkout RPC Unit & Verification Test Suit
         customer: { name: 'Aarav Patel', email: 'aarav@example.com', phone: '+919876543210' },
         shippingAddress: { addressLine: '10 Marine Drive', city: 'Mumbai', state: 'MH', postalCode: '400020' },
         items: [{ serialNumber: 'CU-001', quantity: 1, size: 'M' }],
-        paymentMethod: 'RAZORPAY' as const,
+        paymentMethod: 'WHATSAPP_UPI' as const,
         idempotencyKey: 'test-idem-key-fallback-1',
       };
 
       // In the target architecture, missing Supabase credentials MUST throw 503 DATABASE_UNAVAILABLE.
       // It must NEVER silently fall back to legacy database.
-      await expect(orderService.createOrder(payload)).rejects.toThrow(ServiceUnavailableError);
-      await expect(orderService.createOrder(payload)).rejects.toMatchObject({
+      await expect(orderService.createOrderSupabase(payload)).rejects.toThrow(ServiceUnavailableError);
+      await expect(orderService.createOrderSupabase(payload)).rejects.toMatchObject({
         code: 'DATABASE_UNAVAILABLE',
         statusCode: 503,
       });
@@ -800,14 +800,14 @@ describe('Milestone 1, Step 2: Atomic Checkout RPC Unit & Verification Test Suit
         customer: { name: 'Aarav Patel', email: 'aarav@example.com', phone: '+919876543210' },
         shippingAddress: { addressLine: '10 Marine Drive', city: 'Mumbai', state: 'MH', postalCode: '400020' },
         items: [{ serialNumber: 'CU-001', quantity: 1, size: 'M' }],
-        paymentMethod: 'RAZORPAY' as const,
+        paymentMethod: 'WHATSAPP_UPI' as const,
         idempotencyKey: 'test-idem-key-fallback-2',
       };
 
       // In production with unverified monetary units, createOrder MUST throw 503 MONETARY_RECONCILIATION_REQUIRED.
       // It must NEVER invoke legacy checkout.
-      await expect(orderService.createOrder(payload)).rejects.toThrow(ServiceUnavailableError);
-      await expect(orderService.createOrder(payload)).rejects.toMatchObject({
+      await expect(orderService.createOrderSupabase(payload)).rejects.toThrow(ServiceUnavailableError);
+      await expect(orderService.createOrderSupabase(payload)).rejects.toMatchObject({
         code: 'MONETARY_RECONCILIATION_REQUIRED',
         statusCode: 503,
       });
@@ -867,11 +867,11 @@ describe('Milestone 1, Step 2: Atomic Checkout RPC Unit & Verification Test Suit
         customer: { name: 'Aarav Patel', email: 'aarav@example.com', phone: '+919876543210' },
         shippingAddress: { addressLine: '10 Marine Drive', city: 'Mumbai', state: 'MH', postalCode: '400020' },
         items: [{ serialNumber: 'CU-001', quantity: 1, size: 'M' }],
-        paymentMethod: 'RAZORPAY' as const,
+        paymentMethod: 'WHATSAPP_UPI' as const,
         idempotencyKey: 'test-idem-key-fallback-3',
       };
 
-      await expect(orderService.createOrder(payload)).rejects.toThrow(ServiceUnavailableError);
+      await expect(orderService.createOrderSupabase(payload)).rejects.toThrow(ServiceUnavailableError);
     } finally {
       (env as any).NODE_ENV = originalEnv;
     }

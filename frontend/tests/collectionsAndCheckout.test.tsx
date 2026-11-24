@@ -11,7 +11,7 @@ import { CartPage } from '../src/features/public/CartPage';
 import { StorefrontHeader } from '../src/components/storefront/StorefrontChrome';
 import { productService } from '../src/services/productService';
 import { cartService, type CartState } from '../src/services/cartService';
-import { storefrontApi, type HomepagePayload } from '../src/services/storefrontApi';
+import { orderService } from '../src/services/orderService';
 import type { Product } from '../src/types/storefront';
 
 const TEST_PRODUCTS: Product[] = [
@@ -136,10 +136,7 @@ describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
     host.remove();
   });
 
-  it('offers COD, disables unconfigured WhatsApp payment, and keeps Razorpay unavailable', async () => {
-    vi.spyOn(storefrontApi, 'getHomepage').mockResolvedValue({
-      siteSettings: { whatsappNumber: '' },
-    } as HomepagePayload);
+  function saveCartWithTestItem() {
     const cartWithItem: CartState = {
       cartId: 'test-cart-123',
       items: [
@@ -159,12 +156,70 @@ describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
       promoCode: undefined,
     };
     cartService.saveCart(cartWithItem);
+  }
+
+  it('keeps online checkout disabled when availability is pending, false, or unreachable', async () => {
+    saveCartWithTestItem();
+    let reportAvailability!: (value: { available: boolean }) => void;
+    const availability = vi.spyOn(orderService, 'getRazorpayAvailability')
+      .mockImplementationOnce(() => new Promise((resolve) => { reportAvailability = resolve; }))
+      .mockRejectedValueOnce(new Error('API unavailable'));
+    const createOrder = vi.spyOn(orderService, 'createOrder').mockRejectedValue(new Error('Unexpected order request'));
+    const originalLocation = window.location.href;
+    window.history.replaceState(null, '', '#checkout-step2');
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+
+    const renderCart = (root: ReturnType<typeof createRoot>) => root.render(
+      <Provider store={store}>
+        <StoreProvider>
+          <MemoryRouter>
+            <CartPage />
+          </MemoryRouter>
+        </StoreProvider>
+      </Provider>,
+    );
+    const checkoutButton = () => Array.from(host.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Place Order / Direct Checkout'));
+
+    let root = createRoot(host);
+    try {
+      act(() => renderCart(root));
+      expect(checkoutButton()?.disabled).toBe(true);
+      expect(host.textContent).toContain('Checking online payment availability');
+
+      await act(async () => reportAvailability({ available: false }));
+      expect(checkoutButton()?.disabled).toBe(true);
+      act(() => checkoutButton()?.click());
+      expect(host.textContent).toContain('Online payment is currently unavailable');
+      expect(host.textContent).toContain('Enquire on WhatsApp');
+      expect(host.textContent).not.toContain('Complete Your Order');
+
+      act(() => root.unmount());
+      root = createRoot(host);
+      await act(async () => renderCart(root));
+      expect(availability).toHaveBeenCalledTimes(2);
+      expect(checkoutButton()?.disabled).toBe(true);
+      expect(host.textContent).not.toContain('Pay with Razorpay');
+      expect(createOrder).not.toHaveBeenCalled();
+      expect(document.querySelector('script[src*="checkout.razorpay.com"]')).toBeNull();
+    } finally {
+      act(() => root.unmount());
+      host.remove();
+      window.history.replaceState(null, '', originalLocation);
+    }
+  });
+
+  it('allows Razorpay when available and makes no order if the checkout script fails', async () => {
+    vi.spyOn(orderService, 'getRazorpayAvailability').mockResolvedValue({ available: true });
+    const createOrder = vi.spyOn(orderService, 'createOrder').mockRejectedValue(new Error('Unexpected order request'));
+    saveCartWithTestItem();
 
     const host = document.createElement('div');
     document.body.appendChild(host);
     const root = createRoot(host);
 
-    act(() => {
+    await act(async () => {
       root.render(
         <Provider store={store}>
           <StoreProvider>
@@ -184,6 +239,7 @@ describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
       b.textContent?.includes('Place Order / Direct Checkout'),
     );
     expect(checkoutBtn).toBeDefined();
+    expect(checkoutBtn?.disabled).toBe(false);
 
     act(() => {
       checkoutBtn?.click();
@@ -234,6 +290,17 @@ describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
     expect(host.textContent).not.toContain('Cash on Delivery (COD)');
     const codChoice = host.querySelector('input[name="paymentMethod"][value="CASH_ON_DELIVERY"]');
     expect(codChoice).toBeNull();
+
+    const paymentForm = Array.from(host.querySelectorAll('form')).find((form) =>
+      form.textContent?.includes('Pay with Razorpay'));
+    expect(paymentForm).toBeDefined();
+    act(() => paymentForm?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+    const checkoutScript = document.querySelector('script[src*="checkout.razorpay.com"]');
+    expect(checkoutScript).not.toBeNull();
+    await act(async () => checkoutScript?.dispatchEvent(new Event('error')));
+    expect(host.textContent).toContain('The online payment window could not load');
+    expect(host.textContent).toContain('Artisan Embroidered Vest');
+    expect(createOrder).not.toHaveBeenCalled();
 
     act(() => {
       root.unmount();

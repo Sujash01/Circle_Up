@@ -67,24 +67,18 @@ export interface IRazorpayGatewayClient {
 }
 
 class DefaultRazorpayGatewayClient implements IRazorpayGatewayClient {
+  constructor(private readonly credentials: RazorpayCredentials) {}
+
   async createOrder(params: {
     amountPaise: number;
     internalOrderNumber: string;
     notes?: Record<string, string>;
   }): Promise<RazorpayOrder> {
-    const credentials = getRazorpayCredentials();
-    if (!credentials) {
-      throw new ServiceUnavailableError(
-        'Razorpay credentials are not configured.',
-        'PAYMENT_PROVIDER_UNAVAILABLE',
-      );
-    }
-
     const response = await fetch(RAZORPAY_ORDERS_URL, {
       method: 'POST',
       signal: AbortSignal.timeout(10_000),
       headers: {
-        Authorization: `Basic ${Buffer.from(`${credentials.keyId}:${credentials.keySecret}`).toString('base64')}`,
+        Authorization: `Basic ${Buffer.from(`${this.credentials.keyId}:${this.credentials.keySecret}`).toString('base64')}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -124,19 +118,11 @@ class DefaultRazorpayGatewayClient implements IRazorpayGatewayClient {
   }
 
   async fetchPayment(paymentId: string): Promise<RazorpayPaymentEvidence | null> {
-    const credentials = getRazorpayCredentials();
-    if (!credentials) {
-      throw new ServiceUnavailableError(
-        'Razorpay credentials are not configured.',
-        'PAYMENT_PROVIDER_UNAVAILABLE',
-      );
-    }
-
     const response = await fetch(`${RAZORPAY_PAYMENTS_URL}/${encodeURIComponent(paymentId)}`, {
       method: 'GET',
       signal: AbortSignal.timeout(10_000),
       headers: {
-        Authorization: `Basic ${Buffer.from(`${credentials.keyId}:${credentials.keySecret}`).toString('base64')}`,
+        Authorization: `Basic ${Buffer.from(`${this.credentials.keyId}:${this.credentials.keySecret}`).toString('base64')}`,
         'Content-Type': 'application/json',
       },
     });
@@ -170,19 +156,11 @@ class DefaultRazorpayGatewayClient implements IRazorpayGatewayClient {
   }
 
   async fetchOrder(orderId: string): Promise<RazorpayOrder | null> {
-    const credentials = getRazorpayCredentials();
-    if (!credentials) {
-      throw new ServiceUnavailableError(
-        'Razorpay credentials are not configured.',
-        'PAYMENT_PROVIDER_UNAVAILABLE',
-      );
-    }
-
     const response = await fetch(`${RAZORPAY_ORDERS_URL}/${encodeURIComponent(orderId)}`, {
       method: 'GET',
       signal: AbortSignal.timeout(10_000),
       headers: {
-        Authorization: `Basic ${Buffer.from(`${credentials.keyId}:${credentials.keySecret}`).toString('base64')}`,
+        Authorization: `Basic ${Buffer.from(`${this.credentials.keyId}:${this.credentials.keySecret}`).toString('base64')}`,
         'Content-Type': 'application/json',
       },
     });
@@ -203,19 +181,11 @@ class DefaultRazorpayGatewayClient implements IRazorpayGatewayClient {
   }
 
   async fetchOrderByReceipt(receipt: string): Promise<RazorpayOrder | null> {
-    const credentials = getRazorpayCredentials();
-    if (!credentials) {
-      throw new ServiceUnavailableError(
-        'Razorpay credentials are not configured.',
-        'PAYMENT_PROVIDER_UNAVAILABLE',
-      );
-    }
-
     const response = await fetch(`${RAZORPAY_ORDERS_URL}?receipt=${encodeURIComponent(receipt)}&count=1`, {
       method: 'GET',
       signal: AbortSignal.timeout(10_000),
       headers: {
-        Authorization: `Basic ${Buffer.from(`${credentials.keyId}:${credentials.keySecret}`).toString('base64')}`,
+        Authorization: `Basic ${Buffer.from(`${this.credentials.keyId}:${this.credentials.keySecret}`).toString('base64')}`,
         'Content-Type': 'application/json',
       },
     });
@@ -237,19 +207,11 @@ class DefaultRazorpayGatewayClient implements IRazorpayGatewayClient {
   }
 
   async fetchOrderPayments(orderId: string): Promise<RazorpayPaymentEvidence[]> {
-    const credentials = getRazorpayCredentials();
-    if (!credentials) {
-      throw new ServiceUnavailableError(
-        'Razorpay credentials are not configured.',
-        'PAYMENT_PROVIDER_UNAVAILABLE',
-      );
-    }
-
     const response = await fetch(`${RAZORPAY_ORDERS_URL}/${encodeURIComponent(orderId)}/payments`, {
       method: 'GET',
       signal: AbortSignal.timeout(10_000),
       headers: {
-        Authorization: `Basic ${Buffer.from(`${credentials.keyId}:${credentials.keySecret}`).toString('base64')}`,
+        Authorization: `Basic ${Buffer.from(`${this.credentials.keyId}:${this.credentials.keySecret}`).toString('base64')}`,
         'Content-Type': 'application/json',
       },
     });
@@ -275,19 +237,11 @@ class DefaultRazorpayGatewayClient implements IRazorpayGatewayClient {
     idempotencyKey: string;
     notes?: Record<string, string>;
   }): Promise<RazorpayRefundEvidence> {
-    const credentials = getRazorpayCredentials();
-    if (!credentials) {
-      throw new ServiceUnavailableError(
-        'Razorpay credentials are not configured.',
-        'PAYMENT_PROVIDER_UNAVAILABLE',
-      );
-    }
-
     const response = await fetch(`${RAZORPAY_PAYMENTS_URL}/${encodeURIComponent(params.paymentId)}/refund`, {
       method: 'POST',
       signal: AbortSignal.timeout(10_000),
       headers: {
-        Authorization: `Basic ${Buffer.from(`${credentials.keyId}:${credentials.keySecret}`).toString('base64')}`,
+        Authorization: `Basic ${Buffer.from(`${this.credentials.keyId}:${this.credentials.keySecret}`).toString('base64')}`,
         'Content-Type': 'application/json',
         'X-Razorpay-Idempotency': params.idempotencyKey,
       },
@@ -309,19 +263,11 @@ class DefaultRazorpayGatewayClient implements IRazorpayGatewayClient {
   }
 
   async fetchPaymentRefunds(paymentId: string): Promise<RazorpayRefundEvidence[]> {
-    const credentials = getRazorpayCredentials();
-    if (!credentials) {
-      throw new ServiceUnavailableError(
-        'Razorpay credentials are not configured.',
-        'PAYMENT_PROVIDER_UNAVAILABLE',
-      );
-    }
-
     const response = await fetch(`${RAZORPAY_PAYMENTS_URL}/${encodeURIComponent(paymentId)}/refunds`, {
       method: 'GET',
       signal: AbortSignal.timeout(10_000),
       headers: {
-        Authorization: `Basic ${Buffer.from(`${credentials.keyId}:${credentials.keySecret}`).toString('base64')}`,
+        Authorization: `Basic ${Buffer.from(`${this.credentials.keyId}:${this.credentials.keySecret}`).toString('base64')}`,
         'Content-Type': 'application/json',
       },
     });
@@ -342,42 +288,52 @@ class DefaultRazorpayGatewayClient implements IRazorpayGatewayClient {
   }
 }
 
-let activeGatewayClient: IRazorpayGatewayClient = new DefaultRazorpayGatewayClient();
+let gatewayClientOverride: IRazorpayGatewayClient | null = null;
 
 /**
  * Allows injecting an isolated gateway client for testing without relying on environment flags.
  */
 export function setRazorpayGatewayClientForTesting(client: IRazorpayGatewayClient | null): void {
-  activeGatewayClient = client || new DefaultRazorpayGatewayClient();
+  gatewayClientOverride = client;
 }
 
 export function getRazorpayGatewayClient(): IRazorpayGatewayClient {
-  return activeGatewayClient;
+  if (gatewayClientOverride) return gatewayClientOverride;
+
+  const credentials = getRazorpayCredentials();
+  if (!credentials) {
+    throw new ServiceUnavailableError(
+      'Razorpay online payment is unavailable.',
+      'PAYMENT_PROVIDER_UNAVAILABLE',
+    );
+  }
+
+  return new DefaultRazorpayGatewayClient(credentials);
 }
 
 export function getRazorpayCredentials(): RazorpayCredentials | undefined {
-  const {
-    RAZORPAY_KEY_ID: keyId,
-    RAZORPAY_KEY_SECRET: keySecret,
-    RAZORPAY_WEBHOOK_SECRET: webhookSecret,
-  } = env;
+  if (!env.RAZORPAY_ENABLED) return undefined;
 
-  const hasPlaceholder = [keyId, keySecret].some(
-    (value) => value && /^(replace|your[-_]|<)/i.test(value.trim()),
-  );
+  const keyId = env.RAZORPAY_KEY_ID?.trim();
+  const keySecret = env.RAZORPAY_KEY_SECRET?.trim();
+  const webhookSecret = env.RAZORPAY_WEBHOOK_SECRET?.trim();
+  const keyPrefix = `rzp_${env.RAZORPAY_MODE}_`;
+  const isPlaceholder = /^(replace|your[-_]|<|placeholder|default-secret)/i;
 
   if (
-    !keyId?.trim() ||
-    !keySecret?.trim() ||
-    hasPlaceholder
+    !keyId?.startsWith(keyPrefix) ||
+    keyId.length === keyPrefix.length ||
+    !keySecret ||
+    isPlaceholder.test(keyId.slice(keyPrefix.length)) ||
+    isPlaceholder.test(keySecret)
   ) {
     return undefined;
   }
 
   return {
-    keyId: keyId.trim(),
-    keySecret: keySecret.trim(),
-    webhookSecret: webhookSecret?.trim(),
+    keyId,
+    keySecret,
+    webhookSecret: webhookSecret && !isPlaceholder.test(webhookSecret) ? webhookSecret : undefined,
   };
 }
 
@@ -406,19 +362,19 @@ export async function createRazorpayOrder(input: {
     );
   }
 
-  return activeGatewayClient.createOrder(input);
+  return getRazorpayGatewayClient().createOrder(input);
 }
 
 export const createRazorpayTestOrder = createRazorpayOrder;
 
 export async function fetchRazorpayPayment(paymentId: string): Promise<RazorpayPaymentEvidence | null> {
   if (!paymentId || !paymentId.trim()) return null;
-  return activeGatewayClient.fetchPayment(paymentId.trim());
+  return getRazorpayGatewayClient().fetchPayment(paymentId.trim());
 }
 
 export async function fetchRazorpayOrder(orderId: string): Promise<RazorpayOrder | null> {
   if (!orderId || !orderId.trim()) return null;
-  return activeGatewayClient.fetchOrder(orderId.trim());
+  return getRazorpayGatewayClient().fetchOrder(orderId.trim());
 }
 
 function signatureMatches(message: string | Buffer, providedSignature: string, secret: string): boolean {
@@ -635,14 +591,14 @@ export async function reconcileRazorpayOrder(
   orderNumber: string,
 ): Promise<RazorpayReconciliationResult> {
   try {
-    const existingOrder = await activeGatewayClient.fetchOrderByReceipt(orderNumber);
+    const existingOrder = await getRazorpayGatewayClient().fetchOrderByReceipt(orderNumber);
     if (!existingOrder) {
       // SAFEGUARD: An empty lookup does NOT prove payment cannot succeed or order is absent.
       // Under Issue 6 requirements, inconclusive or empty lookups must preserve reservation.
       return { status: 'UNCERTAIN' };
     }
 
-    const payments = await activeGatewayClient.fetchOrderPayments(existingOrder.id);
+    const payments = await getRazorpayGatewayClient().fetchOrderPayments(existingOrder.id);
     const captured = payments.find((p) => p.status === 'captured');
 
     if (captured) {
@@ -671,11 +627,11 @@ export async function initiateRazorpayRefund(params: {
   idempotencyKey: string;
   notes?: Record<string, string>;
 }): Promise<RazorpayRefundEvidence> {
-  return activeGatewayClient.createRefund(params);
+  return getRazorpayGatewayClient().createRefund(params);
 }
 
 export async function fetchRazorpayPaymentRefunds(paymentId: string): Promise<RazorpayRefundEvidence[]> {
-  return activeGatewayClient.fetchPaymentRefunds(paymentId);
+  return getRazorpayGatewayClient().fetchPaymentRefunds(paymentId);
 }
 
 export async function finalizeOrderRefundInDatabase(input: {
@@ -736,11 +692,11 @@ export function isRefundCountedAgainstCeiling(refund: {
 }
 
 export async function fetchRazorpayOrderByReceipt(receipt: string): Promise<RazorpayOrder | null> {
-  return activeGatewayClient.fetchOrderByReceipt(receipt);
+  return getRazorpayGatewayClient().fetchOrderByReceipt(receipt);
 }
 
 export async function fetchRazorpayOrderPayments(orderId: string): Promise<RazorpayPaymentEvidence[]> {
-  return activeGatewayClient.fetchOrderPayments(orderId);
+  return getRazorpayGatewayClient().fetchOrderPayments(orderId);
 }
 
 /**

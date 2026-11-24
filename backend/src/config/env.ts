@@ -77,6 +77,7 @@ const envSchema = z.object({
   FRONTEND_URL: z.string().url().default('https://circleuponline.com'),
   EMAIL_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().email().default('noreply@circleup.in'),
+  RAZORPAY_ENABLED: strictBooleanEnvSchema,
   RAZORPAY_MODE: z.enum(['test', 'live']).default('test'),
   RAZORPAY_KEY_ID: z.string().optional(),
   RAZORPAY_KEY_SECRET: z.string().optional(),
@@ -163,24 +164,6 @@ const envSchema = z.object({
       path: ['GUEST_ORDER_TOKEN_SECRET'],
       message: 'GUEST_ORDER_TOKEN_SECRET must be distinct from SESSION_SECRET.',
     });
-  }
-
-  // 5. Razorpay Configuration (strictly enforced in production)
-  if (data.NODE_ENV === 'production') {
-    if (!data.RAZORPAY_KEY_ID || INSECURE_SECRET_PLACEHOLDERS.has(data.RAZORPAY_KEY_ID.trim().toLowerCase())) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['RAZORPAY_KEY_ID'],
-        message: 'RAZORPAY_KEY_ID is required and must not be an insecure placeholder in production.',
-      });
-    }
-    if (!data.RAZORPAY_KEY_SECRET || INSECURE_SECRET_PLACEHOLDERS.has(data.RAZORPAY_KEY_SECRET.trim().toLowerCase())) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['RAZORPAY_KEY_SECRET'],
-        message: 'RAZORPAY_KEY_SECRET is required and must not be an insecure placeholder in production.',
-      });
-    }
   }
 });
 

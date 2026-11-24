@@ -2,6 +2,7 @@ import { createHmac } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const razorpayEnv = vi.hoisted(() => ({
+  RAZORPAY_ENABLED: true,
   RAZORPAY_MODE: 'test',
   RAZORPAY_KEY_ID: 'rzp_test_synthetic_fixture_only',
   RAZORPAY_KEY_SECRET: 'synthetic-test-secret-fixture-only',
@@ -22,6 +23,7 @@ const paymentSignature = (secret: string, value: string) => createHmac('sha256',
 
 describe('Razorpay test-mode integration foundation', () => {
   beforeEach(() => {
+    razorpayEnv.RAZORPAY_ENABLED = true;
     razorpayEnv.RAZORPAY_MODE = 'test';
     razorpayEnv.RAZORPAY_KEY_ID = 'rzp_test_synthetic_fixture_only';
     razorpayEnv.RAZORPAY_KEY_SECRET = 'synthetic-test-secret-fixture-only';
@@ -59,8 +61,20 @@ describe('Razorpay test-mode integration foundation', () => {
     razorpayEnv.RAZORPAY_WEBHOOK_SECRET = 'replace-with-test-webhook-secret';
     expect(isRazorpayTestConfigurationAvailable()).toBe(false);
     razorpayEnv.RAZORPAY_KEY_ID = 'rzp_live_never-allowed';
+    razorpayEnv.RAZORPAY_KEY_SECRET = 'synthetic-test-secret-fixture-only';
     await expect(createRazorpayTestOrder({ amountPaise: 100, internalOrderNumber: 'ORD-261119-1234' }))
       .rejects.toMatchObject({ code: 'PAYMENT_PROVIDER_UNAVAILABLE' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('does not use valid-looking credentials when activation is disabled', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    razorpayEnv.RAZORPAY_ENABLED = false;
+
+    expect(isRazorpayTestConfigurationAvailable()).toBe(false);
+    await expect(createRazorpayTestOrder({ amountPaise: 100, internalOrderNumber: 'ORD-261119-1234' }))
+      .rejects.toMatchObject({ code: 'PAYMENT_PROVIDER_UNAVAILABLE', statusCode: 503 });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

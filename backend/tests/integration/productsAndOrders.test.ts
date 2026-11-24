@@ -552,8 +552,10 @@ describe('Products & Orders API', () => {
     expect(res.body.error.code).toBe('PRODUCT_NOT_ORDERABLE');
   });
 
-  it('rejects online payment without a verified payment flow and does not persist an order', async () => {
+  it('rejects unavailable online payment without reserving stock or storing an idempotency record', async () => {
     const before = checkoutState.orders.size;
+    const stockBefore = checkoutState.products.get('CU-001')?.stock;
+    const keysBefore = checkoutState.idempotency.size;
     const res = await checkoutRequest().set('Idempotency-Key', 'online-payment-key-0003').send({
       customer: { name: 'Test Buyer', email: 'test@example.com', phone: '+919876543210' },
       shippingAddress: {
@@ -564,10 +566,12 @@ describe('Products & Orders API', () => {
     });
     const after = checkoutState.orders.size;
 
-    expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(res.status).toBe(503);
+    expect(res.body.error.code).toBe('PAYMENT_PROVIDER_UNAVAILABLE');
     expect(res.body.data).toBeUndefined();
     expect(after).toBe(before);
+    expect(checkoutState.products.get('CU-001')?.stock).toBe(stockBefore);
+    expect(checkoutState.idempotency.size).toBe(keysBefore);
   });
 
   it('records WhatsApp payment as paid only through owner-authenticated, CSRF-protected verification', async () => {

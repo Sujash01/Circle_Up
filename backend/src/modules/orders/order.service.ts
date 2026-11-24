@@ -13,7 +13,7 @@ import { emailService } from '../../services/email.service.js';
 import { getConfiguredWhatsappNumber, settingsRepository } from '../../repositories/settings.repository.js';
 import {
   createRazorpayOrder,
-  isRazorpayConfigurationAvailable,
+  getRazorpayCredentials,
   attachRazorpayOrderIdToOrder,
   reconcileRazorpayOrder,
   markOrderPaidViaRazorpay,
@@ -265,6 +265,15 @@ export const orderService = {
 
   async createOrderSupabase(payload: CreateOrderPayload & { idempotencyKey: string }) {
     const { customer, shippingAddress, items, promoCode, paymentMethod, notes, customerId, idempotencyKey } = payload;
+    const effectivePaymentMethod = paymentMethod || 'RAZORPAY';
+    const isOnlinePayment = effectivePaymentMethod === 'RAZORPAY' || effectivePaymentMethod === 'ONLINE_UPI';
+    const razorpayCredentials = isOnlinePayment ? getRazorpayCredentials() : undefined;
+    if (isOnlinePayment && !razorpayCredentials) {
+      throw new ServiceUnavailableError(
+        'Razorpay online payment is unavailable.',
+        'PAYMENT_PROVIDER_UNAVAILABLE',
+      );
+    }
 
     // 1. Fail closed if monetary gate is unverified in production
     if (env.NODE_ENV === 'production' && !env.MONETARY_RECONCILIATION_VERIFIED) {
@@ -303,8 +312,6 @@ export const orderService = {
 
     // 3. Authoritative Supabase atomic RPC execution path
     // Zero catch-and-fallback to legacy databases: all RPC errors or database failures throw directly
-    const effectivePaymentMethod = paymentMethod || 'RAZORPAY';
-
     const rpcResult = await executeStorefrontCheckoutRpc({
       p_key_hash: keyHash,
       p_fingerprint: fingerprint,
@@ -330,26 +337,7 @@ export const orderService = {
 
     // Create Razorpay order server-side with integer paise amount
     let razorpayOrder: { id: string; amount: number; currency: string } | undefined;
-    if (effectivePaymentMethod === 'RAZORPAY' || effectivePaymentMethod === 'ONLINE_UPI') {
-      if (!isRazorpayConfigurationAvailable()) {
-        // Online reservation safety: Preserve reservation under hold, never automatically release stock
-        try {
-          if (isSupabaseConfigured()) {
-            const client = getSupabaseAdminClient();
-            await client
-              .from('orders')
-              .update({ notes: '[RESERVATION_HOLD: PROVIDER_UNAVAILABLE]' })
-              .eq('order_number', rpcResult.orderNumber);
-          }
-        } catch {
-          // Non-blocking
-        }
-        throw new ServiceUnavailableError(
-          'Razorpay online payment is temporarily unavailable. Please try again later.',
-          'PAYMENT_PROVIDER_UNAVAILABLE',
-        );
-      }
-
+    if (razorpayCredentials) {
       try {
         const rzp = await createRazorpayOrder({
           amountPaise: rpcResult.totalAmount,
@@ -462,10 +450,10 @@ export const orderService = {
     const finalResponse = {
       ...rpcResult,
       guestAccessToken: rpcResult.customerId ? undefined : (ephemeralGuestTokens.get(keyHash)?.token || rawGuestToken),
-      razorpay: razorpayOrder
+      razorpay: razorpayOrder && razorpayCredentials
         ? {
           orderId: razorpayOrder.id,
-          keyId: env.RAZORPAY_KEY_ID || 'rzp_test_placeholder',
+          keyId: razorpayCredentials.keyId,
           amount: razorpayOrder.amount,
           currency: razorpayOrder.currency,
         }

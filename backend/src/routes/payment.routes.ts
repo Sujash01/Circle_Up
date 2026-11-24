@@ -1,4 +1,5 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
+import type { RazorpayAvailability } from '@circleup/shared';
 import { z } from 'zod';
 import { checkoutRateLimiter } from '../middleware/rateLimiter.js';
 import { noStoreCache } from '../middleware/cacheControl.js';
@@ -8,7 +9,7 @@ import { sendSuccess } from '../utils/apiResponse.js';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../errors/AppError.js';
 import { orderService } from '../modules/orders/order.service.js';
 import { emailService } from '../services/email.service.js';
-import { getSupabaseAdminClient, isSupabaseConfigured } from '../services/supabase.service.js';
+import { getSupabaseAdminClient, isSupabaseCheckoutConfigured, isSupabaseConfigured } from '../services/supabase.service.js';
 import {
   cancelPendingRazorpayReservation,
   markOrderPaidViaRazorpay,
@@ -20,9 +21,17 @@ import {
   claimRazorpayWebhookEvent,
   finalizeRazorpayWebhookEvent,
   finalizeOrderRefundInDatabase,
+  isRazorpayConfigurationAvailable,
 } from '../services/razorpay.service.js';
 
 export const paymentRouter = Router();
+
+paymentRouter.get('/availability', noStoreCache, (_req, res) => {
+  const availability: RazorpayAvailability = {
+    available: isRazorpayConfigurationAvailable() && isSupabaseCheckoutConfigured(),
+  };
+  sendSuccess(res, availability);
+});
 
 const verifyPaymentSchema = z.object({
   orderNumber: z.string().trim().min(1),

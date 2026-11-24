@@ -1,9 +1,10 @@
 import { createHmac } from 'node:crypto';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
-import { envSchema } from '../../src/config/env.js';
+import { env, envSchema } from '../../src/config/env.js';
 import { orderService } from '../../src/modules/orders/order.service.js';
+import * as supabaseService from '../../src/services/supabase.service.js';
 import {
   createRazorpayOrder,
   verifyRazorpayPaymentSignature,
@@ -13,6 +14,15 @@ import {
 
 describe('Razorpay Direct Checkout & Verification Lifecycle', () => {
   const app = createApp();
+  const originalEnv = { ...env };
+
+  afterEach(() => {
+    Object.assign(env, originalEnv);
+    supabaseService.resetSupabaseClientForTesting();
+    setRazorpayGatewayClientForTesting(null);
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
 
   it('rejects new Cash on Delivery orders at checkout with PAYMENT_METHOD_DISALLOWED', async () => {
     const res = await request(app)
@@ -57,6 +67,10 @@ describe('Razorpay Direct Checkout & Verification Lifecycle', () => {
       }),
       fetchPayment: async () => null,
       fetchOrder: async () => null,
+      fetchOrderByReceipt: async () => null,
+      fetchOrderPayments: async () => [],
+      createRefund: async () => { throw new Error('Unexpected refund call'); },
+      fetchPaymentRefunds: async () => [],
     });
 
     // 2550 INR = 255000 paise
@@ -114,7 +128,7 @@ describe('Razorpay Direct Checkout & Verification Lifecycle', () => {
     expect(verifyRazorpayWebhookSignature(Buffer.from('tampered body'), validSignature, webhookSecret)).toBe(false);
   });
 
-  it('enforces RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in production env configuration', () => {
+  it('allows production startup without Razorpay credentials and keeps signing secrets required', () => {
     const baseProdEnv = {
       NODE_ENV: 'production',
       PORT: '5000',
@@ -128,22 +142,54 @@ describe('Razorpay Direct Checkout & Verification Lifecycle', () => {
       MONETARY_RECONCILIATION_VERIFIED: 'true',
     };
 
-    // Missing Razorpay keys
-    const missingKeys = envSchema.safeParse(baseProdEnv);
-    expect(missingKeys.success).toBe(false);
-    if (!missingKeys.success) {
-      const fieldErrors = missingKeys.error.flatten().fieldErrors;
-      expect(fieldErrors.RAZORPAY_KEY_ID).toBeDefined();
-      expect(fieldErrors.RAZORPAY_KEY_SECRET).toBeDefined();
-    }
+    expect(envSchema.parse(baseProdEnv).RAZORPAY_ENABLED).toBe(false);
+    expect(envSchema.parse({ ...baseProdEnv, RAZORPAY_ENABLED: 'true' }).RAZORPAY_ENABLED).toBe(true);
+    expect(envSchema.safeParse({ ...baseProdEnv, RAZORPAY_ENABLED: '1' }).success).toBe(false);
+    expect(envSchema.safeParse({ ...baseProdEnv, JWT_ADMIN_ACCESS_SECRET: '' }).success).toBe(false);
+  });
 
-    // Insecure placeholder keys
-    const placeholderKeys = envSchema.safeParse({
-      ...baseProdEnv,
-      RAZORPAY_KEY_ID: 'replace-with-your-key',
-      RAZORPAY_KEY_SECRET: 'replace-with-your-secret',
-    });
-    expect(placeholderKeys.success).toBe(false);
+  it.each(['RAZORPAY', 'ONLINE_UPI', undefined])(
+    'rejects an unavailable %s checkout before reservation',
+    async (paymentMethod) => {
+      env.RAZORPAY_ENABLED = false;
+      const checkoutRpc = vi.spyOn(supabaseService, 'executeStorefrontCheckoutRpc');
+      const res = await request(app)
+        .post('/api/v1/orders')
+        .set('Idempotency-Key', 'disabled-online-checkout-001')
+        .send({
+          customer: { name: 'Priya Sharma', email: 'priya@example.com', phone: '+919876543210' },
+          shippingAddress: { addressLine: '10 Marine Drive', city: 'Mumbai', state: 'Maharashtra', postalCode: '400020' },
+          items: [{ serialNumber: 'CU-001', quantity: 1 }],
+          paymentMethod,
+        });
+
+      expect(res.status).toBe(503);
+      expect(res.body.error.code).toBe('PAYMENT_PROVIDER_UNAVAILABLE');
+      expect(checkoutRpc).not.toHaveBeenCalled();
+    },
+  );
+
+  it('reports uncached availability without disclosing credentials', async () => {
+    env.NODE_ENV = 'production';
+    env.SUPABASE_URL = 'https://circleup-qa.invalid';
+    env.SUPABASE_SERVICE_ROLE_KEY = 'synthetic-service-role-for-unit-tests';
+    env.RAZORPAY_MODE = 'test';
+    env.RAZORPAY_ENABLED = true;
+    env.RAZORPAY_KEY_ID = 'rzp_test_synthetic_fixture_only';
+    env.RAZORPAY_KEY_SECRET = undefined;
+    env.MONETARY_RECONCILIATION_VERIFIED = true;
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('No external requests in this test')));
+    const path = '/api/v1/payments/razorpay/availability';
+
+    const unavailable = await request(app).get(path);
+    expect(unavailable.status).toBe(200);
+    expect(unavailable.body.data).toEqual({ available: false });
+    expect(unavailable.headers['cache-control']).toContain('no-store');
+
+    env.RAZORPAY_KEY_SECRET = 'synthetic-test-secret-fixture-only';
+    expect((await request(app).get(path)).body.data).toEqual({ available: true });
+    env.MONETARY_RECONCILIATION_VERIFIED = false;
+    expect((await request(app).get(path)).body.data).toEqual({ available: false });
   });
 
   it('POST /api/v1/payments/razorpay/verify validates required fields', async () => {

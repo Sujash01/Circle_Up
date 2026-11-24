@@ -12,6 +12,32 @@ import { getCheckoutErrorMessage, getCheckoutPaymentLabel, orderService } from '
 
 import { formatPrice, type PaymentMethod } from '@circleup/shared';
 
+type RazorpayCheckout = new (options: unknown) => {
+  open(): void;
+  on(event: string, handler: (response: unknown) => void): void;
+};
+
+async function loadRazorpayCheckout(): Promise<RazorpayCheckout> {
+  const paymentWindow = window as Window & { Razorpay?: RazorpayCheckout };
+  if (paymentWindow.Razorpay) return paymentWindow.Razorpay;
+
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    const rejectLoad = () => {
+      script.remove();
+      reject(new Error('The online payment window could not load. Please try again.'));
+    };
+    script.onerror = rejectLoad;
+    script.onload = () => {
+      if (paymentWindow.Razorpay) resolve(paymentWindow.Razorpay);
+      else rejectLoad();
+    };
+    document.body.appendChild(script);
+  });
+}
+
 function WhatsAppIcon({ className = 'size-4' }: { className?: string }) {
   return (
     <svg
@@ -70,6 +96,7 @@ export function CartPage() {
   const [customerNote, setCustomerNote] = useState('');
 
   // Direct Online Checkout state
+  const [onlinePaymentAvailable, setOnlinePaymentAvailable] = useState<boolean | null>(null);
   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
   const [checkoutStep, setCheckoutStep] = useState<1 | 2>(1);
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
@@ -114,13 +141,24 @@ export function CartPage() {
   }, []);
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.location.hash === '#checkout-step2') {
+    const controller = new AbortController();
+    void orderService.getRazorpayAvailability(controller.signal).then(({ available }) => {
+      if (!controller.signal.aborted) setOnlinePaymentAvailable(available);
+    }).catch(() => {
+      if (!controller.signal.aborted) setOnlinePaymentAvailable(false);
+    });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    if (onlinePaymentAvailable && window.location.hash === '#checkout-step2') {
       setIsCheckoutModalOpen(true);
       setCheckoutStep(2);
     }
-  }, []);
+  }, [onlinePaymentAvailable]);
 
   const handleOpenCheckout = () => {
+    if (!onlinePaymentAvailable) return;
     setOrderError('');
     setCheckoutStep(1);
     if (authUser) {
@@ -230,7 +268,7 @@ export function CartPage() {
     );
   }
 
-  if (cart.items.length === 0 && (typeof window === 'undefined' || window.location.hash !== '#checkout-step2')) {
+  if (cart.items.length === 0 && (!onlinePaymentAvailable || window.location.hash !== '#checkout-step2')) {
     return (
       <EmptyState
         title="Your shopping bag is empty"
@@ -264,6 +302,7 @@ export function CartPage() {
 
   const handleDirectOrderSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!onlinePaymentAvailable || isSubmittingOrder) return;
     setOrderError('');
 
     if (!formData.name || !formData.email || !formData.phone) {
@@ -277,6 +316,7 @@ export function CartPage() {
 
     try {
       setIsSubmittingOrder(true);
+      const Razorpay = await loadRazorpayCheckout();
       const deliveryFee = checkoutDeliveryFee;
 
       const placed = await orderService.createOrder({
@@ -310,48 +350,16 @@ export function CartPage() {
         marketingConsent,
       });
 
-      const finalizeDirectOrder = () => {
-        setPlacedOrder({
-          orderNumber: placed.orderNumber,
-          customer: {
-            name: placed.customerName,
-            email: placed.customerEmail,
-            phone: placed.customerPhone || '',
-          },
-          shippingAddress: {
-            addressLine: formData.addressLine,
-            city: formData.city,
-            state: formData.state,
-            postalCode: formData.postalCode,
-          },
-          items: placed.items.map((it) => ({
-            serialNumber: it.serialNumber || it.name,
-            name: it.name,
-            price: it.price,
-            quantity: it.qty,
-            size: it.size,
-          })),
-          subtotal: placed.subtotal,
-          discount: placed.discount,
-          deliveryFee: placed.shippingFee,
-          totalAmount: placed.totalAmount,
-          paymentMethod: placed.paymentMethod,
-          paymentStatus: placed.paymentStatus,
-          createdAt: placed.createdAt,
-        });
+      const { orderId: razorpayOrderId, keyId, amount, currency } = placed.razorpay ?? {};
+      if (!razorpayOrderId || !keyId || typeof amount !== 'number' || !Number.isSafeInteger(amount) || amount <= 0 || currency !== 'INR') {
+        throw new Error(`Online payment could not be initialized. Please contact CircleUp with order ${placed.orderNumber}.`);
+      }
 
-        clearCart();
-        setIsCheckoutModalOpen(false);
-      };
-
-      const razorpayOrderId = placed.razorpay?.orderId;
-      const razorpayKeyId = placed.razorpay?.keyId || (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_RAZORPAY_KEY_ID;
-
-      const openRazorpayModal = (RazorpayCtor: { new (options: unknown): { open(): void; on(event: string, handler: (res: unknown) => void): void } }) => {
+      const openRazorpayModal = () => {
         const options = {
-          key: razorpayKeyId || 'rzp_test_placeholder',
-          amount: placed.razorpay?.amount || placed.totalAmount,
-          currency: placed.razorpay?.currency || 'INR',
+          key: keyId,
+          amount,
+          currency,
           name: 'CircleUp',
           description: `Order ${placed.orderNumber}`,
           order_id: razorpayOrderId,
@@ -432,7 +440,7 @@ export function CartPage() {
           },
         };
 
-        const rzp = new RazorpayCtor(options);
+        const rzp = new Razorpay(options);
         rzp.on('payment.failed', async function (errRes: unknown) {
           const description = (errRes as { error?: { description?: string } })?.error?.description || 'Payment failed';
           try {
@@ -450,29 +458,7 @@ export function CartPage() {
         rzp.open();
       };
 
-      const win = typeof window !== 'undefined' ? (window as unknown as { Razorpay?: { new (options: unknown): { open(): void; on(event: string, handler: (res: unknown) => void): void } } }) : undefined;
-
-      if (win?.Razorpay) {
-        openRazorpayModal(win.Razorpay);
-      } else if (typeof window !== 'undefined' && typeof document !== 'undefined' && razorpayOrderId) {
-        const script = document.createElement('script');
-        script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-        script.async = true;
-        script.onload = () => {
-          const loadedWin = window as unknown as { Razorpay?: { new (options: unknown): { open(): void; on(event: string, handler: (res: unknown) => void): void } } };
-          if (loadedWin.Razorpay) {
-            openRazorpayModal(loadedWin.Razorpay);
-          } else {
-            finalizeDirectOrder();
-          }
-        };
-        script.onerror = () => {
-          finalizeDirectOrder();
-        };
-        document.body.appendChild(script);
-      } else {
-        finalizeDirectOrder();
-      }
+      openRazorpayModal();
     } catch (err: unknown) {
       setOrderError(getCheckoutErrorMessage(err));
     } finally {
@@ -658,11 +644,17 @@ export function CartPage() {
           <button
             type="button"
             onClick={handleOpenCheckout}
-            className="flex w-full items-center justify-center gap-2 bg-primary px-6 py-3.5 text-xs font-semibold uppercase tracking-widest text-primary-foreground transition-colors hover:bg-forest-deep cursor-pointer"
+            disabled={!onlinePaymentAvailable}
+            className="flex w-full items-center justify-center gap-2 bg-primary px-6 py-3.5 text-xs font-semibold uppercase tracking-widest text-primary-foreground transition-colors hover:bg-forest-deep cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Package className="size-4" />
             <span>Place Order / Direct Checkout</span>
           </button>
+          {!onlinePaymentAvailable && (
+            <p role="status" className="text-xs text-muted-foreground">
+              {onlinePaymentAvailable === null ? 'Checking online payment availability…' : 'Online payment is currently unavailable.'}
+            </p>
+          )}
 
           {/* WhatsApp option */}
           <div className="pt-2 border-t border-foreground/10 space-y-3">
@@ -694,7 +686,7 @@ export function CartPage() {
       </div>
 
       {/* Direct Order Checkout Modal */}
-      {isCheckoutModalOpen && (
+      {onlinePaymentAvailable && isCheckoutModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 overflow-y-auto">
           <div className="relative w-full max-w-lg bg-card border border-foreground/20 p-6 sm:p-8 space-y-6 shadow-xl my-8">
             <button

@@ -78,6 +78,9 @@ export function canTransitionOrderStatus(currentStatus: OrderStatus, nextStatus:
   return Boolean(allowed && (allowed as readonly string[]).includes(nextStatus));
 }
 
+export const razorpayAvailabilitySchema = z.object({ available: z.boolean() });
+export type RazorpayAvailability = z.infer<typeof razorpayAvailabilitySchema>;
+
 export const paymentMethodSchema = z.enum([
   'WHATSAPP_UPI',
   'CASH_ON_DELIVERY',

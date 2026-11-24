@@ -1,5 +1,5 @@
 import { apiClient, ApiClientError } from '@/services/apiClient';
-import type { OrderStatus } from '@circleup/shared';
+import { razorpayAvailabilitySchema, type OrderStatus, type RazorpayAvailability } from '@circleup/shared';
 
 export const ORDERS_STORAGE_KEY = 'circleup_customer_orders_v1';
 
@@ -173,6 +173,11 @@ function formatDate(date: Date): string {
 }
 
 export const orderService = {
+  async getRazorpayAvailability(signal?: AbortSignal): Promise<RazorpayAvailability> {
+    const response = await apiClient.get<{ data: RazorpayAvailability }>('/payments/razorpay/availability', { signal });
+    return razorpayAvailabilitySchema.parse(response.data.data);
+  },
+
   /**
    * Creates an order through the authoritative Express backend gateway.
    * Server validates inventory, unit prices, discounts, and computes official totals.
