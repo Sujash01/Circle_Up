@@ -1,4 +1,4 @@
-import { formatPrice } from '@circleup/shared';
+import { calculateCheckoutDeliveryFee, formatPrice } from '@circleup/shared';
 import type { CartItem, CartState, Product, ProductVariant } from '@/types/storefront';
 export type { CartItem, CartState };
 import { readStorage, writeStorage } from './storage';
@@ -25,6 +25,7 @@ export interface CartTotals {
   subtotal: number;
   discount: number;
   discountLabel?: string;
+  deliveryFee: number;
   estimatedTotal: number;
 }
 
@@ -135,30 +136,33 @@ export const cartService = {
     return this.saveCart(fresh);
   },
 
-  calculateTotals(state: CartState): CartTotals {
+  calculateTotals(state: CartState, verifiedDiscountInPaise = 0): CartTotals {
     const itemCount = state.items.reduce((sum, item) => sum + item.quantity, 0);
     const subtotal = state.items.reduce(
       (sum, item) => sum + item.unitPrice * item.quantity,
       0,
     );
 
-    const discount = 0;
+    const discount = Math.min(subtotal, verifiedDiscountInPaise);
+    const discountedSubtotal = subtotal - discount;
+    const deliveryFee = calculateCheckoutDeliveryFee(discountedSubtotal, itemCount);
 
     return {
       itemCount,
       subtotal,
       discount,
-      discountLabel: undefined,
-      estimatedTotal: Math.max(0, subtotal - discount),
+      discountLabel: discount > 0 ? state.promoCode : undefined,
+      deliveryFee,
+      estimatedTotal: discountedSubtotal + deliveryFee,
     };
   },
 
-  buildWhatsAppCheckout(state: CartState, customerNote = ''): {
+  buildWhatsAppCheckout(state: CartState, customerNote = '', estimatedTotals?: CartTotals): {
     message: string;
     url: string;
     totals: CartTotals;
   } {
-    const totals = this.calculateTotals(state);
+    const totals = estimatedTotals ?? this.calculateTotals(state);
     const itemLines = state.items.map(
       (item, idx) =>
         `${idx + 1}. ${item.name} (${item.variantLabel}) x${item.quantity} — ${formatPrice(
@@ -176,6 +180,7 @@ export const cartService = {
       ...(totals.discount > 0
         ? [`Discount (${totals.discountLabel}): -${formatPrice(totals.discount)}`]
         : []),
+      `Estimated Shipping: ${formatPrice(totals.deliveryFee)}`,
       `Estimated Total: ${formatPrice(totals.estimatedTotal)}`,
       ...(customerNote.trim() ? ['', `Note: ${customerNote.trim()}`] : []),
       '',

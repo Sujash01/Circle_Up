@@ -1,5 +1,6 @@
 import axios, { type AxiosRequestConfig } from 'axios';
 import { normalizeApiError } from './apiClient';
+import { couponValidateResultSchema } from '@circleup/shared';
 import type {
   CouponValidateResult,
   Order,
@@ -271,12 +272,12 @@ export const storefrontApi = {
   /**
    * Real-time coupon discount validation (THRIFT10, CIRCLE20, etc.).
    */
-  async validateCoupon(code: string, subtotalInPaise: number): Promise<CouponValidateResult> {
+  async validateCoupon(code: string, subtotalInPaise: number, signal?: AbortSignal): Promise<CouponValidateResult> {
     const res = await axios.post<{ data: CouponValidateResult }>('/api/coupons/validate', {
       code,
       subtotalInPaise,
-    });
-    return res.data.data;
+    }, { signal });
+    return couponValidateResultSchema.parse(res.data.data);
   },
 
   /**

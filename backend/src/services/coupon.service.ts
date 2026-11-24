@@ -26,7 +26,7 @@ export const couponService = {
     }
 
     let discountInPaise = coupon.discountType === 'PERCENTAGE'
-      ? Math.round((subtotalInPaise * coupon.value) / 100)
+      ? Math.trunc((subtotalInPaise * coupon.value) / 100)
       : Math.min(coupon.value, subtotalInPaise);
     if (coupon.discountType === 'PERCENTAGE' && coupon.maxDiscountAmount !== undefined) {
       discountInPaise = Math.min(discountInPaise, coupon.maxDiscountAmount);

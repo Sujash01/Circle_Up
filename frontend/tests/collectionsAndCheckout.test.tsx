@@ -8,10 +8,14 @@ import { StoreProvider } from '../src/context/StoreContext';
 import { BrandNewPage } from '../src/features/public/BrandNewPage';
 import { ThriftedPage } from '../src/features/public/ThriftedPage';
 import { CartPage } from '../src/features/public/CartPage';
-import { StorefrontHeader } from '../src/components/storefront/StorefrontChrome';
+import { SearchPage } from '../src/features/public/SearchPage';
+import { WishlistPage } from '../src/features/public/WishlistPage';
+import { StorefrontHeader, StorefrontTopBanner } from '../src/components/storefront/StorefrontChrome';
 import { productService } from '../src/services/productService';
 import { cartService, type CartState } from '../src/services/cartService';
 import { orderService } from '../src/services/orderService';
+import { storefrontApi } from '../src/services/storefrontApi';
+import { wishlistService } from '../src/services/wishlistService';
 import type { Product } from '../src/types/storefront';
 
 const TEST_PRODUCTS: Product[] = [
@@ -64,11 +68,27 @@ const TEST_PRODUCTS: Product[] = [
 ];
 
 describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
-  afterEach(() => vi.restoreAllMocks());
+  const dialog = HTMLDialogElement.prototype;
+  const originalDialogMethods = new Map(['showModal', 'close'].map((key) => [
+    key, Object.getOwnPropertyDescriptor(dialog, key),
+  ]));
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    for (const [key, descriptor] of originalDialogMethods) {
+      if (descriptor) Object.defineProperty(dialog, key, descriptor);
+      else Reflect.deleteProperty(dialog, key);
+    }
+    wishlistService.saveIds([]);
+  });
 
   beforeEach(() => {
     productService.setProducts(TEST_PRODUCTS);
     cartService.clearCart();
+    Object.defineProperties(dialog, {
+      showModal: { configurable: true, value(this: HTMLDialogElement) { this.open = true; } },
+      close: { configurable: true, value(this: HTMLDialogElement) { this.open = false; } },
+    });
   });
 
   it('filters Brand New vs Thrifted products accurately in productService', () => {
@@ -136,7 +156,46 @@ describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
     host.remove();
   });
 
-  function saveCartWithTestItem() {
+  it.each([
+    { name: 'search deep link', path: '/search?q=leather', page: <SearchPage />, empty: 'No pieces matched' },
+    { name: 'saved wishlist', path: '/wishlist', page: <WishlistPage />, empty: 'Your wishlist is empty' },
+  ])('recalculates $name when the catalogue loads after first render', ({ path, page, empty }) => {
+    productService.clearCatalog();
+    wishlistService.saveIds(['test-thrifted-1']);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    try {
+      act(() => root.render(<StoreProvider><MemoryRouter initialEntries={[path]}>{page}</MemoryRouter></StoreProvider>));
+      expect(host.textContent).toContain(empty);
+      act(() => productService.setProducts(TEST_PRODUCTS));
+      expect(host.textContent).toContain('Vintage 90s Leather Jacket');
+      expect(host.textContent).not.toContain(empty);
+      expect(host.textContent).not.toContain('Artisan Embroidered Vest');
+    } finally {
+      act(() => root.unmount());
+      host.remove();
+    }
+  });
+
+  it.each([
+    'Free Shipping on orders above ₹2,500',
+    'Free delivery for orders of ₹1,500 or more',
+  ])('corrects the shipping banner while preserving its announcement (%s)', (legacy) => {
+    const host = document.createElement('div');
+    const root = createRoot(host);
+    try {
+      act(() => root.render(<StorefrontTopBanner text={`Curated Vintage Drops Every Friday · ${legacy}`} />));
+      expect(host.textContent).toContain('Curated Vintage Drops Every Friday');
+      expect(host.textContent).toContain('₹1,000 or more after discounts');
+      expect(host.textContent).not.toContain('₹2,500');
+      expect(host.textContent).not.toContain('₹1,500');
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+
+  function saveCartWithTestItem(unitPrice = 320000, promoCode?: string) {
     const cartWithItem: CartState = {
       cartId: 'test-cart-123',
       items: [
@@ -145,7 +204,7 @@ describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
           productId: 'test-brand-new-1',
           name: 'Artisan Embroidered Vest',
           slug: 'artisan-embroidered-vest',
-          unitPrice: 320000,
+          unitPrice,
           image: '/test-vest.jpg',
           size: 'M',
           variantLabel: 'Medium',
@@ -153,13 +212,76 @@ describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
           maxStock: 2,
         },
       ],
-      promoCode: undefined,
+      promoCode,
     };
     cartService.saveCart(cartWithItem);
   }
 
+  it.each([
+    [99800, 9000],
+    [99900, 9000],
+    [99999, 9000],
+    [100000, 0],
+    [100001, 0],
+  ])('estimates shipping on a %i paise bag', (unitPrice, deliveryFee) => {
+    saveCartWithTestItem(unitPrice);
+    expect(cartService.calculateTotals(cartService.loadCart()))
+      .toMatchObject({ deliveryFee, estimatedTotal: unitPrice + deliveryFee });
+  });
+
+  it('gives an empty bag free shipping and a fully discounted nonempty bag the flat rate', () => {
+    expect(cartService.calculateTotals({ cartId: 'empty', items: [] }))
+      .toMatchObject({ deliveryFee: 0, estimatedTotal: 0 });
+    saveCartWithTestItem(100000, 'ALL');
+    expect(cartService.calculateTotals(cartService.loadCart(), 100000))
+      .toMatchObject({ deliveryFee: 9000, estimatedTotal: 9000 });
+  });
+
+  it('quotes shipping after the server-validated discount in the bag and WhatsApp estimate', async () => {
+    vi.spyOn(orderService, 'getRazorpayAvailability').mockResolvedValue({ available: false });
+    const validateCoupon = vi.spyOn(storefrontApi, 'validateCoupon').mockResolvedValue({
+      code: 'DROP', valid: true, discountInPaise: 101, message: 'Promo code DROP applied successfully!',
+    });
+    saveCartWithTestItem(100100, 'DROP');
+    const host = document.createElement('div');
+    const root = createRoot(host);
+    try {
+      await act(async () => root.render(
+        <Provider store={store}><StoreProvider><MemoryRouter><CartPage /></MemoryRouter></StoreProvider></Provider>,
+      ));
+      expect(validateCoupon).toHaveBeenCalledWith('DROP', 100100, expect.any(AbortSignal));
+      expect(host.textContent).toContain('₹90');
+      expect(host.textContent).toContain('₹1,089.99');
+      const enquiry = host.querySelector<HTMLAnchorElement>('a[href^="https://wa.me/"]');
+      const message = enquiry && new URL(enquiry.href).searchParams.get('text');
+      expect(message).toContain('Discount (DROP): -₹1.01');
+      expect(message).toContain('Estimated Shipping: ₹90');
+      expect(message).toContain('Estimated Total: ₹1,089.99');
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+
+  it('ignores a direct payment hash with an empty bag even when the gateway is available', async () => {
+    vi.spyOn(orderService, 'getRazorpayAvailability').mockResolvedValue({ available: true });
+    const currentUrl = window.location.href;
+    window.history.replaceState(null, '', '#checkout-step2');
+    const host = document.createElement('div');
+    const root = createRoot(host);
+    try {
+      await act(async () => root.render(
+        <Provider store={store}><StoreProvider><MemoryRouter><CartPage /></MemoryRouter></StoreProvider></Provider>,
+      ));
+      expect(host.textContent).toContain('Your shopping bag is empty');
+      expect(host.querySelector('dialog')).toBeNull();
+    } finally {
+      act(() => root.unmount());
+      window.history.replaceState(null, '', currentUrl);
+    }
+  });
+
   it('keeps online checkout disabled when availability is pending, false, or unreachable', async () => {
-    saveCartWithTestItem();
+    saveCartWithTestItem(80000);
     let reportAvailability!: (value: { available: boolean }) => void;
     const availability = vi.spyOn(orderService, 'getRazorpayAvailability')
       .mockImplementationOnce(() => new Promise((resolve) => { reportAvailability = resolve; }))
@@ -180,7 +302,7 @@ describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
       </Provider>,
     );
     const checkoutButton = () => Array.from(host.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('Place Order / Direct Checkout'));
+      button.textContent?.includes('Razorpay Checkout'));
 
     let root = createRoot(host);
     try {
@@ -192,7 +314,12 @@ describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
       expect(checkoutButton()?.disabled).toBe(true);
       act(() => checkoutButton()?.click());
       expect(host.textContent).toContain('Online payment is currently unavailable');
-      expect(host.textContent).toContain('Enquire on WhatsApp');
+      const checkoutOptions = checkoutButton()?.parentElement;
+      expect([...(checkoutOptions?.querySelectorAll('button[type="button"], a') ?? [])]
+        .map((element) => element.textContent?.trim())
+        .filter((label) => label !== 'Copy'))
+        .toEqual(['Razorpay Checkout', 'WhatsApp Enquiry']);
+      expect(checkoutOptions?.querySelector('a')?.href).toMatch(/^https:\/\/wa\.me\//);
       expect(host.textContent).not.toContain('Complete Your Order');
 
       act(() => root.unmount());
@@ -213,7 +340,9 @@ describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
   it('allows Razorpay when available and makes no order if the checkout script fails', async () => {
     vi.spyOn(orderService, 'getRazorpayAvailability').mockResolvedValue({ available: true });
     const createOrder = vi.spyOn(orderService, 'createOrder').mockRejectedValue(new Error('Unexpected order request'));
-    saveCartWithTestItem();
+    saveCartWithTestItem(80000);
+    const currentUrl = window.location.href;
+    window.history.replaceState(null, '', '#checkout-step2');
 
     const host = document.createElement('div');
     document.body.appendChild(host);
@@ -233,10 +362,13 @@ describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
 
     // Verify cart page loaded
     expect(host.textContent).toContain('Artisan Embroidered Vest');
+    expect(host.textContent).toContain('₹90');
+    expect(host.textContent).toContain('₹890');
+    expect(host.querySelector('dialog')).toBeNull();
 
     // Click Proceed to Direct Checkout
     const checkoutBtn = Array.from(host.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('Place Order / Direct Checkout'),
+      b.textContent?.includes('Razorpay Checkout'),
     );
     expect(checkoutBtn).toBeDefined();
     expect(checkoutBtn?.disabled).toBe(false);
@@ -244,6 +376,19 @@ describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
     act(() => {
       checkoutBtn?.click();
     });
+    const modal = host.querySelector('dialog')!;
+    const close = modal.querySelector<HTMLButtonElement>('[aria-label="Close checkout"]')!;
+    const next = modal.querySelector<HTMLButtonElement>('button[type=submit]')!;
+    expect(modal.open).toBe(true);
+    expect(modal.getAttribute('aria-labelledby')).toBe('checkout-title');
+    expect(document.activeElement?.id).toBe('checkout-title');
+    act(() => {
+      close.focus();
+      close.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true }));
+    });
+    expect(document.activeElement).toBe(next);
+    act(() => next.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })));
+    expect(document.activeElement).toBe(close);
 
     // Fill in Step 1 fields
     const nameInput = host.querySelector('input[placeholder="e.g. Aanya Sharma"]') as HTMLInputElement;
@@ -267,11 +412,11 @@ describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
     act(() => {
       setInputValue(nameInput, 'Rohan Sen');
       setInputValue(emailInput, 'rohan@example.com');
-      setInputValue(phoneInput, '+919876543210');
+      setInputValue(phoneInput, 'abcdefghi');
       setInputValue(addressInput, '12 Indiranagar 100ft Rd');
       setInputValue(cityInput, 'Bengaluru');
       setInputValue(stateInput, 'Karnataka');
-      setInputValue(pinInput, '560038');
+      setInputValue(pinInput, '1a2b3c');
     });
 
     // Submit Step 1 checkout form (second form on the page) to advance to Step 2
@@ -280,12 +425,17 @@ describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
     );
     expect(checkoutForm).toBeDefined();
 
-    await act(async () => {
-      checkoutForm?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-      await Promise.resolve();
-    });
+    const submitDelivery = () => checkoutForm?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    act(() => { submitDelivery(); });
+    expect(host.querySelector('[role=alert]')?.textContent).toContain('10-digit Indian mobile');
+    act(() => { setInputValue(phoneInput, '+91 98765 43210'); });
+    act(() => { submitDelivery(); });
+    expect(host.querySelector('[role=alert]')?.textContent).toContain('six-digit Indian PIN');
+    act(() => { setInputValue(pinInput, '560038'); });
+    act(() => { submitDelivery(); });
 
     expect(host.textContent).toContain('Razorpay Online Payment');
+    expect(host.textContent).toContain('Pay with Razorpay · ₹890');
     expect(host.textContent).toContain('Sole Payment Method');
     expect(host.textContent).not.toContain('Cash on Delivery (COD)');
     const codChoice = host.querySelector('input[name="paymentMethod"][value="CASH_ON_DELIVERY"]');
@@ -302,10 +452,18 @@ describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
     expect(host.textContent).toContain('Artisan Embroidered Vest');
     expect(createOrder).not.toHaveBeenCalled();
 
+    act(() => modal.dispatchEvent(new Event('cancel', { bubbles: true, cancelable: true })));
+    expect(host.querySelector('dialog')).toBeNull();
+    expect(document.activeElement).toBe(checkoutBtn);
+    act(() => checkoutBtn?.click());
+    act(() => host.querySelector<HTMLButtonElement>('[aria-label="Close checkout"]')?.click());
+    expect(host.querySelector('dialog')).toBeNull();
+    expect(document.activeElement).toBe(checkoutBtn);
     act(() => {
       root.unmount();
     });
     host.remove();
+    window.history.replaceState(null, '', currentUrl);
   });
 
   it('renders Collections directory dropdown with exact column headings and item order', () => {

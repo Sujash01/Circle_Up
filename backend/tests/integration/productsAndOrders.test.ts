@@ -538,6 +538,27 @@ describe('Products & Orders API', () => {
     expect(res.body.error.code).toBe('VALIDATION_ERROR');
   });
 
+  it.each([
+    ['customer.phone', 'abc1234567'],
+    ['customer.phone', '+44 98765 43210'],
+    ['shippingAddress.postalCode', '1a2b3c'],
+    ['shippingAddress.postalCode', '40005'],
+  ])('rejects invalid %s before writing checkout state', async (field, invalidValue) => {
+    const payload = checkoutPayload([{ serialNumber: 'CU-001', quantity: 1 }]);
+    if (field === 'customer.phone') payload.customer.phone = invalidValue;
+    else payload.shippingAddress.postalCode = invalidValue;
+    const before = checkoutState.orders.size;
+    const remainingStock = checkoutState.products.get('CU-001')?.stock;
+
+    const res = await checkoutRequest().set('Idempotency-Key', 'invalid-delivery-format-001').send(payload);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(res.body.error.details).toEqual(expect.arrayContaining([expect.objectContaining({ field })]));
+    expect(checkoutState.orders.size).toBe(before);
+    expect(checkoutState.products.get('CU-001')?.stock).toBe(remainingStock);
+  });
+
   it('POST /api/v1/orders rejects unknown products instead of assigning a fallback price', async () => {
     const res = await checkoutRequest().set('Idempotency-Key', 'unknown-product-key-0002').send({
       customer: { name: 'Test Buyer', email: 'test@example.com', phone: '+919876543210' },

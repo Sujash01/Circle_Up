@@ -76,7 +76,7 @@ describe('Frontend Legal Policies & Terms Suites (P2-7)', () => {
     container.remove();
   });
 
-  it('renders ShippingPolicyPage with ₹1,500 complimentary shipping threshold and ₹90 flat fee', async () => {
+  it('renders ShippingPolicyPage with the ₹1,000 complimentary shipping threshold and ₹90 flat fee', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -90,8 +90,9 @@ describe('Frontend Legal Policies & Terms Suites (P2-7)', () => {
     });
 
     expect(container.textContent).toContain('Shipping & Delivery Policy');
-    expect(container.textContent).toContain('₹1,500');
+    expect(container.textContent).toContain('₹1,000');
     expect(container.textContent).toContain('₹90');
+    expect(container.textContent).toContain('Empty bags have no shipping charge');
     expect(container.textContent).toContain('Eco-Friendly Packaging');
 
     root.unmount();

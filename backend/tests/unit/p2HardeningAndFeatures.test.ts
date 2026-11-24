@@ -138,14 +138,14 @@ describe('P2 Hardening and Features Unit Suite', () => {
   });
 
   describe('Shipping & Tax Settings Service (P2-3, P2-12)', () => {
-    it('applies complimentary shipping above threshold (150,000 paise)', async () => {
-      const result = await shippingTaxService.calculateDeliveryFee('110001', 150000);
+    it('applies complimentary shipping at the threshold (100,000 paise)', () => {
+      const result = shippingTaxService.calculateDeliveryFee(100000, 1);
       expect(result.deliveryFeePaise).toBe(0);
-      expect(result.freeShippingThresholdPaise).toBe(150000);
+      expect(result.freeShippingThresholdPaise).toBe(100000);
     });
 
-    it('applies standard delivery fee (9,000 paise) below threshold', async () => {
-      const result = await shippingTaxService.calculateDeliveryFee('110001', 50000);
+    it('applies standard delivery fee (9,000 paise) below threshold', () => {
+      const result = shippingTaxService.calculateDeliveryFee(50000, 1);
       expect(result.deliveryFeePaise).toBe(9000);
     });
 

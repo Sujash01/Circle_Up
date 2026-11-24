@@ -14,7 +14,7 @@ import { SpiralBinding } from '@/components/ui/SpiralBinding';
 import { WaveDivider } from '@/components/ui/WaveDivider';
 import { cn } from '@/lib/utils';
 import { subscribeToScrollFrames } from '@/lib/scrollScheduler';
-import { formatPrice } from '@circleup/shared';
+import { CHECKOUT_SHIPPING, formatPrice } from '@circleup/shared';
 import { productService } from '@/services/productService';
 import { useHeaderPromo } from '@/services/storefrontSettingsService';
 
@@ -58,13 +58,15 @@ const NAV_GROUPS = [
 export function StorefrontTopBanner({ text }: { text?: string }) {
   const promo = useHeaderPromo();
   if (!promo.isActive && !text) return null;
+  const announcement = (text || promo.text)?.replace(
+    /free (?:standard )?(?:shipping|delivery) (?:on orders |for orders )?(?:(?:above|over|from|of|at least) )?₹\s*[\d,]+(?:\.\d{2})?(?:\+| or more| and above)?(?: after discounts)?/gi,
+    `Free shipping on orders of ${formatPrice(CHECKOUT_SHIPPING.freeThresholdPaise)} or more after discounts`,
+  );
 
   return (
     <div className="storefront-top-banner" role="note" aria-label="Store announcement">
-      {text ? (
-        <span>{text}</span>
-      ) : promo.text ? (
-        <span>{promo.text}</span>
+      {announcement ? (
+        <span>{announcement}</span>
       ) : (
         <>
           <span>

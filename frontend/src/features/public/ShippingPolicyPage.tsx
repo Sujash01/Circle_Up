@@ -1,5 +1,5 @@
 import { Truck, MapPin, Gift, Clock } from 'lucide-react';
-import { formatPrice } from '@circleup/shared';
+import { CHECKOUT_SHIPPING, formatPrice } from '@circleup/shared';
 
 export function ShippingPolicyPage() {
   return (
@@ -23,7 +23,8 @@ export function ShippingPolicyPage() {
             1. Free Shipping & Delivery Rates
           </h2>
           <p>
-            We offer <strong>Free Standard Shipping</strong> across India on all shopping bags totaling <strong>{formatPrice(150000)}</strong> (1,500 INR) or more. For orders below this threshold, a flat delivery fee of <strong>{formatPrice(9000)}</strong> (90 INR) applies nationwide.
+            We offer <strong>Free Standard Shipping</strong> across India on orders with an items subtotal of <strong>{formatPrice(CHECKOUT_SHIPPING.freeThresholdPaise)}</strong> or more after discounts. For orders below this threshold, a flat delivery fee of <strong>{formatPrice(CHECKOUT_SHIPPING.standardFeePaise)}</strong> applies nationwide.
+            Empty bags have no shipping charge.
           </p>
         </section>
 

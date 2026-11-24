@@ -24,6 +24,18 @@ export const STORE_DEFAULTS = {
   },
 } as const;
 
+// Mirrors the standard delivery rule charged by process_storefront_checkout.
+export const CHECKOUT_SHIPPING = {
+  freeThresholdPaise: 100_000,
+  standardFeePaise: 9_000,
+} as const;
+
+export function calculateCheckoutDeliveryFee(discountedSubtotalPaise: number, itemCount: number): number {
+  return itemCount === 0 || discountedSubtotalPaise >= CHECKOUT_SHIPPING.freeThresholdPaise
+    ? 0
+    : CHECKOUT_SHIPPING.standardFeePaise;
+}
+
 export const PUBLIC_STOREFRONT_CATEGORY_SLUGS = [
   'womens-upperwear',
   'womens-bottomwear',

@@ -1,5 +1,5 @@
 import { ArrowRight, Check, CheckCircle2, Copy, Minus, Package, Plus, Trash2, X } from 'lucide-react';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import type { RootState } from '@/app/store';
@@ -9,8 +9,9 @@ import { useStore } from '@/context/StoreContext';
 import { cn } from '@/lib/utils';
 import { cartService } from '@/services/cartService';
 import { getCheckoutErrorMessage, getCheckoutPaymentLabel, orderService } from '@/services/orderService';
+import { storefrontApi } from '@/services/storefrontApi';
 
-import { formatPrice, type PaymentMethod } from '@circleup/shared';
+import { CHECKOUT_SHIPPING, checkoutDeliverySchema, formatPrice } from '@circleup/shared';
 
 type RazorpayCheckout = new (options: unknown) => {
   open(): void;
@@ -83,7 +84,7 @@ interface PlacedOrderDetails {
 export function CartPage() {
   const {
     cart,
-    totals,
+    totals: bagTotals,
     updateCartQuantity,
     removeFromCart,
     applyPromoCode,
@@ -93,6 +94,12 @@ export function CartPage() {
 
   const [promoInput, setPromoInput] = useState(cart.promoCode ?? '');
   const [promoError, setPromoError] = useState('');
+  const [promoPreview, setPromoPreview] = useState<{
+    code: string;
+    subtotal: number;
+    discount: number;
+    message: string;
+  }>();
   const [customerNote, setCustomerNote] = useState('');
 
   // Direct Online Checkout state
@@ -113,12 +120,38 @@ export function CartPage() {
     city: '',
     state: '',
     postalCode: '',
-    paymentMethod: 'RAZORPAY' as PaymentMethod,
   });
 
   const authUser = useSelector((state: RootState) => state.auth.user);
-  const checkoutDeliveryFee = totals.subtotal - totals.discount >= 150000 ? 0 : 9000;
-  const checkoutTotal = totals.estimatedTotal + checkoutDeliveryFee;
+  const promoCode = cart.promoCode;
+  const { subtotal, itemCount } = bagTotals;
+  const currentPromo = itemCount > 0 && promoPreview && promoPreview.code === promoCode
+    && promoPreview.subtotal === subtotal ? promoPreview : undefined;
+  const totals = currentPromo?.discount ? cartService.calculateTotals(cart, currentPromo.discount) : bagTotals;
+  const checkoutDeliveryFee = totals.deliveryFee;
+  const checkoutTotal = totals.estimatedTotal;
+  const showCheckout = Boolean(onlinePaymentAvailable && isCheckoutModalOpen && cart.items.length);
+  const checkoutTriggerRef = useRef<HTMLButtonElement>(null);
+  const checkoutDialogRef = useRef<HTMLDialogElement>(null);
+  const checkoutTitleRef = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => {
+    if (!promoCode || itemCount === 0) return;
+    const controller = new AbortController();
+    void storefrontApi.validateCoupon(promoCode, subtotal, controller.signal).then((result) => {
+      if (controller.signal.aborted) return;
+      setPromoPreview({
+        code: promoCode,
+        subtotal,
+        discount: result.valid ? result.discountInPaise : 0,
+        message: result.message,
+      });
+    }).catch(() => {
+      if (controller.signal.aborted) return;
+      setPromoPreview({ code: promoCode, subtotal, discount: 0, message: 'Could not verify the promo code. The estimate excludes the discount.' });
+    });
+    return () => controller.abort();
+  }, [promoCode, subtotal, itemCount]);
 
   useEffect(() => {
     document.title = 'Shopping Bag — CircleUp';
@@ -151,14 +184,43 @@ export function CartPage() {
   }, []);
 
   useEffect(() => {
-    if (onlinePaymentAvailable && window.location.hash === '#checkout-step2') {
-      setIsCheckoutModalOpen(true);
-      setCheckoutStep(2);
+    if (!showCheckout) return;
+    const dialog = checkoutDialogRef.current;
+    const trigger = checkoutTriggerRef.current;
+    if (!dialog) return;
+
+    const previousOverflow = document.body.style.overflow;
+    dialog.showModal();
+    document.body.style.overflow = 'hidden';
+    return () => {
+      if (dialog.open) dialog.close();
+      document.body.style.overflow = previousOverflow;
+      if (trigger?.isConnected) trigger.focus();
+    };
+  }, [showCheckout]);
+
+  useEffect(() => {
+    if (!showCheckout) return;
+    checkoutTitleRef.current?.focus();
+    if (checkoutDialogRef.current) checkoutDialogRef.current.scrollTop = 0;
+  }, [showCheckout, checkoutStep]);
+
+  const handleDialogKeyDown = (event: KeyboardEvent<HTMLDialogElement>) => {
+    if (event.key !== 'Tab') return;
+    const tabbable = [...event.currentTarget.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), a[href]',
+    )];
+    const first = tabbable[0];
+    const last = tabbable.at(-1);
+    const active = document.activeElement;
+    if (active === checkoutTitleRef.current || (event.shiftKey ? active === first : active === last)) {
+      event.preventDefault();
+      (event.shiftKey ? last : first)?.focus();
     }
-  }, [onlinePaymentAvailable]);
+  };
 
   const handleOpenCheckout = () => {
-    if (!onlinePaymentAvailable) return;
+    if (!onlinePaymentAvailable || cart.items.length === 0) return;
     setOrderError('');
     setCheckoutStep(1);
     if (authUser) {
@@ -172,19 +234,23 @@ export function CartPage() {
     setIsCheckoutModalOpen(true);
   };
 
+  const validateDelivery = () => {
+    const { name, email, phone, addressLine, city, state, postalCode } = formData;
+    const result = checkoutDeliverySchema.safeParse({
+      customer: { name, email, phone },
+      shippingAddress: { addressLine, city, state, postalCode },
+    });
+    if (!result.success) {
+      setOrderError(result.error.issues[0]?.message || 'Check your delivery details.');
+      return null;
+    }
+    setOrderError('');
+    return result.data;
+  };
+
   const handleContinueToPayment = (e: FormEvent) => {
     e.preventDefault();
-    setOrderError('');
-
-    if (!formData.name.trim() || !formData.email.trim() || !formData.phone.trim()) {
-      setOrderError('Please provide your full name, email, and mobile phone number.');
-      return;
-    }
-    if (!formData.addressLine.trim() || !formData.city.trim() || !formData.state.trim() || !formData.postalCode.trim()) {
-      setOrderError('Please complete your full delivery street address, city, state, and PIN code.');
-      return;
-    }
-    setCheckoutStep(2);
+    if (showCheckout && checkoutStep === 1 && validateDelivery()) setCheckoutStep(2);
   };
 
   if (placedOrder) {
@@ -268,7 +334,7 @@ export function CartPage() {
     );
   }
 
-  if (cart.items.length === 0 && (!onlinePaymentAvailable || window.location.hash !== '#checkout-step2')) {
+  if (cart.items.length === 0) {
     return (
       <EmptyState
         title="Your shopping bag is empty"
@@ -279,7 +345,7 @@ export function CartPage() {
     );
   }
 
-  const whatsapp = cartService.buildWhatsAppCheckout(cart, customerNote);
+  const whatsapp = cartService.buildWhatsAppCheckout(cart, customerNote, totals);
 
   const handlePromoSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -302,35 +368,17 @@ export function CartPage() {
 
   const handleDirectOrderSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!onlinePaymentAvailable || isSubmittingOrder) return;
-    setOrderError('');
-
-    if (!formData.name || !formData.email || !formData.phone) {
-      setOrderError('Please provide your name, email, and mobile phone number.');
-      return;
-    }
-    if (!formData.addressLine || !formData.city || !formData.state || !formData.postalCode) {
-      setOrderError('Please complete your full delivery address.');
-      return;
-    }
+    if (!showCheckout || checkoutStep !== 2 || isSubmittingOrder) return;
+    const delivery = validateDelivery();
+    if (!delivery) return;
 
     try {
       setIsSubmittingOrder(true);
       const Razorpay = await loadRazorpayCheckout();
-      const deliveryFee = checkoutDeliveryFee;
+      if (!checkoutDialogRef.current?.open) return;
 
       const placed = await orderService.createOrder({
-        customer: {
-          name: formData.name,
-          email: formData.email,
-          phone: formData.phone,
-        },
-        shippingAddress: {
-          addressLine: formData.addressLine,
-          city: formData.city,
-          state: formData.state,
-          postalCode: formData.postalCode,
-        },
+        ...delivery,
         items: cart.items.map((item) => ({
           serialNumber: item.productId.toUpperCase(),
           name: item.name,
@@ -341,7 +389,7 @@ export function CartPage() {
         })),
         subtotal: totals.subtotal,
         discount: totals.discount,
-        shippingFee: deliveryFee,
+        shippingFee: checkoutDeliveryFee,
         totalAmount: checkoutTotal,
         promoCode: cart.promoCode,
         paymentMethod: 'RAZORPAY',
@@ -579,7 +627,7 @@ export function CartPage() {
         </div>
 
         {/* Order Summary & Actions */}
-        <aside className="organic-panel border border-foreground/15 bg-card p-6 space-y-6 shadow-sm">
+        <aside className="organic-panel min-w-0 border border-foreground/15 bg-card p-6 space-y-6 shadow-sm">
           <h2 className="font-display text-xl text-cocoa border-b border-foreground/15 pb-3">
             Bag Summary
           </h2>
@@ -596,7 +644,7 @@ export function CartPage() {
                 value={promoInput}
                 onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
                 placeholder="CIRCLEUP10"
-                className="flex-1 border-b border-foreground/30 bg-transparent py-1.5 text-xs uppercase tracking-wider text-cocoa focus:border-primary focus:outline-none"
+                className="min-w-0 flex-1 border-b border-foreground/30 bg-transparent py-1.5 text-xs uppercase tracking-wider text-cocoa focus:border-primary focus:outline-none"
               />
               <button
                 type="submit"
@@ -607,7 +655,9 @@ export function CartPage() {
             </div>
             {promoError && <p className="text-[0.72rem] text-destructive">{promoError}</p>}
             {cart.promoCode && (
-              <p className="text-[0.72rem] text-primary">Code &lsquo;{cart.promoCode}&rsquo; will be verified at checkout. The estimate excludes any discount.</p>
+              <p className="text-[0.72rem] text-primary" role="status">
+                {currentPromo?.message ?? 'Checking promo code. The estimate excludes the discount until it is verified.'}
+              </p>
             )}
           </form>
 
@@ -626,12 +676,12 @@ export function CartPage() {
             <div className="flex justify-between">
               <span className="text-terracotta">Estimated Shipping</span>
               <span className="tabular-nums font-medium">
-                {totals.subtotal - totals.discount >= 150000 ? 'Complimentary' : formatPrice(9000)}
+                {checkoutDeliveryFee === 0 ? 'Complimentary' : formatPrice(checkoutDeliveryFee)}
               </span>
             </div>
-            {totals.subtotal - totals.discount < 150000 && (
+            {checkoutDeliveryFee > 0 && (
               <p className="text-[0.68rem] text-muted-foreground">
-                Complimentary shipping on orders over {formatPrice(150000)}.
+                Complimentary shipping on orders of {formatPrice(CHECKOUT_SHIPPING.freeThresholdPaise)} or more after discounts.
               </p>
             )}
             <div className="flex justify-between pt-2 border-t border-foreground/10 font-bold text-base text-cocoa">
@@ -643,12 +693,13 @@ export function CartPage() {
           {/* Primary Action: Direct Order Placement into Database */}
           <button
             type="button"
+            ref={checkoutTriggerRef}
             onClick={handleOpenCheckout}
             disabled={!onlinePaymentAvailable}
             className="flex w-full items-center justify-center gap-2 bg-primary px-6 py-3.5 text-xs font-semibold uppercase tracking-widest text-primary-foreground transition-colors hover:bg-forest-deep cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Package className="size-4" />
-            <span>Place Order / Direct Checkout</span>
+            <span>Razorpay Checkout</span>
           </button>
           {!onlinePaymentAvailable && (
             <p role="status" className="text-xs text-muted-foreground">
@@ -658,10 +709,7 @@ export function CartPage() {
 
           {/* WhatsApp option */}
           <div className="pt-2 border-t border-foreground/10 space-y-3">
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-semibold uppercase tracking-wider text-terracotta">
-                Or Checkout via WhatsApp
-              </span>
+            <div className="flex justify-end text-xs">
               <button
                 type="button"
                 onClick={handleCopyMessage}
@@ -679,28 +727,40 @@ export function CartPage() {
               className="flex w-full items-center justify-center gap-2 bg-[#25D366] hover:bg-[#20bd5a] text-white px-6 py-3.5 text-xs font-bold uppercase tracking-widest transition-colors shadow-xs"
             >
               <WhatsAppIcon className="size-4" />
-              <span>Enquire on WhatsApp</span>
+              <span>WhatsApp Enquiry</span>
             </a>
           </div>
         </aside>
       </div>
 
       {/* Direct Order Checkout Modal */}
-      {onlinePaymentAvailable && isCheckoutModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 overflow-y-auto">
-          <div className="relative w-full max-w-lg bg-card border border-foreground/20 p-6 sm:p-8 space-y-6 shadow-xl my-8">
+      {showCheckout && (
+        <dialog
+          ref={checkoutDialogRef}
+          aria-labelledby="checkout-title"
+          aria-describedby="checkout-step-description"
+          aria-modal="true"
+          onKeyDown={handleDialogKeyDown}
+          onCancel={(event) => {
+            event.preventDefault();
+            setIsCheckoutModalOpen(false);
+          }}
+          className="fixed inset-0 m-auto w-[calc(100%_-_var(--spacing)*8)] max-w-lg max-h-[calc(100dvh_-_var(--spacing)*8)] overscroll-contain overflow-y-auto bg-card border border-foreground/20 shadow-xl backdrop:bg-foreground/60"
+        >
+          <div className="relative p-6 sm:p-8 space-y-6">
             <button
               type="button"
+              aria-label="Close checkout"
               onClick={() => setIsCheckoutModalOpen(false)}
-              className="absolute top-4 right-4 text-muted-foreground hover:text-foreground"
+              className="absolute top-2 right-2 p-3 text-muted-foreground hover:text-foreground"
             >
               <X className="size-5" />
             </button>
 
             <div>
               <p className="text-[0.72rem] uppercase tracking-widest text-terracotta font-semibold">CircleUp Thrift Store</p>
-              <h2 className="font-display text-2xl text-cocoa">Complete Your Order</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
+              <h2 id="checkout-title" ref={checkoutTitleRef} tabIndex={-1} className="font-display text-2xl text-cocoa outline-none">Complete Your Order</h2>
+              <p id="checkout-step-description" className="text-xs text-muted-foreground mt-0.5">
                 {checkoutStep === 1
                   ? 'Step 1 of 2 · Enter your delivery details.'
                   : 'Step 2 of 2 · Choose payment method & confirm order.'}
@@ -712,6 +772,7 @@ export function CartPage() {
               <button
                 type="button"
                 onClick={() => setCheckoutStep(1)}
+                aria-current={checkoutStep === 1 ? 'step' : undefined}
                 className="flex items-center gap-2 group cursor-pointer text-left"
               >
                 <span
@@ -736,7 +797,7 @@ export function CartPage() {
 
               <div className="h-px flex-1 mx-3 bg-foreground/20" />
 
-              <div className="flex items-center gap-2 text-left">
+              <div aria-current={checkoutStep === 2 ? 'step' : undefined} className="flex items-center gap-2 text-left">
                 <span
                   className={cn(
                     'flex size-6 items-center justify-center rounded-full text-xs font-bold transition-colors',
@@ -759,16 +820,18 @@ export function CartPage() {
             </div>
 
             {orderError && (
-              <div className="p-3 text-xs bg-destructive/10 text-destructive border border-destructive/20">
+              <div role="alert" className="p-3 text-xs bg-destructive/10 text-destructive border border-destructive/20">
                 {orderError}
               </div>
             )}
 
             {checkoutStep === 1 && (
-              <form onSubmit={handleContinueToPayment} className="space-y-4 text-xs">
+              <form noValidate onSubmit={handleContinueToPayment} className="space-y-4 text-xs">
                 <div className="space-y-1">
-                  <label className="font-semibold uppercase tracking-wider text-cocoa">Full Name *</label>
+                  <label htmlFor="checkout-name" className="font-semibold uppercase tracking-wider text-cocoa">Full Name *</label>
                   <input
+                    id="checkout-name"
+                    autoComplete="name"
                     type="text"
                     required
                     value={formData.name}
@@ -780,8 +843,10 @@ export function CartPage() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <label className="font-semibold uppercase tracking-wider text-cocoa">Email Address *</label>
+                    <label htmlFor="checkout-email" className="font-semibold uppercase tracking-wider text-cocoa">Email Address *</label>
                     <input
+                      id="checkout-email"
+                      autoComplete="email"
                       type="email"
                       required
                       value={formData.email}
@@ -791,8 +856,10 @@ export function CartPage() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="font-semibold uppercase tracking-wider text-cocoa">Mobile Number *</label>
+                    <label htmlFor="checkout-phone" className="font-semibold uppercase tracking-wider text-cocoa">Mobile Number *</label>
                     <input
+                      id="checkout-phone"
+                      autoComplete="tel"
                       type="tel"
                       required
                       value={formData.phone}
@@ -804,8 +871,10 @@ export function CartPage() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-semibold uppercase tracking-wider text-cocoa">Delivery Street Address *</label>
+                  <label htmlFor="checkout-address" className="font-semibold uppercase tracking-wider text-cocoa">Delivery Street Address *</label>
                   <input
+                    id="checkout-address"
+                    autoComplete="street-address"
                     type="text"
                     required
                     value={formData.addressLine}
@@ -815,10 +884,12 @@ export function CartPage() {
                   />
                 </div>
 
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="space-y-1">
-                    <label className="font-semibold uppercase tracking-wider text-cocoa">City *</label>
+                    <label htmlFor="checkout-city" className="font-semibold uppercase tracking-wider text-cocoa">City *</label>
                     <input
+                      id="checkout-city"
+                      autoComplete="address-level2"
                       type="text"
                       required
                       value={formData.city}
@@ -828,8 +899,10 @@ export function CartPage() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="font-semibold uppercase tracking-wider text-cocoa">State *</label>
+                    <label htmlFor="checkout-state" className="font-semibold uppercase tracking-wider text-cocoa">State *</label>
                     <input
+                      id="checkout-state"
+                      autoComplete="address-level1"
                       type="text"
                       required
                       value={formData.state}
@@ -839,8 +912,11 @@ export function CartPage() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="font-semibold uppercase tracking-wider text-cocoa">PIN Code *</label>
+                    <label htmlFor="checkout-pin" className="font-semibold uppercase tracking-wider text-cocoa">PIN Code *</label>
                     <input
+                      id="checkout-pin"
+                      autoComplete="postal-code"
+                      inputMode="numeric"
                       type="text"
                       required
                       value={formData.postalCode}
@@ -942,10 +1018,13 @@ export function CartPage() {
                     <span className="text-forest font-medium">{checkoutDeliveryFee === 0 ? 'Complimentary' : formatPrice(checkoutDeliveryFee)}</span>
                   </div>
                   <div className="flex justify-between font-bold text-sm pt-2 border-t border-foreground/10">
-                    <span>Total Amount Due</span>
+                    <span>Estimated Total</span>
                     <span className="text-primary tabular-nums">{formatPrice(checkoutTotal)}</span>
                   </div>
                 </div>
+                {cart.promoCode && (
+                  <p className="text-muted-foreground">The final amount includes any verified promo discount and the resulting shipping fee.</p>
+                )}
 
                 {/* Action buttons */}
                 <label className="flex items-start gap-2 pt-1 text-[0.72rem] text-cocoa/80 cursor-pointer select-none">
@@ -973,7 +1052,7 @@ export function CartPage() {
                   >
                     {isSubmittingOrder
                       ? 'Launching Secure Payment...'
-                      : `Pay with Razorpay · ${formatPrice(checkoutTotal)}`}
+                      : cart.promoCode ? 'Continue to Razorpay' : `Pay with Razorpay · ${formatPrice(checkoutTotal)}`}
                   </button>
                 </div>
 
@@ -987,7 +1066,7 @@ export function CartPage() {
               </form>
             )}
           </div>
-        </div>
+        </dialog>
       )}
     </div>
   );

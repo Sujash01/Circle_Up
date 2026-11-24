@@ -61,9 +61,9 @@ describe('P0-1 Monetary Specification & Integer Paise Formatting', () => {
     expect(formatPrice(55000)).toBe('₹550');
     // 35000 paise = ₹350
     expect(formatPrice(35000)).toBe('₹350');
-    // 150000 paise = ₹1,500 (Free delivery threshold)
+    // 150000 paise = ₹1,500
     expect(formatPrice(150000)).toBe('₹1,500');
-    // 9000 paise = ₹90 (Standard delivery fee)
+    // 9000 paise = ₹90
     expect(formatPrice(9000)).toBe('₹90');
     // 255000 paise = ₹2,550
     expect(formatPrice(255000)).toBe('₹2,550');
@@ -174,10 +174,9 @@ describe('P0-1 Monetary Specification & Integer Paise Formatting', () => {
 
     // Subtotal and unit price should show ₹550
     expect(host.textContent).toContain('₹550');
-    // Delivery fee below 150000 paise threshold is 9000 paise = ₹90
     expect(host.textContent).toContain('₹90');
-    // Threshold notice mentions ₹1,500
-    expect(host.textContent).toContain('₹1,500');
+    expect(host.textContent).toContain('₹1,000');
+    expect(host.textContent).toContain('₹640');
 
     act(() => {
       root.unmount();
@@ -231,10 +230,11 @@ describe('P0-1 Monetary Specification & Integer Paise Formatting', () => {
 
     const waCheckout = cartService.buildWhatsAppCheckout(cartState, 'Please deliver soon');
     expect(waCheckout.totals.subtotal).toBe(55000);
-    expect(waCheckout.totals.estimatedTotal).toBe(55000);
+    expect(waCheckout.totals.estimatedTotal).toBe(64000);
     expect(waCheckout.message).toContain('1. Vintage Uniqlo Zipper Hoodie (Size M) x1 — ₹550');
     expect(waCheckout.message).toContain('Subtotal: ₹550');
-    expect(waCheckout.message).toContain('Estimated Total: ₹550');
+    expect(waCheckout.message).toContain('Estimated Shipping: ₹90');
+    expect(waCheckout.message).toContain('Estimated Total: ₹640');
     expect(waCheckout.message).not.toContain('₹55,000');
 
     const waProduct = cartService.buildProductWhatsAppUrl(TEST_PRODUCT_550, 'Size M');

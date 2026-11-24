@@ -1,3 +1,4 @@
+import { calculateCheckoutDeliveryFee, CHECKOUT_SHIPPING } from '@circleup/shared';
 import { getSupabaseAdminClient, isSupabaseConfigured } from './supabase.service.js';
 
 export interface ShippingZone {
@@ -24,8 +25,8 @@ export const shippingTaxService = {
           id: 'default',
           name: 'Standard Pan-India',
           pincodes: [],
-          ratePaise: 9000,
-          freeShippingAbovePaise: 150000,
+          ratePaise: CHECKOUT_SHIPPING.standardFeePaise,
+          freeShippingAbovePaise: CHECKOUT_SHIPPING.freeThresholdPaise,
           isActive: true,
         },
       ];
@@ -41,8 +42,8 @@ export const shippingTaxService = {
           id: 'default',
           name: 'Standard Pan-India',
           pincodes: [],
-          ratePaise: 9000,
-          freeShippingAbovePaise: 150000,
+          ratePaise: CHECKOUT_SHIPPING.standardFeePaise,
+          freeShippingAbovePaise: CHECKOUT_SHIPPING.freeThresholdPaise,
           isActive: true,
         },
       ];
@@ -52,35 +53,18 @@ export const shippingTaxService = {
       id: String(z.id),
       name: String(z.name),
       pincodes: Array.isArray(z.pincodes) ? z.pincodes : [],
-      ratePaise: Number(z.rate_paise) || 9000,
-      freeShippingAbovePaise: z.free_shipping_above_paise !== null ? Number(z.free_shipping_above_paise) : null,
+      ratePaise: CHECKOUT_SHIPPING.standardFeePaise,
+      freeShippingAbovePaise: CHECKOUT_SHIPPING.freeThresholdPaise,
       isActive: Boolean(z.is_active),
     }));
   },
 
-  async calculateDeliveryFee(pincode: string, subtotalInPaise: number): Promise<{ deliveryFeePaise: number; freeShippingThresholdPaise: number; zoneName: string }> {
-    const zones = await this.getShippingZones();
-    const cleanPin = (pincode || '').trim();
-
-    // Match exact pincode or pincode prefix if configured
-    let matchedZone = zones.find((z) => z.pincodes.some((p) => cleanPin.startsWith(p)));
-    if (!matchedZone) {
-      matchedZone = zones[0] || {
-        id: 'default',
-        name: 'Standard Delivery',
-        pincodes: [],
-        ratePaise: 9000,
-        freeShippingAbovePaise: 150000,
-        isActive: true,
-      };
-    }
-
-    const freeThreshold = matchedZone.freeShippingAbovePaise ?? 150000;
-    if (subtotalInPaise >= freeThreshold) {
-      return { deliveryFeePaise: 0, freeShippingThresholdPaise: freeThreshold, zoneName: matchedZone.name };
-    }
-
-    return { deliveryFeePaise: matchedZone.ratePaise, freeShippingThresholdPaise: freeThreshold, zoneName: matchedZone.name };
+  calculateDeliveryFee(discountedSubtotalInPaise: number, itemCount: number) {
+    return {
+      deliveryFeePaise: calculateCheckoutDeliveryFee(discountedSubtotalInPaise, itemCount),
+      freeShippingThresholdPaise: CHECKOUT_SHIPPING.freeThresholdPaise,
+      zoneName: 'Standard Pan-India',
+    };
   },
 
   async getTaxSettings(): Promise<TaxSettings> {

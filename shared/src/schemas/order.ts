@@ -46,6 +46,25 @@ export const shippingAddressSchema = z.object({
 export type ShippingAddress = z.infer<typeof shippingAddressSchema>;
 export type IShippingAddress = ShippingAddress;
 
+export const checkoutPinCodeSchema = z.string().trim()
+  .regex(/^[1-9]\d{5}$/, 'Enter a valid six-digit Indian PIN code.');
+
+export const checkoutDeliverySchema = z.object({
+  customer: customerInfoSchema.extend({
+    name: z.string().trim().min(2, 'Name must be at least 2 characters.'),
+    phone: z.string().trim().refine(
+      (phone) => /^(?:(?:\+?91)|0)?[6-9]\d{9}$/.test(phone.replace(/[ -]/g, '')),
+      'Enter a valid 10-digit Indian mobile number.',
+    ),
+  }).strict(),
+  shippingAddress: shippingAddressSchema.extend({
+    addressLine: z.string().trim().min(5, 'Address line is required.'),
+    city: z.string().trim().min(2, 'City is required.'),
+    state: z.string().trim().min(2, 'State is required.'),
+    postalCode: checkoutPinCodeSchema,
+  }).strict(),
+});
+
 export const orderStatusSchema = z.enum([
   'PENDING',
   'CONFIRMED',
@@ -132,8 +151,7 @@ export type IOrder = Order;
 
 export const createOrderPayloadSchema = z.object({
   customerId: z.string().optional(),
-  customer: customerInfoSchema.strict(),
-  shippingAddress: shippingAddressSchema.strict(),
+  ...checkoutDeliverySchema.shape,
   items: z.array(
     z.object({
       serialNumber: z.string().trim().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/),

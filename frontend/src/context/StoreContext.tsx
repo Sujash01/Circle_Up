@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { cartService, type CartTotals } from '@/services/cartService';
-import { productService } from '@/services/productService';
+import { productService, useCatalogVersion } from '@/services/productService';
 import { wishlistService } from '@/services/wishlistService';
 import type { CartState, Product, ProductVariant } from '@/types/storefront';
 
@@ -50,11 +50,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [wishlistIds, setWishlistIds] = useState<string[]>(() => wishlistService.loadIds());
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [notice, setNotice] = useState<StoreNotice | null>(null);
-  const [, setCatalogVersion] = useState(0);
-
-  useEffect(() => {
-    return productService.subscribe(() => setCatalogVersion((v) => v + 1));
-  }, []);
+  const catalogVersion = useCatalogVersion();
 
   const showNotice = useCallback((text: string, tone: 'info' | 'error' = 'info') => {
     setNotice({ id: Date.now(), text, tone });
@@ -75,7 +71,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       wishlistIds
         .map((id) => productService.getProductById(id))
         .filter((item): item is Product => Boolean(item)),
-    [wishlistIds],
+    [wishlistIds, catalogVersion],
   );
 
   const addToCart = useCallback(
@@ -116,7 +112,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setCart(result.nextState);
       showNotice(
         result.nextState.promoCode
-          ? `Code ${result.nextState.promoCode} saved. It will be verified at checkout; the estimate excludes any discount.`
+          ? `Code ${result.nextState.promoCode} saved.`
           : 'Promo code cleared.',
       );
       return { ok: true };

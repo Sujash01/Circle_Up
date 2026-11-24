@@ -1,4 +1,5 @@
 import request from 'supertest';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 
 const settingsState = vi.hoisted(() => ({
@@ -214,6 +215,15 @@ describe('Phase 2 API Endpoints', () => {
       expect(res.body.data.discountInPaise).toBe(40000); // 20% of 200000 = 40000 paise
     });
 
+    it('uses the same integer division as checkout for percentage discounts', async () => {
+      const response = await request(app)
+        .post('/api/coupons/validate')
+        .send({ code: 'THRIFT10', subtotalInPaise: 250009 });
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.discountInPaise).toBe(25000);
+    });
+
     it('rejects coupon when subtotal is below minimum order requirement', async () => {
       const res = await request(app)
         .post('/api/coupons/validate')
@@ -264,6 +274,40 @@ describe('Phase 2 API Endpoints', () => {
         expect(item).toHaveProperty('price');
         expect(item).toHaveProperty('thumbnail');
       }
+    });
+  });
+
+  describe('Checkout shipping quote', () => {
+    const path = '/api/shipping-tax/calculate-fee';
+
+    it('keeps the checkout RPC in sync with the approved API policy', () => {
+      const migration = readFileSync(new URL(
+        '../../../supabase/migrations/20261212000000_approved_checkout_shipping_policy.sql',
+        import.meta.url,
+      ), 'utf8');
+      expect(migration).toMatch(/when p_item_count = 0 or p_discounted_subtotal_paise >= 100000 then 0\s+else 9000/);
+      expect(migration).toMatch(/v_delivery_fee := public.calculate_storefront_delivery_fee\(\s*v_discounted_subtotal,\s*pg_catalog.jsonb_array_length\(p_items\)/);
+    });
+
+    it.each([
+      ['empty', 0, 0, 0],
+      ['fully discounted', 0, 1, 9000],
+      ['₹998', 99800, 1, 9000],
+      ['₹999', 99900, 1, 9000],
+      ['₹999.99', 99999, 1, 9000],
+      ['₹1,000', 100000, 1, 0],
+      ['above ₹1,000', 100001, 1, 0],
+    ])('quotes %s using the discounted subtotal', async (_label, subtotalInPaise, itemCount, deliveryFeePaise) => {
+      const response = await request(app).get(path).query({ pincode: '400050', subtotalInPaise, itemCount });
+      expect(response.status).toBe(200);
+      expect(response.body.data).toMatchObject({ deliveryFeePaise, freeShippingThresholdPaise: 100000 });
+    });
+
+    it('retains subtotal-only quotes and rejects invalid inputs', async () => {
+      expect((await request(app).get(path)).body.data.deliveryFeePaise).toBe(0);
+      expect((await request(app).get(path).query({ subtotalInPaise: 99999 })).body.data.deliveryFeePaise).toBe(9000);
+      expect((await request(app).get(path).query({ subtotalInPaise: '80000oops' })).status).toBe(400);
+      expect((await request(app).get(path).query({ itemCount: '-1' })).status).toBe(400);
     });
   });
 
