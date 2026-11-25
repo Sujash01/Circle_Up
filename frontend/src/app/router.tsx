@@ -10,7 +10,6 @@ import {
 } from 'react-router-dom';
 import { ExitIntentModal } from '@/components/storefront/ExitIntentModal';
 import { StorefrontCleanLayout, StorefrontLayout } from '@/components/storefront/StorefrontChrome';
-import { VinylMusicPlayer } from '@/components/audio/VinylMusicPlayer';
 import { HomePage } from '@/features/public/HomePage';
 import { GuestRoute } from '@/components/auth/GuestRoute';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
@@ -47,6 +46,7 @@ const TermsPage = lazy(() => import('@/features/public/TermsPage').then((m) => (
 const ReturnsRefundsPage = lazy(() => import('@/features/public/ReturnsRefundsPage').then((m) => ({ default: m.ReturnsRefundsPage })));
 const ShippingPolicyPage = lazy(() => import('@/features/public/ShippingPolicyPage').then((m) => ({ default: m.ShippingPolicyPage })));
 const AdminApp = lazy(() => import('@/admin/AdminApp'));
+const VinylMusicPlayer = lazy(() => import('@/components/audio/VinylMusicPlayer').then((m) => ({ default: m.VinylMusicPlayer })));
 
 function RootScrollWrapper() {
   const { pathname } = useLocation();
@@ -59,7 +59,9 @@ function RootScrollWrapper() {
         <Outlet />
       </Suspense>
       <ExitIntentModal />
-      <VinylMusicPlayer />
+      <Suspense fallback={null}>
+        <VinylMusicPlayer />
+      </Suspense>
     </>
   );
 }

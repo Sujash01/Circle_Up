@@ -99,7 +99,7 @@ vi.mock('../../src/repositories/coupon.repository.js', () => ({
 vi.mock('../../src/repositories/event.repository.js', () => ({
   eventRepository: {
     list: async () => eventState.rows,
-    create: async (input: Record<string, unknown>) => { const row = { id: 'event-uuid-001', ...input }; eventState.rows.push(row); return row; },
+    create: async (input: Record<string, unknown>) => { const row = { id: '79d3cbea-620d-46be-a0f8-39aa7e289b83', ...input }; eventState.rows.push(row); return row; },
     update: async (id: string, input: Record<string, unknown>) => { const row = eventState.rows.find((item) => item.id === id); if (!row) throw new Error('Event not found.'); Object.assign(row, input); return row; },
     delete: async (id: string) => { eventState.rows = eventState.rows.filter((row) => row.id !== id); },
   },
@@ -107,7 +107,7 @@ vi.mock('../../src/repositories/event.repository.js', () => ({
 vi.mock('../../src/repositories/rental.repository.js', () => ({
   rentalRepository: {
     list: async () => rentalState.rows,
-    create: async (input: Record<string, unknown>) => { const row = { id: 'rental-uuid-001', ...input }; rentalState.rows.push(row); return row; },
+    create: async (input: Record<string, unknown>) => { const row = { id: '71db0413-982a-4aff-a72f-423af5645826', ...input }; rentalState.rows.push(row); return row; },
     update: async (id: string, input: Record<string, unknown>) => { const row = rentalState.rows.find((item) => item.id === id); if (!row) throw new Error('Rental item not found.'); Object.assign(row, input); return row; },
     delete: async (id: string) => { rentalState.rows = rentalState.rows.filter((row) => row.id !== id); },
   },
@@ -555,17 +555,17 @@ describe('Phase 3: Admin Backend (/api/admin/*)', () => {
         title: 'Courtyard Pop-Up', date: 'Saturday, November 28, 2026 · 11:00 AM - 6:00 PM', location: 'Chandigarh', description: 'A courtyard gathering.', image: '/event.webp', type: 'POP_UP', capacity: 80, registeredCount: 0, isRegistrationOpen: true,
       });
       expect(created.status).toBe(201);
-      expect(created.body.data).toMatchObject({ id: 'event-uuid-001', image: '/event.webp', date: 'Saturday, November 28, 2026 · 11:00 AM - 6:00 PM' });
+      expect(created.body.data).toMatchObject({ id: '79d3cbea-620d-46be-a0f8-39aa7e289b83', image: '/event.webp', date: 'Saturday, November 28, 2026 · 11:00 AM - 6:00 PM' });
 
-      const updated = await request(app).put('/api/admin/events/event-uuid-001').set('Cookie', staffCookie).set('X-CSRF-Token', staffCsrf).send({
+      const updated = await request(app).put('/api/admin/events/79d3cbea-620d-46be-a0f8-39aa7e289b83').set('Cookie', staffCookie).set('X-CSRF-Token', staffCsrf).send({
         title: 'Courtyard Pop-Up', date: 'Saturday, November 28, 2026 · 11:00 AM - 6:00 PM', location: 'Chandigarh', description: 'Updated details.', image: '/event.webp', type: 'POP_UP', capacity: 80, registeredCount: 0, isRegistrationOpen: true,
       });
       expect(updated.status).toBe(200);
       expect(updated.body.data.description).toBe('Updated details.');
 
-      const deletedByStaff = await request(app).delete('/api/admin/events/event-uuid-001').set('Cookie', staffCookie).set('X-CSRF-Token', staffCsrf);
+      const deletedByStaff = await request(app).delete('/api/admin/events/79d3cbea-620d-46be-a0f8-39aa7e289b83').set('Cookie', staffCookie).set('X-CSRF-Token', staffCsrf);
       expect(deletedByStaff.status).toBe(403);
-      const deletedByOwner = await request(app).delete('/api/admin/events/event-uuid-001').set('Cookie', ownerCookie).set('X-CSRF-Token', ownerCsrf);
+      const deletedByOwner = await request(app).delete('/api/admin/events/79d3cbea-620d-46be-a0f8-39aa7e289b83').set('Cookie', ownerCookie).set('X-CSRF-Token', ownerCsrf);
       expect(deletedByOwner.status).toBe(200);
     });
   });
@@ -578,14 +578,14 @@ describe('Phase 3: Admin Backend (/api/admin/*)', () => {
       const payload = { name: 'Courtyard Co-Ord Set', slug: 'courtyard-co-ord-set', category: 'rentals', image: '/rental.webp', rentalPrice3Days: 120000, rentalPrice7Days: 200000, rentalPrice14Days: 320000, securityDeposit: 300000, condition: 'Mint', size: 'Size M', isAvailable: true, description: 'Dry-cleaned before dispatch.' };
       const created = await request(app).post('/api/admin/rentals').set('Cookie', staffCookie).set('X-CSRF-Token', staffCsrf).send(payload);
       expect(created.status).toBe(201);
-      expect(created.body.data).toMatchObject({ id: 'rental-uuid-001', image: '/rental.webp', rentalPrice3Days: 120000, rentalPrice7Days: 200000, rentalPrice14Days: 320000, securityDeposit: 300000 });
+      expect(created.body.data).toMatchObject({ id: '71db0413-982a-4aff-a72f-423af5645826', image: '/rental.webp', rentalPrice3Days: 120000, rentalPrice7Days: 200000, rentalPrice14Days: 320000, securityDeposit: 300000 });
 
-      const updated = await request(app).put('/api/admin/rentals/rental-uuid-001').set('Cookie', staffCookie).set('X-CSRF-Token', staffCsrf).send({ ...payload, isAvailable: false });
+      const updated = await request(app).put('/api/admin/rentals/71db0413-982a-4aff-a72f-423af5645826').set('Cookie', staffCookie).set('X-CSRF-Token', staffCsrf).send({ ...payload, isAvailable: false });
       expect(updated.status).toBe(200);
       expect(updated.body.data.isAvailable).toBe(false);
-      const deletedByStaff = await request(app).delete('/api/admin/rentals/rental-uuid-001').set('Cookie', staffCookie).set('X-CSRF-Token', staffCsrf);
+      const deletedByStaff = await request(app).delete('/api/admin/rentals/71db0413-982a-4aff-a72f-423af5645826').set('Cookie', staffCookie).set('X-CSRF-Token', staffCsrf);
       expect(deletedByStaff.status).toBe(403);
-      const deletedByOwner = await request(app).delete('/api/admin/rentals/rental-uuid-001').set('Cookie', ownerCookie).set('X-CSRF-Token', ownerCsrf);
+      const deletedByOwner = await request(app).delete('/api/admin/rentals/71db0413-982a-4aff-a72f-423af5645826').set('Cookie', ownerCookie).set('X-CSRF-Token', ownerCsrf);
       expect(deletedByOwner.status).toBe(200);
     });
   });

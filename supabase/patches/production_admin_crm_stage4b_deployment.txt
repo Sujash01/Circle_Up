@@ -1,0 +1,154 @@
+Stage 4B.1 production cutover and rollback
+
+Scope
+
+4B.1 restores Rentals, Inquiries, Customers, Site Settings and Events, removes
+CRM music, and permits password-confirmed cancellation reviews without changing
+order status, inventory, or payments. 4B.2 owns actual cancellation, inventory
+restoration, reservation expiry, refunds and the payment ledger. Reconciliation
+remains read-only. Keep RAZORPAY_ENABLED=false in Production and Preview.
+
+The reusable patch has no production fingerprint. Use the ignored executable at
+.local/stage4b-deployment/supabase/patches/production_admin_crm_stage4b.sql.
+If the template changes, regenerate the copy and compare it with the template.
+Only the SET LOCAL fingerprint statement may differ.
+
+Scheduled reservation expiry
+
+This checkout has no Vercel cron entry or scheduled GitHub caller for the job.
+The secret-authenticated POST routes /api/cron/expire-reservations and
+/api/cron/release-expired-holds (also /api/v1) both call
+admin_release_expired_reservations(integer). A database scheduler can call
+that function or expire_stale_stock_reservations directly.
+
+After approval, run production_admin_crm_stage4b_schedule_check.sql. Check the
+Supabase and Vercel scheduler dashboards and external schedulers for those
+routes, both database functions, and any wrappers around them. Record and pause
+matching jobs and wait for in-flight runs to finish. The installer blocks
+recognized active pg_cron jobs in the target database. A privileged job can
+bypass application ACLs, so the dashboard check matters. The 4B.1 patch closes
+service-role grants on legacy expiry, cancellation, return-finalization,
+refund and receipt writers. Resume jobs only with the approved 4B.2 replacement.
+
+Schema backup (PowerShell, after approval)
+
+Use a PostgreSQL client of the same or newer major version as the server. Use
+the production Session pooler or direct endpoint from Supabase Connect, port
+5432. Use the trusted Supabase CA and the database password prompt.
+
+  $dbHost = Read-Host 'Verified production database host'
+  $dbUser = Read-Host 'Database user from Supabase Connect'
+  $env:PGSSLMODE = 'verify-full'
+  $env:PGSSLROOTCERT = (Resolve-Path (Read-Host 'Supabase CA file path')).Path
+  $backup = Join-Path (Get-Location) ('.local/stage4b-deployment/backup-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+  New-Item -ItemType Directory -Path $backup -ErrorAction Stop | Out-Null
+  $archive = Join-Path $backup 'circleup-production-schema.dump'
+  pg_dump --host $dbHost --port 5432 --username $dbUser --password --dbname postgres --format custom --schema-only --schema public --schema extensions --file $archive
+  if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $archive) -or (Get-Item -LiteralPath $archive).Length -eq 0) { throw 'Schema backup failed.' }
+  pg_restore --list $archive | Set-Content -LiteralPath (Join-Path $backup 'archive-contents.txt')
+  if ($LASTEXITCODE -ne 0) { throw 'Schema archive could not be read.' }
+  pg_restore --schema-only --file (Join-Path $backup 'schema-review.sql') $archive
+  if ($LASTEXITCODE -ne 0) { throw 'Schema archive extraction failed.' }
+  Get-FileHash -Algorithm SHA256 -LiteralPath $archive
+
+Verify the archive lists the changed function definitions, owners, grants,
+and settings trigger. Keep the preflight output and scheduler configuration
+privately with the archive. Record the previous production Vercel deployment
+URL. The archive is for recovering schema objects.
+
+Git and preview commands (after approval)
+
+Confirm the linked Vercel project's Production Branch is main and Preview uses
+staging credentials. Keep the ignored SQL copy, backups, screenshots, the
+pre-existing package edits, and local Owner recovery scripts out of the commit.
+
+  git switch -c stage4b-1
+  if ($LASTEXITCODE -ne 0) { throw 'Could not create the release branch.' }
+  if (git diff --cached --name-only) { throw 'Review the existing index first.' }
+  git add -- .gitignore backend/src backend/tests frontend/src frontend/tests shared/src scripts/recover-production-owner.mjs scripts/verify-admin-stage4b-browser.mjs supabase/patches/production_admin_crm_stage4b.sql supabase/patches/production_admin_crm_stage4b_preflight.sql supabase/patches/production_admin_crm_stage4b_verify.sql supabase/patches/production_admin_crm_stage4b_schedule_check.sql supabase/patches/production_admin_crm_stage4b_deployment.txt supabase/tests/admin_crm_stage4b.sql supabase/tests/admin_crm_stage4b_legacy_contract.sql
+  if ($LASTEXITCODE -ne 0) { throw 'Staging failed.' }
+  git diff --cached --check
+  if ($LASTEXITCODE -ne 0) { throw 'Staged whitespace check failed.' }
+  git diff --cached --name-only
+  git diff --cached -- supabase/patches/production_admin_crm_stage4b.sql
+
+Review the staged file list and confirm the SQL is fingerprint-free before
+running:
+
+  git commit -m "fix(crm): restore Stage 4B.1 production admin workflows"
+  if ($LASTEXITCODE -ne 0) { throw 'Commit failed.' }
+  git push -u origin stage4b-1
+
+Verify the Vercel preview against staging with its own reviewed fingerprint.
+The optional local Node concurrency harness uses the existing local pg
+installation and is outside the production commit above.
+
+Production cutover (after approval and a passing preview)
+
+1. Confirm backup, scheduler pause, and RAZORPAY_ENABLED=false. Before SQL,
+   check the release can advance main without rewriting history:
+
+   git fetch origin main
+   if ($LASTEXITCODE -ne 0) { throw 'Cannot verify the remote production branch.' }
+   git merge-base --is-ancestor origin/main stage4b-1
+   if ($LASTEXITCODE -ne 0) { throw 'Production branch diverged. Stop.' }
+
+2. In the confirmed production Supabase SQL Editor, rerun
+   production_admin_crm_stage4b_preflight.sql and compare the reported
+   fingerprint with the ignored deployment copy. Stop if it differs. Run the
+   complete ignored copy. It installs btree_gist when required and aborts
+   transactionally on a failed check. Run production_admin_crm_stage4b_verify.sql
+   separately after commit.
+3. Publish the reviewed commit and wait for the matching Vercel deployment to
+   reach Ready and serve the production domain:
+
+   git push origin stage4b-1:main
+
+   The previous application can still use read paths and ordinary status
+   transitions during this interval. Legacy stock, refund, and receipt writers
+   remain fenced.
+
+Production CRM smoke checklist
+
+- Sign in with the existing Owner account. Open Dashboard and Activity.
+- Check rental catalog, bookings, prices, and availability against the
+  storefront. Use approved fixtures for create/edit and booking status tests.
+- Search Inquiries and open a record. An approved test contact submission should
+  appear once. WhatsApp enquiry must leave orders, inventory, coupons and
+  payments untouched.
+- Search and paginate Customers. Open registered and guest order histories.
+- In Site Settings, set WhatsApp Concierge Number to +916280746336, mark it
+  Verified for checkout, save and reload. Verify the storefront WhatsApp link
+  uses 916280746336 and unrelated settings still match. Make this authorized
+  setting change in the CRM after SQL installation.
+- Check Events date labels and registration details. Check silent CRM routes
+  on desktop and mobile.
+- Checkout has exactly Razorpay Checkout and WhatsApp Enquiry. Razorpay stays
+  disabled. Shipping is ₹0 for an empty bag, ₹90 below ₹1000 after discounts,
+  and ₹0 from ₹1000 after discounts.
+- With a disposable order, request cancellation review. Check the Activity
+  entry and unchanged order, stock and payment states. Verify password, CSRF
+  and rate-limit rejection in staging. Confirm expiry jobs remain paused.
+
+Rollback
+
+1. Reassign the domain to the prior Vercel deployment. From a linked workspace:
+   vercel rollback <previous-production-deployment-url>
+   vercel rollback status
+2. Preserve additive data, booking integrity constraints and private grants.
+   Keep stock, expiry, refund and receipt fences and leave expiry jobs paused.
+   Older readers and original contact and product-linked rental inserts remain
+   compatible.
+3. For an approved SQL object rollback, restore the saved exact definitions and
+   owners of admin_get_crm_customers and admin_get_daily_reconciliation in a
+   transaction. Revoke PUBLIC, anon and authenticated execute and grant only
+   service_role. Keep the evidence helper while clients drain. Keep the order
+   status wrapper. Restore the old status body only under its private renamed
+   function with all application execute grants revoked.
+4. To revert settings trigger behavior, drop only
+   trg_site_settings_bump_version on public.site_settings and restore the saved
+   function, trigger definition and enabled state if a previous trigger existed.
+   Keep the settings row, all values and added columns.
+5. Verify effective RPC grants, triggers and record counts within the approved
+   rollback transaction. Notify PostgREST using NOTIFY pgrst, 'reload schema';.
+   Recover individual definitions from the archive while preserving live data.

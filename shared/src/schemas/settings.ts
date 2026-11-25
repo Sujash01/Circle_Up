@@ -76,15 +76,18 @@ export type StorefrontSettings = z.infer<typeof storefrontSettingsSchema>;
 
 export const siteSettingsUpdateSchema = z.object({
   announcementText: z.string().optional(),
-  announcementLink: z.string().optional(),
+  announcementLink: z.union([storefrontLinkSchema, z.literal('')]).optional(),
   isAnnouncementActive: z.boolean().optional(),
   marqueePhrases: z.array(z.string()).optional(),
   categoryTiles: z.array(categoryTileSchema).optional(),
-  customDrop: customDropOptionSchema.optional(),
+  customDrop: customDropOptionSchema.partial().strict().optional(),
   storeAddress: z.string().optional(),
   contactEmail: z.string().email().optional(),
   contactPhone: z.string().optional(),
-  whatsappNumber: z.string().optional(),
+  whatsappNumber: z.string().trim().max(32).refine(
+    (value) => !value || Boolean(normalizeBusinessWhatsappNumber(value)),
+    'Enter a valid business WhatsApp number.',
+  ).optional(),
   isWhatsappVerified: z.boolean().optional(),
   // Returned by GET /settings and sent back by the existing admin form; these are read-only.
   contentVersion: z.number().int().optional(),

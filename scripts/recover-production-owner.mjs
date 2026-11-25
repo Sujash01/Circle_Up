@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 /**
  * CircleUp – Production Owner Account Recovery Script (Phase B)
  *

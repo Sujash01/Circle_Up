@@ -149,6 +149,15 @@ export const orderSchema = z.object({
 export type Order = z.infer<typeof orderSchema>;
 export type IOrder = Order;
 
+export const adminCancelOrderSchema = z.object({
+  reason: z.string().trim().min(1, 'Enter a cancellation reason.').max(1000),
+  password: z.string().min(1, 'Enter your administrator password.').max(256),
+}).strict();
+export type AdminCancelOrderInput = z.infer<typeof adminCancelOrderSchema>;
+
+export const adminCancellationOutcomeSchema = z.enum(['CANCELLED', 'RETURN_REVIEW', 'PAYMENT_REVIEW', 'INVENTORY_REVIEW']);
+export type AdminCancellationOutcome = z.infer<typeof adminCancellationOutcomeSchema>;
+
 export const createOrderPayloadSchema = z.object({
   customerId: z.string().optional(),
   ...checkoutDeliverySchema.shape,

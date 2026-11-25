@@ -14,7 +14,7 @@ const eventSchema = z.object({
   image: z.string().max(2048).optional().default(''),
   type: z.enum(['POP_UP', 'COMMUNITY', 'OFFLINE_SALE']).default('POP_UP'),
   capacity: z.number().int().positive().optional().nullable(),
-  registeredCount: z.number().int().nonnegative().default(0),
+  registeredCount: z.number().int().nonnegative().optional(),
   isRegistrationOpen: z.boolean().default(true),
 }).strict();
 
@@ -37,15 +37,16 @@ export const adminEventController = {
   },
   async update(req: Request, res: Response, next: NextFunction) {
     try {
-      const id = String(req.params.id || '');
-      const updated = await eventRepository.update(id, parseInput(req.body));
+      const id = z.string().uuid().parse(req.params.id);
+      const { registeredCount: _count, ...input } = parseInput(req.body);
+      const updated = await eventRepository.update(id, input);
       await auditService.record({ actor: req.adminUser, action: 'EVENT_UPDATE', entity: 'Event', entityId: id, diff: req.body, req });
       return sendSuccess(res, updated);
     } catch (error) { next(error); }
   },
   async delete(req: Request, res: Response, next: NextFunction) {
     try {
-      const id = String(req.params.id || '');
+      const id = z.string().uuid().parse(req.params.id);
       await eventRepository.delete(id);
       await auditService.record({ actor: req.adminUser, action: 'EVENT_DELETE', entity: 'Event', entityId: id, req });
       return sendSuccess(res, { deleted: true });

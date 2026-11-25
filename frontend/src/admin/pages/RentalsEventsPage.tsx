@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Calendar,
   Sparkles,
@@ -13,24 +13,10 @@ import {
 import { adminApi } from '../services/adminApi';
 import { useAdminToast } from '../context/AdminToastContext';
 import { AdminCardSkeleton } from '../components/AdminSkeleton';
-import { formatPrice, normalizePriceToPaise } from '@circleup/shared';
+import { formatPrice, rentalCatalogItemSchema, RENTAL_BOOKING_TRANSITIONS, type AdminRentalBooking, type RentalBookingStatus, type RentalCatalogItem } from '@circleup/shared';
+import { useAdminAuth } from '../context/AdminAuthContext';
 
-interface RentalItem {
-  id?: string;
-  _id?: string;
-  name: string;
-  slug: string;
-  category: string;
-  image: string;
-  rentalPrice3Days: number;
-  rentalPrice7Days: number;
-  rentalPrice14Days: number;
-  securityDeposit: number;
-  condition: string;
-  size: string;
-  isAvailable: boolean;
-  description: string;
-}
+type RentalItem = RentalCatalogItem & { _id?: string; createdAt?: string; updatedAt?: string };
 
 interface EventItem {
   id?: string;
@@ -48,10 +34,17 @@ interface EventItem {
 
 export default function RentalsEventsPage() {
   const { showToast } = useAdminToast();
-  const [tab, setTab] = useState<'rentals' | 'events'>('rentals');
+  const { isOwner } = useAdminAuth();
+  const [tab, setTab] = useState<'rentals' | 'bookings' | 'events'>('rentals');
   const [loading, setLoading] = useState(true);
   const [rentals, setRentals] = useState<RentalItem[]>([]);
   const [events, setEvents] = useState<EventItem[]>([]);
+  const [bookings, setBookings] = useState<AdminRentalBooking[]>([]);
+  const [bookingPage, setBookingPage] = useState(1);
+  const [bookingPages, setBookingPages] = useState(1);
+  const [bookingSaving, setBookingSaving] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState('');
+  const dataRequest = useRef(0);
 
   // Modal form states
   const [editingRental, setEditingRental] = useState<Partial<RentalItem> | null>(null);
@@ -59,22 +52,47 @@ export default function RentalsEventsPage() {
   const [saving, setSaving] = useState(false);
 
   const fetchData = useCallback(async () => {
+    const request = ++dataRequest.current;
     setLoading(true);
+    setLoadError('');
     try {
-      const [rData, eData] = await Promise.all([adminApi.getRentals(), adminApi.getEvents()]);
-      setRentals((rData || []) as unknown as RentalItem[]);
-      setEvents((eData || []) as unknown as EventItem[]);
+      switch (tab) {
+        case 'rentals':
+          setRentals((await adminApi.getRentals()) as unknown as RentalItem[]);
+          break;
+        case 'events':
+          setEvents((await adminApi.getEvents()) as unknown as EventItem[]);
+          break;
+        case 'bookings': {
+          const result = await adminApi.getRentalBookings(bookingPage);
+          setBookings(result.data);
+          setBookingPages(result.meta.totalPages);
+          break;
+        }
+      }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to fetch rentals and events';
-      showToast('error', msg);
+      if (request === dataRequest.current) setLoadError(err instanceof Error ? err.message : 'Unable to load this section.');
     } finally {
-      setLoading(false);
+      if (request === dataRequest.current) setLoading(false);
     }
-  }, [showToast]);
+  }, [bookingPage, tab]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const handleBookingStatus = async (id: string, status: RentalBookingStatus) => {
+    setBookingSaving(id);
+    try {
+      const updated = await adminApi.updateRentalBooking(id, status);
+      setBookings((rows) => rows.map((row) => row.id === id ? updated : row));
+      showToast('success', 'Booking status updated.');
+    } catch (error) {
+      showToast('error', error instanceof Error ? error.message : 'Unable to update booking.');
+    } finally {
+      setBookingSaving(null);
+    }
+  };
 
   const handleSaveRental = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -92,14 +110,26 @@ export default function RentalsEventsPage() {
           .replace(/[^a-z0-9]+/g, '-')
           .replace(/(^-|-$)/g, '');
 
-      const payload = {
-        ...editingRental,
+      const parsed = rentalCatalogItemSchema.safeParse({
+        name: editingRental.name,
         slug,
-        rentalPrice3Days: normalizePriceToPaise(editingRental.rentalPrice3Days),
-        rentalPrice7Days: normalizePriceToPaise(editingRental.rentalPrice7Days),
-        rentalPrice14Days: normalizePriceToPaise(editingRental.rentalPrice14Days),
-        securityDeposit: normalizePriceToPaise(editingRental.securityDeposit),
-      };
+        category: editingRental.category,
+        image: editingRental.image,
+        rentalPrice3Days: editingRental.rentalPrice3Days,
+        rentalPrice7Days: editingRental.rentalPrice7Days,
+        rentalPrice14Days: editingRental.rentalPrice14Days,
+        securityDeposit: editingRental.securityDeposit,
+        condition: editingRental.condition,
+        size: editingRental.size,
+        isAvailable: editingRental.isAvailable,
+        description: editingRental.description,
+      });
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0];
+        showToast('error', issue ? `${issue.path.join(' ')} — ${issue.message}` : 'Check the rental fields.');
+        return;
+      }
+      const payload = parsed.data;
 
       if (rentalId && rentalId !== 'new') {
         const updated = (await adminApi.updateRental(rentalId, payload)) as unknown as RentalItem;
@@ -140,12 +170,14 @@ export default function RentalsEventsPage() {
     setSaving(true);
     try {
       const eventId = editingEvent.id || editingEvent._id;
+      const { title, date, location, description, image, type, capacity, isRegistrationOpen } = editingEvent;
+      const payload = { title, date, location, description, image, type, capacity, isRegistrationOpen };
       if (eventId && eventId !== 'new') {
-        const updated = (await adminApi.updateEvent(eventId, editingEvent)) as unknown as EventItem;
+        const updated = (await adminApi.updateEvent(eventId, payload)) as unknown as EventItem;
         showToast('success', 'Event updated');
         setEvents((prev) => prev.map((ev) => (ev.id === eventId || ev._id === eventId ? updated : ev)));
       } else {
-        const created = (await adminApi.createEvent(editingEvent)) as unknown as EventItem;
+        const created = (await adminApi.createEvent(payload)) as unknown as EventItem;
         showToast('success', 'New community event published');
         setEvents((prev) => [created, ...prev]);
       }
@@ -210,7 +242,7 @@ export default function RentalsEventsPage() {
               <Plus className="size-4" />
               Add Rental Piece
             </button>
-          ) : (
+          ) : tab === 'events' && (
             <button
               onClick={() =>
                 setEditingEvent({
@@ -235,7 +267,7 @@ export default function RentalsEventsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-border gap-2">
+      <div className="flex flex-wrap border-b border-border gap-2">
         <button
           type="button"
           onClick={() => setTab('rentals')}
@@ -247,6 +279,10 @@ export default function RentalsEventsPage() {
         >
           <Sparkles className="size-4" />
           Rentals Rail ({rentals.length})
+        </button>
+        <button type="button" onClick={() => setTab('bookings')}
+          className={`border-b-2 px-3 pb-3 text-xs font-bold sm:text-sm ${tab === 'bookings' ? 'border-primary text-primary' : 'border-transparent text-cocoa/60'}`}>
+          Rental Bookings
         </button>
         <button
           type="button"
@@ -264,9 +300,44 @@ export default function RentalsEventsPage() {
 
       {loading ? (
         <AdminCardSkeleton count={3} />
+      ) : loadError ? (
+        <p role="alert" className="rounded-xl border border-border bg-card p-4 text-sm">{loadError} <button type="button" onClick={fetchData} className="underline">Retry</button></p>
+      ) : tab === 'bookings' ? (
+        <div className="space-y-3">
+          {bookings.length === 0 && <p className="rounded-xl border border-border bg-card p-4 text-sm">No rental bookings found.</p>}
+          {bookings.map((booking) => (
+            <details key={booking.id} className="rounded-xl border border-border bg-card p-4 text-sm">
+              <summary className="cursor-pointer font-semibold">
+                {booking.productName ?? 'Rental booking'} · {booking.customerName} · {booking.status}
+              </summary>
+              <div className="mt-3 space-y-2">
+                <p>{booking.startDate} to {booking.endDate} · {booking.durationDays} days · {booking.size}</p>
+                <p>{booking.customerPhone}{booking.customerEmail && ` · ${booking.customerEmail}`}</p>
+                <p>Rental fee {formatPrice(booking.rentalFeePaise)} · Deposit {formatPrice(booking.securityDepositPaise)} · Total {formatPrice(booking.totalPaise)}</p>
+                <p>Requested {new Date(booking.createdAt).toLocaleString('en-IN')}</p>
+                {booking.notes && <p className="whitespace-pre-wrap">{booking.notes}</p>}
+                <div className="flex flex-wrap gap-2">
+                  {RENTAL_BOOKING_TRANSITIONS[booking.status].map((status) => (
+                    <button key={status} type="button" disabled={bookingSaving !== null}
+                      onClick={() => void handleBookingStatus(booking.id, status)}
+                      className="rounded-lg border border-border bg-background px-3 py-2 text-xs font-semibold">
+                      Mark {status.toLowerCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </details>
+          ))}
+          {bookingPages > 1 && <div className="flex items-center gap-3 text-xs">
+            <button type="button" disabled={bookingPage <= 1} onClick={() => setBookingPage(bookingPage - 1)}>Previous</button>
+            <span>Page {bookingPage} of {bookingPages}</span>
+            <button type="button" disabled={bookingPage >= bookingPages} onClick={() => setBookingPage(bookingPage + 1)}>Next</button>
+          </div>}
+        </div>
       ) : tab === 'rentals' ? (
         /* Rentals List */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {rentals.length === 0 && <p className="rounded-xl border border-border bg-card p-4 text-sm">No rental items found.</p>}
           {rentals.map((item) => (
             <div
               key={item.id || item._id}
@@ -322,13 +393,13 @@ export default function RentalsEventsPage() {
                   <Edit2 className="size-3.5" />
                   Edit
                 </button>
-                <button
+                {isOwner && <button
                   onClick={() => handleDeleteRental(item.id || item._id || '')}
                   className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-md border border-border text-red-600 hover:bg-red-50 transition-colors"
                 >
                   <Trash2 className="size-3.5" />
                   Delete
-                </button>
+                </button>}
               </div>
             </div>
           ))}
@@ -388,13 +459,13 @@ export default function RentalsEventsPage() {
                     <Edit2 className="size-3.5" />
                     Edit
                   </button>
-                  <button
+                  {isOwner && <button
                     onClick={() => handleDeleteEvent(ev.id || ev._id || '')}
                     className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-md border border-border text-red-600 hover:bg-red-50 transition-colors"
                   >
                     <Trash2 className="size-3.5" />
                     Delete
-                  </button>
+                  </button>}
                 </div>
               </div>
             </div>

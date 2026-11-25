@@ -1,6 +1,6 @@
 import rateLimit, { type Store, type Options, type ClientRateLimitInfo } from 'express-rate-limit';
 import type { Request } from 'express';
-import { TooManyRequestsError } from '../errors/AppError.js';
+import { ServiceUnavailableError, TooManyRequestsError } from '../errors/AppError.js';
 import { getSupabaseAdminClient, isSupabaseConfigured } from '../services/supabase.service.js';
 import { env } from '../config/env.js';
 
@@ -19,32 +19,39 @@ export class DistributedRateLimitStore implements Store {
   private windowMs = 60000;
   private memory = new Map<string, MemoryRecord>();
 
+  constructor(private readonly requireSharedStore = false) {}
+
   init(options: Options): void {
     this.windowMs = options.windowMs;
   }
 
   async increment(key: string): Promise<ClientRateLimitInfo> {
+    const requiresDatabase = this.requireSharedStore && env.NODE_ENV === 'production';
     // 1. Try Supabase Postgres distributed storage if configured
     if (isSupabaseConfigured()) {
       try {
         const client = getSupabaseAdminClient();
-        const { data, error } = await client.rpc('increment_rate_limit', {
+        const { data, error } = await client.rpc(requiresDatabase ? 'stage4b_increment_order_reauth_limit' : 'increment_rate_limit', {
           p_key: key,
           p_window_ms: this.windowMs,
         });
 
         if (!error && Array.isArray(data) && data.length > 0) {
           const row = data[0] as { total_hits: number; reset_at: string };
-          return {
-            totalHits: Number(row.total_hits),
-            resetTime: new Date(row.reset_at),
-          };
+          const totalHits = Number(row.total_hits);
+          const resetTime = new Date(row.reset_at);
+          if (Number.isSafeInteger(totalHits) && totalHits > 0 && Number.isFinite(resetTime.getTime())) {
+            return { totalHits, resetTime };
+          }
         }
       } catch {
         // Fall through to memory store gracefully on network/transient failure
       }
     }
 
+    if (requiresDatabase) {
+      throw new ServiceUnavailableError('Order authorization is temporarily unavailable.', 'RATE_LIMIT_STORAGE_UNAVAILABLE');
+    }
     // 2. Try Upstash Redis REST if configured
     if (env.UPSTASH_REDIS_REST_URL && env.UPSTASH_REDIS_REST_TOKEN) {
       try {
@@ -149,13 +156,14 @@ export function createRateLimiter(
   max: number,
   message: string,
   keyGenerator?: (req: Request) => string,
+  requireSharedStore = false,
 ) {
   return rateLimit({
     windowMs,
     max,
     standardHeaders: true,
     legacyHeaders: false,
-    store: new DistributedRateLimitStore(),
+    store: new DistributedRateLimitStore(requireSharedStore),
     keyGenerator: keyGenerator || ((req: Request) => req.ip || req.socket.remoteAddress || 'unknown'),
     handler(_req, _res, next) {
       next(new TooManyRequestsError(message));
@@ -209,6 +217,14 @@ export const adminAuthRateLimiter = createRateLimiter(
   process.env.NODE_ENV === 'production' ? 5 : 100,
   'Too many admin login attempts, please wait 15 minutes',
   adminAuthKeyGenerator,
+);
+
+export const adminOrderReauthenticationLimiter = createRateLimiter(
+  FIFTEEN_MINUTES_MS,
+  5,
+  'Too many order authorization attempts. Try again in 15 minutes.',
+  (req) => `admin_order_reauth:${req.adminUser?.userId}`,
+  true,
 );
 
 /**

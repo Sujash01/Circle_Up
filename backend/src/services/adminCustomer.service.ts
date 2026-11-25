@@ -56,11 +56,8 @@ const UNAVAILABLE = () => new ServiceUnavailableError('Customer CRM database is 
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
 const userKey = (id: string) => `user:${id}`;
 const guestKey = (email: string) => `guest:${normalizeEmail(email)}`;
-const guestId = (email: string) => `guest_${crypto.createHash('sha256').update(normalizeEmail(email)).digest('hex').slice(0, 32)}`;
-
-function orderIdentity(order: OrderRow): string {
-  return order.customer_id ? userKey(order.customer_id) : guestKey(order.customer_email);
-}
+const guestId = (email: string) => `guest_${crypto.createHash('md5').update(normalizeEmail(email)).digest('hex')}`;
+const legacyGuestId = (email: string) => `guest_${crypto.createHash('sha256').update(normalizeEmail(email)).digest('hex').slice(0, 32)}`;
 
 function parseAddress(value: unknown): Partial<IShippingAddress> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
@@ -123,7 +120,7 @@ function mapCustomer(row: CustomerRow | undefined, summary: OrderSummary, fallba
       co2AvoidedKg: Number(((row?.co2_avoided_grams ?? 0) / 1000).toFixed(1)),
       waterSavedLitres: row?.water_saved_liters ?? 0,
     },
-    savedAddresses: Array.isArray(row?.saved_addresses) ? row!.saved_addresses : [],
+    savedAddresses: customer.savedAddresses ?? [],
     marketingPreferences: {
       email: row?.marketing_opt_in_email ?? false,
       whatsapp: row?.marketing_opt_in_whatsapp ?? false,
@@ -156,11 +153,21 @@ async function fetchAllRows<T>(table: 'customers' | 'orders', select: string): P
 async function loadData() {
   const [customers, orders] = await Promise.all([
     fetchAllRows<CustomerRow>('customers', 'id,user_id,full_name,email,phone,tier,saved_addresses,staff_notes,marketing_opt_in_email,marketing_opt_in_whatsapp,garments_saved,co2_avoided_grams,water_saved_liters,created_at'),
-    fetchAllRows<OrderRow>('orders', 'id,order_number,customer_id,customer_name,customer_email,customer_phone,total_amount,subtotal,discount_amount,shipping_amount,status,payment_status,payment_method,promo_code,notes,shipping_address,created_at,updated_at'),
+    fetchAllRows<OrderRow>('orders', 'id,order_number,customer_id,customer_name,customer_email,customer_phone,total_amount,subtotal,discount_amount,shipping_amount,status,payment_status,payment_method,shipping_address,created_at,updated_at'),
   ]);
+  const registered = new Map<string, CustomerRow>();
+  const byEmail = new Map<string, CustomerRow>();
+  for (const customer of [...customers].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))) {
+    for (const id of [customer.id, customer.user_id]) {
+      if (id && !registered.has(id)) registered.set(id, customer);
+    }
+    const email = normalizeEmail(customer.email);
+    if (!byEmail.has(email)) byEmail.set(email, customer);
+  }
   const summaries = new Map<string, OrderSummary>();
   for (const order of orders) {
-    const key = orderIdentity(order);
+    const profile = order.customer_id ? registered.get(order.customer_id) : byEmail.get(normalizeEmail(order.customer_email));
+    const key = profile ? profile.id : order.customer_id ? userKey(order.customer_id) : guestKey(order.customer_email);
     const summary = summaries.get(key) || { count: 0, spend: 0, rows: [] };
     const isPaid = order.payment_status === 'PAID';
     const isCancelledOrRefunded =
@@ -258,7 +265,7 @@ export const adminCustomerService = {
     const { customers, summaries } = await loadData();
     const registeredIdentities = new Set<string>();
     const mapped = customers.map((row) => {
-      const key = row.user_id ? userKey(row.user_id) : guestKey(row.email);
+      const key = row.id;
       registeredIdentities.add(key);
       return mapCustomer(row, summaries.get(key) || { count: 0, spend: 0, rows: [] });
     });
@@ -290,13 +297,14 @@ export const adminCustomerService = {
     let summary: OrderSummary | undefined;
     let customerData: ReturnType<typeof mapCustomer>;
     if (row) {
-      const key = row.user_id ? userKey(row.user_id) : guestKey(row.email);
+      const key = row.id;
       summary = summaries.get(key) || { count: 0, spend: 0, rows: [] };
       customerData = mapCustomer(row, summary);
     } else {
       const orderEntry = [...summaries.entries()].find(([key]) =>
         (key.startsWith('user:') && `auth_${key.slice('user:'.length)}` === id) ||
-        (key.startsWith('guest:') && (guestId(key.slice('guest:'.length)) === id || key.slice('guest:'.length) === normalizedLookup)),
+        (key.startsWith('guest:') && (guestId(key.slice('guest:'.length)) === id ||
+          legacyGuestId(key.slice('guest:'.length)) === id || key.slice('guest:'.length) === normalizedLookup)),
       );
       if (!orderEntry) throw new NotFoundError('Customer not found.', 'CUSTOMER_NOT_FOUND');
       const [key, foundSummary] = orderEntry;
@@ -309,14 +317,18 @@ export const adminCustomerService = {
     }
 
     const client = getSupabaseServiceClient();
-    let detailRows: { data: unknown[] | null; error: unknown | null };
+    const rows: OrderRow[] = [];
     try {
-      detailRows = summary.rows.length
-        ? await client.from('orders').select('*, order_items(*)').in('id', summary.rows.map((order) => order.id)).order('created_at', { ascending: false }) as unknown as { data: unknown[] | null; error: unknown | null }
-        : { data: [], error: null };
+      for (let offset = 0; offset < summary.rows.length; offset += 100) {
+        const ids = summary.rows.slice(offset, offset + 100).map((order) => order.id);
+        const result = await client.from('orders')
+          .select('id,order_number,customer_id,customer_name,customer_email,customer_phone,total_amount,subtotal,discount_amount,shipping_amount,status,payment_status,payment_method,shipping_address,created_at,updated_at,order_items(serial_number,name,price,quantity,size,image_url)')
+          .in('id', ids).order('created_at', { ascending: false });
+        if (result.error) throw UNAVAILABLE();
+        rows.push(...(result.data as unknown as OrderRow[]));
+      }
     } catch { throw UNAVAILABLE(); }
-    if (detailRows.error) throw UNAVAILABLE();
-    const orderRows = ((detailRows.data || []) as OrderRow[]).map(mapOrder);
+    const orderRows = rows.sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id)).map(mapOrder);
     return {
       customer: customerData.customer,
       orders: orderRows,

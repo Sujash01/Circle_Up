@@ -4,12 +4,20 @@ import { productService } from '@/services/productService';
 import { clearStorefrontCache } from '@/services/storefrontApi';
 import type {
   AdminUser,
+  AdminInquiry,
+  AdminInquiryUpdate,
+  AdminCancelOrderInput,
+  AdminCancellationOutcome,
+  AdminRentalBooking,
+  RentalBookingStatus,
+  PaginationMeta,
   Coupon,
   Customer,
   Order,
   Product,
   ProductListQuery,
   SiteSettings,
+  SiteSettingsUpdate,
 } from '@circleup/shared';
 
 const CSRF_TOKEN_KEY = 'circleup_admin_csrf_token';
@@ -279,6 +287,15 @@ export const adminApi = {
   },
 
   // === ORDERS ===
+  async cancelOrder(id: string, input: AdminCancelOrderInput) {
+    try {
+      const res = await adminClient.post<{ data: {
+        order: Order; outcome: AdminCancellationOutcome; refundRequired: boolean;
+      } }>(`/orders/${id}/cancel`, input);
+      clearStorefrontCache();
+      return res.data.data;
+    } catch (err) { throw normalizeApiError(err); }
+  },
   async getOrders(params?: { page?: number; limit?: number; status?: string; search?: string }) {
     try {
       const res = await adminClient.get<{
@@ -300,12 +317,13 @@ export const adminApi = {
     }
   },
 
-  async markOrderPaymentReceived(id: string, options?: { utrNumber?: string; paymentProofUrl?: string }) {
+  async markOrderPaymentReceived(id: string, options: { utrNumber?: string; paymentProofUrl?: string; confirmedAmountPaise: number }) {
     try {
       const res = await adminClient.put<{ data: Order }>(`/orders/${id}/payment-status`, {
         paymentStatus: 'PAID',
         utrNumber: options?.utrNumber,
         paymentProofUrl: options?.paymentProofUrl,
+        confirmedAmountPaise: options.confirmedAmountPaise,
       });
       return res.data.data;
     } catch (err) {
@@ -341,9 +359,9 @@ export const adminApi = {
   },
 
   // === INQUIRIES (CONTACT INBOX) ===
-  async getInquiries(params?: { status?: string; search?: string; page?: number; limit?: number }) {
+  async getInquiries(params?: { status?: AdminInquiry['status']; search?: string; page?: number; limit?: number }) {
     try {
-      const res = await adminClient.get<{ data: unknown[]; meta: unknown }>('/inquiries', { params });
+      const res = await adminClient.get<{ data: AdminInquiry[]; meta: PaginationMeta }>('/inquiries', { params });
       return res.data;
     } catch (err) {
       throw normalizeApiError(err);
@@ -352,16 +370,16 @@ export const adminApi = {
 
   async getInquiry(id: string) {
     try {
-      const res = await adminClient.get<{ data: unknown }>(`/inquiries/${id}`);
+      const res = await adminClient.get<{ data: AdminInquiry }>(`/inquiries/${id}`);
       return res.data.data;
     } catch (err) {
       throw normalizeApiError(err);
     }
   },
 
-  async updateInquiry(id: string, patch: { status?: string; notes?: string; reply?: string }) {
+  async updateInquiry(id: string, patch: AdminInquiryUpdate) {
     try {
-      const res = await adminClient.patch<{ data: unknown }>(`/inquiries/${id}`, patch);
+      const res = await adminClient.patch<{ data: AdminInquiry }>(`/inquiries/${id}`, patch);
       return res.data.data;
     } catch (err) {
       throw normalizeApiError(err);
@@ -417,7 +435,7 @@ export const adminApi = {
     }
   },
 
-  async updateSettings(data: Partial<SiteSettings> & Record<string, unknown>) {
+  async updateSettings(data: SiteSettingsUpdate) {
     try {
       const res = await adminClient.put<{ data: SiteSettings }>('/settings', data);
       clearStorefrontCache();
@@ -466,6 +484,20 @@ export const adminApi = {
   },
 
   // === RENTALS ===
+  async getRentalBookings(page: number) {
+    try {
+      const res = await adminClient.get<{ data: AdminRentalBooking[]; meta: PaginationMeta }>('/rental-bookings', { params: { page } });
+      return res.data;
+    } catch (err) { throw normalizeApiError(err); }
+  },
+
+  async updateRentalBooking(id: string, status: RentalBookingStatus) {
+    try {
+      const res = await adminClient.patch<{ data: AdminRentalBooking }>(`/rental-bookings/${id}`, { status });
+      clearStorefrontCache();
+      return res.data.data;
+    } catch (err) { throw normalizeApiError(err); }
+  },
   async getRentals() {
     try {
       const res = await adminClient.get<{ data: Record<string, unknown>[] }>('/rentals');
@@ -478,6 +510,7 @@ export const adminApi = {
   async createRental(data: Record<string, unknown>) {
     try {
       const res = await adminClient.post<{ data: Record<string, unknown> }>('/rentals', data);
+      clearStorefrontCache();
       return res.data.data;
     } catch (err) {
       throw normalizeApiError(err);
@@ -487,6 +520,7 @@ export const adminApi = {
   async updateRental(id: string, data: Record<string, unknown>) {
     try {
       const res = await adminClient.put<{ data: Record<string, unknown> }>(`/rentals/${id}`, data);
+      clearStorefrontCache();
       return res.data.data;
     } catch (err) {
       throw normalizeApiError(err);
@@ -496,6 +530,7 @@ export const adminApi = {
   async deleteRental(id: string) {
     try {
       const res = await adminClient.delete(`/rentals/${id}`);
+      clearStorefrontCache();
       return res.data;
     } catch (err) {
       throw normalizeApiError(err);

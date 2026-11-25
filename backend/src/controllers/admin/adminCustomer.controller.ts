@@ -4,7 +4,7 @@ import { sendSuccess } from '../../utils/apiResponse.js';
 import { z } from 'zod';
 
 const listSchema = z.object({
-  page: z.coerce.number().int().positive().optional(),
+  page: z.coerce.number().int().positive().max(1_000_000).optional(),
   limit: z.coerce.number().int().positive().max(100).optional(),
   search: z.string().trim().max(200).optional(),
   tier: z.enum(['VIP', 'REGULAR', 'NEW', 'COMMUNITY', 'all']).optional(),

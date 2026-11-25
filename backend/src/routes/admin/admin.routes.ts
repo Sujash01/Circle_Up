@@ -12,7 +12,7 @@ import { adminCustomerController } from '../../controllers/admin/adminCustomer.c
 import { adminOverviewController } from '../../controllers/admin/adminOverview.controller.js';
 import { adminInquiryController } from '../../controllers/admin/adminInquiry.controller.js';
 import { requireAdminAuth, verifyAdminCsrf } from '../../middleware/adminAuth.js';
-import { adminAuthRateLimiter } from '../../middleware/rateLimiter.js';
+import { adminAuthRateLimiter, adminOrderReauthenticationLimiter } from '../../middleware/rateLimiter.js';
 import { noStoreCache } from '../../middleware/cacheControl.js';
 
 export const adminRouter = Router();
@@ -77,6 +77,8 @@ adminRouter.delete(
 // === ORDERS (LIST & STATUS TRANSITIONS) ===
 adminRouter.get('/orders/reconciliation', requireAdminAuth('owner'), adminOrderController.getReconciliation);
 adminRouter.get('/orders', requireAdminAuth(), adminOrderController.list);
+adminRouter.post('/orders/:id/cancel', requireAdminAuth('owner'), verifyAdminCsrf,
+  adminOrderReauthenticationLimiter, adminOrderController.cancel);
 adminRouter.put(
   '/orders/:id/status',
   requireAdminAuth(),
@@ -105,6 +107,7 @@ adminRouter.post(
   '/orders/:id/reservation/release',
   requireAdminAuth('owner'),
   verifyAdminCsrf,
+  adminOrderReauthenticationLimiter,
   adminOrderController.authorizeReservationRelease,
 );
 adminRouter.post(
@@ -156,6 +159,8 @@ adminRouter.delete(
 );
 
 // === RENTALS ===
+adminRouter.get('/rental-bookings', requireAdminAuth(), adminRentalController.listBookings);
+adminRouter.patch('/rental-bookings/:id', requireAdminAuth(), verifyAdminCsrf, adminRentalController.updateBooking);
 adminRouter.get('/rentals', requireAdminAuth(), adminRentalController.list);
 adminRouter.post('/rentals', requireAdminAuth(), verifyAdminCsrf, adminRentalController.create);
 adminRouter.put('/rentals/:id', requireAdminAuth(), verifyAdminCsrf, adminRentalController.update);

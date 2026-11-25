@@ -98,6 +98,19 @@ export const adminAuthService = {
     try { return await argon2.verify(hash, plain); } catch { return false; }
   },
 
+  async reauthenticateOwner(session: AdminSessionData, password: string): Promise<void> {
+    const client = await requiredClient();
+    const { data, error } = await databaseCall(() => client.from('admin_users')
+      .select('role,is_active,password_hash').eq('id', session.userId).maybeSingle());
+    if (error) throw dbUnavailable();
+    if (session.role !== 'owner' || data?.role !== 'owner' || !data.is_active) {
+      throw new ForbiddenError('Owner privilege required for this action.', 'FORBIDDEN_ROLE');
+    }
+    if (!(await this.verifyPassword(data.password_hash, password))) {
+      throw new UnauthorizedError('Administrator password is incorrect.', 'INVALID_PASSWORD');
+    }
+  },
+
   async login(email: string, plainPassword: string) {
     const client = await requiredClient();
     const cleanEmail = email.trim().toLowerCase();

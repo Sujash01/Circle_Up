@@ -20,6 +20,9 @@ export interface EventRecord {
 const slugify = (value: string) => value.trim().toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
 function toTimestamp(label: string): string {
+  if (/^\d{4}-\d\d-\d\dT/.test(label) && Number.isFinite(Date.parse(label))) {
+    return new Date(label).toISOString();
+  }
   const match = label.match(/(?:^|,\s*)([A-Za-z]+\s+\d{1,2},\s+\d{4})(?:\s*[·•-]\s*(\d{1,2}:\d{2}\s*[AP]M))?/i);
   if (!match) return '';
   const dateTime = `${match[1]} ${match[2] || '12:00 AM'}`;

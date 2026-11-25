@@ -2,7 +2,7 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { EmptyState } from '@/components/storefront/EmptyState';
 import { cn } from '@/lib/utils';
-import { formatPrice, normalizePriceToPaise } from '@circleup/shared';
+import { formatPrice, moneyPaiseSchema } from '@circleup/shared';
 import { rentalService } from '@/services/rentalService';
 import { storefrontApi } from '@/services/storefrontApi';
 import { useStorefrontList } from '@/services/useStorefrontList';
@@ -11,14 +11,11 @@ import type { RentalProduct, SimulatedRentalRequest } from '@/types/storefront';
 
 function mapApiRentalToProduct(raw: unknown): RentalProduct {
   const item = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
-  const dailyRatePaise = item.dailyRate
-    ? normalizePriceToPaise(item.dailyRate)
-    : item.rentalPrice3Days
-      ? Math.round(normalizePriceToPaise(item.rentalPrice3Days) / 3)
-      : 40000;
-  const securityDepositPaise = item.securityDeposit != null
-    ? normalizePriceToPaise(item.securityDeposit)
-    : 150000;
+  const threeDays = moneyPaiseSchema.safeParse(item.rentalPrice3Days);
+  const sevenDays = moneyPaiseSchema.safeParse(item.rentalPrice7Days);
+  const fourteenDays = moneyPaiseSchema.safeParse(item.rentalPrice14Days);
+  const dailyRatePaise = threeDays.success ? Math.round(threeDays.data / 3) : moneyPaiseSchema.catch(40000).parse(item.dailyRate);
+  const securityDepositPaise = moneyPaiseSchema.catch(150000).parse(item.securityDeposit);
 
   return {
     id: String(item.id || item.slug || 'rental-item'),
@@ -30,6 +27,11 @@ function mapApiRentalToProduct(raw: unknown): RentalProduct {
     condition: (item.condition as RentalProduct['condition']) || 'Mint',
     sizes: Array.isArray(item.sizes) && item.sizes.length > 0 ? (item.sizes as string[]) : (item.size ? [String(item.size)] : ['One Size']),
     dailyRate: dailyRatePaise,
+    durationRates: {
+      3: threeDays.data,
+      7: sevenDays.data,
+      14: fourteenDays.data,
+    },
     securityDeposit: securityDepositPaise,
     minDays: typeof item.minDays === 'number' ? item.minDays : 3,
     maxDays: typeof item.maxDays === 'number' ? item.maxDays : 14,
@@ -65,14 +67,15 @@ export function RentalsPage() {
   const [customerPhone, setCustomerPhone] = useState('');
   const [notes, setNotes] = useState('');
   const [formError, setFormError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [savedRequests, setSavedRequests] = useState<SimulatedRentalRequest[]>(() =>
     rentalService.loadSubmittedRequests(),
   );
   const [latestRequest, setLatestRequest] = useState<SimulatedRentalRequest | null>(null);
 
   const blockedSet = useMemo(
-    () => (selectedProduct ? rentalService.getBlockedDatesForProduct(selectedProduct, savedRequests) : new Set<string>()),
-    [selectedProduct, savedRequests],
+    () => new Set(selectedProduct?.unavailableDates ?? []),
+    [selectedProduct],
   );
 
   const quote = useMemo(
@@ -129,7 +132,8 @@ export function RentalsPage() {
       return;
     }
 
-    const res = await rentalService.submitSimulatedRequest({
+    setSubmitting(true);
+    const res = await rentalService.submitBookingRequest({
       product: selectedProduct,
       size,
       startDate,
@@ -138,6 +142,7 @@ export function RentalsPage() {
       customerPhone,
       notes,
     });
+    setSubmitting(false);
 
     if (res.error || !res.request) {
       setFormError(res.error ?? 'Could not evaluate rental dates.');
@@ -405,7 +410,7 @@ export function RentalsPage() {
 
             <button
               type="submit"
-              disabled={!quote.valid}
+              disabled={!quote.valid || submitting}
               className="w-full bg-primary py-3.5 text-xs font-semibold uppercase tracking-widest text-primary-foreground transition-colors hover:bg-forest-deep disabled:opacity-45"
             >
               Submit Rental Request

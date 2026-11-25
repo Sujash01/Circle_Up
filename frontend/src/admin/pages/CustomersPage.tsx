@@ -51,6 +51,9 @@ export function CustomersPage() {
   const { showToast } = useAdminToast();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerTotal, setCustomerTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [listError, setListError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [tierFilter, setTierFilter] = useState('all');
@@ -70,20 +73,21 @@ export function CustomersPage() {
   const loadCustomers = useCallback(async () => {
     try {
       setIsLoading(true);
+      setListError('');
       const res = await adminApi.getCustomers({
+        page,
         search: search.trim() || undefined,
         tier: tierFilter !== 'all' ? tierFilter : undefined,
       });
       setCustomers(res.customers);
       setCustomerTotal(res.meta.total);
-    } catch {
-      setCustomers([]);
-      setCustomerTotal(0);
-      showToast('Failed to load customers list.', 'error');
+      setTotalPages(res.meta.totalPages);
+    } catch (error) {
+      setListError(error instanceof Error ? error.message : 'Failed to load customers.');
     } finally {
       setIsLoading(false);
     }
-  }, [search, tierFilter, showToast]);
+  }, [page, search, tierFilter]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -92,13 +96,13 @@ export function CustomersPage() {
     return () => clearTimeout(timer);
   }, [loadCustomers]);
 
-  const handleOpenDetail = async (customer: Customer) => {
-    setSelectedCustomerId(customer.id);
+  const handleOpenDetail = async (id: string) => {
+    setSelectedCustomerId(id);
     setIsDetailLoading(true);
     setSelectedCustomerData(null);
     setDetailError('');
     try {
-      const data = await adminApi.getCustomerById(customer.id);
+      const data = await adminApi.getCustomerById(id);
       setSelectedCustomerData(data);
     } catch {
       setDetailError('Failed to load customer details. Please try again.');
@@ -147,11 +151,11 @@ export function CustomersPage() {
           <p className="mt-1 font-serif text-2xl font-bold text-[#1e2a1c]">{customerTotal}</p>
         </div>
         <div className="rounded-2xl border border-[#1e2a1c]/15 bg-card/90 p-4 shadow-xs">
-          <p className="text-[0.68rem] uppercase font-bold tracking-wider text-[#8b5a3e]">VIP Members</p>
+          <p className="text-[0.68rem] uppercase font-bold tracking-wider text-[#8b5a3e]">VIP members on this page</p>
           <p className="mt-1 font-serif text-2xl font-bold text-amber-900">{vipCount}</p>
         </div>
         <div className="rounded-2xl border border-[#1e2a1c]/15 bg-card/90 p-4 shadow-xs">
-          <p className="text-[0.68rem] uppercase font-bold tracking-wider text-[#8b5a3e]">Customer Total Value</p>
+          <p className="text-[0.68rem] uppercase font-bold tracking-wider text-[#8b5a3e]">Customer spend on this page</p>
           <p className="mt-1 font-serif text-2xl font-bold text-crimson">{formatPrice(totalSpendAll)}</p>
         </div>
         <div className="rounded-2xl border border-[#1e2a1c]/15 bg-card/90 p-4 shadow-xs">
@@ -169,7 +173,7 @@ export function CustomersPage() {
           <input
             type="search"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             placeholder="Search customers by name, email, phone, city..."
             className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-[#1e2a1c]/20 bg-background focus:outline-none focus:ring-1 focus:ring-[#1e2a1c]"
           />
@@ -182,7 +186,7 @@ export function CustomersPage() {
           <select
             id="tier-filter"
             value={tierFilter}
-            onChange={(e) => setTierFilter(e.target.value)}
+            onChange={(e) => { setTierFilter(e.target.value); setPage(1); }}
             className="text-xs rounded-xl border border-[#1e2a1c]/20 bg-background px-3 py-2 focus:outline-none focus:ring-1 focus:ring-[#1e2a1c]"
           >
             <option value="all">All Tiers</option>
@@ -197,6 +201,8 @@ export function CustomersPage() {
       {/* Customers Table */}
       {isLoading ? (
         <AdminTableSkeleton />
+      ) : listError ? (
+        <p role="alert" className="rounded-xl border border-border bg-card p-4 text-sm">{listError} <button type="button" onClick={loadCustomers} className="underline">Retry</button></p>
       ) : customers.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-[#1e2a1c]/20 p-12 text-center bg-card/40">
           <Users className="size-10 text-[#1e2a1c]/30 mx-auto mb-3" />
@@ -233,7 +239,7 @@ export function CustomersPage() {
                   <tr
                     key={c.id}
                     className="hover:bg-[#1e2a1c]/[0.02] transition-colors cursor-pointer group"
-                    onClick={() => handleOpenDetail(c)}
+                    onClick={() => handleOpenDetail(c.id)}
                   >
                     <td className="py-3.5 px-4">
                       <div className="flex items-center gap-3">
@@ -280,7 +286,7 @@ export function CustomersPage() {
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleOpenDetail(c);
+                          handleOpenDetail(c.id);
                         }}
                         className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-[#1e2a1c]/20 hover:border-[#1e2a1c] text-[#1e2a1c] font-semibold text-xs transition-colors"
                       >
@@ -297,6 +303,11 @@ export function CustomersPage() {
       )}
 
       {/* Customer Detail Drawer / Modal */}
+      {!listError && totalPages > 1 && <div className="flex items-center gap-3 text-xs">
+        <button type="button" disabled={isLoading || page <= 1} onClick={() => setPage(page - 1)}>Previous</button>
+        <span>Page {page} of {totalPages}</span>
+        <button type="button" disabled={isLoading || page >= totalPages} onClick={() => setPage(page + 1)}>Next</button>
+      </div>}
       {selectedCustomerId && (
         <div
           role="dialog"
@@ -314,7 +325,9 @@ export function CustomersPage() {
                 <p className="text-xs font-semibold text-[#1e2a1c]">Loading customer profile...</p>
               </div>
             ) : detailError ? (
-              <div className="py-12 text-center text-xs text-red-800">{detailError}</div>
+              <div role="alert" className="py-12 text-center text-xs text-destructive">
+                {detailError} <button type="button" onClick={() => void handleOpenDetail(selectedCustomerId)} className="underline">Retry</button>
+              </div>
             ) : selectedCustomerData ? (
               <>
                 <div className="flex items-start justify-between border-b border-[#1e2a1c]/10 pb-4">

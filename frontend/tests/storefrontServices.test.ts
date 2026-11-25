@@ -163,7 +163,7 @@ describe('CircleUp Storefront Services & LocalStorage Persistence', () => {
     expect(ids2).toEqual([]);
   });
 
-  it('validates rental date conflicts, duration limits, deposits, and local request persistence', () => {
+  it('validates rental availability and only stores requests confirmed by the server', async () => {
     const rental = rentalService.getAllRentalProducts()[0]!; // minDays: 2, unavailable includes 2026-11-18..20
 
     // Overlapping blocked date fails
@@ -178,19 +178,31 @@ describe('CircleUp Storefront Services & LocalStorage Persistence', () => {
     expect(valid.estimatedRentalFee).toBe(3 * rental.dailyRate);
     expect(valid.estimatedTotal).toBe(3 * rental.dailyRate + rental.securityDeposit);
 
-    // Submitting simulated request blocks those dates locally for subsequent attempts
-    const saved = rentalService.submitSimulatedRequest({
+    const payload = {
       product: rental,
       size: 'M',
       startDate: '2027-01-10',
       endDate: '2027-01-12',
       customerName: 'Aanya',
       customerPhone: '+919820112233',
+    };
+    const submit = vi.spyOn(storefrontApi, 'submitRentalRequest').mockRejectedValueOnce(new Error('Booking unavailable'));
+    expect(await rentalService.submitBookingRequest(payload)).toEqual({ error: 'Booking unavailable' });
+    expect(rentalService.loadSubmittedRequests()).toHaveLength(0);
+
+    submit.mockResolvedValueOnce({
+      id: 'persisted-booking', rentalProductId: rental.id, rentalProductName: rental.name,
+      size: 'M', startDate: payload.startDate, endDate: payload.endDate, durationDays: 3,
+      estimatedRentalFee: valid.estimatedRentalFee, securityDeposit: valid.securityDeposit,
+      estimatedTotal: valid.estimatedTotal, customerName: payload.customerName,
+      customerPhone: payload.customerPhone, createdAt: new Date().toISOString(),
     });
-    expect(saved.request?.id).toMatch(/^SIM-RNT-/);
+    expect((await rentalService.submitBookingRequest(payload)).request?.id).toBe('persisted-booking');
+    expect(rentalService.loadSubmittedRequests()).toHaveLength(1);
 
     const recheck = rentalService.evaluateQuote(rental, '2027-01-11', '2027-01-13');
-    expect(recheck.valid).toBe(false);
+    expect(recheck.valid).toBe(true);
+    submit.mockRestore();
   });
 
   it('persists reviews and #ThriftCrew previews, and stores event registration only after API success', async () => {

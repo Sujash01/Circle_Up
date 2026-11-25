@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Search,
   Filter,
@@ -17,10 +17,11 @@ import {
 } from 'lucide-react';
 import { adminApi } from '../services/adminApi';
 import { useAdminToast } from '../context/AdminToastContext';
+import { useAdminAuth } from '../context/AdminAuthContext';
 import { AdminTableSkeleton } from '../components/AdminSkeleton';
 import { PackingSlipModal } from '../components/PackingSlipModal';
 import type { Order, OrderStatus } from '@circleup/shared';
-import { formatPrice, ORDER_STATUS_TRANSITIONS } from '@circleup/shared';
+import { adminCancelOrderSchema, formatPrice, ORDER_STATUS_TRANSITIONS } from '@circleup/shared';
 
 const STATUS_CONFIG: Record<
   OrderStatus,
@@ -92,6 +93,7 @@ const ALLOWED_TRANSITIONS = ORDER_STATUS_TRANSITIONS;
 
 export default function OrdersPage() {
   const { showToast } = useAdminToast();
+  const { isOwner } = useAdminAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -102,7 +104,25 @@ export default function OrdersPage() {
   const [verifyPaymentOrder, setVerifyPaymentOrder] = useState<Order | null>(null);
   const [utrInput, setUtrInput] = useState('');
   const [paymentProofInput, setPaymentProofInput] = useState('');
+  const [paymentAmountInput, setPaymentAmountInput] = useState('');
   const [verifyingPayment, setVerifyingPayment] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState('');
+  const cancelDialog = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = cancelDialog.current;
+    if (cancelOpen && dialog && !dialog.open) dialog.showModal();
+  }, [cancelOpen]);
+
+  const cancellationAvailable = selectedOrder && [
+    'PENDING', 'CONFIRMED', 'PACKED', 'SHIPPED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'RETURN_REQUESTED',
+  ].includes(selectedOrder.status);
+  const requiresReturnReview = selectedOrder && ['SHIPPED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'RETURN_REQUESTED'].includes(selectedOrder.status);
+  const requiresPaymentReview = selectedOrder && ['RAZORPAY', 'ONLINE_UPI'].includes(selectedOrder.paymentMethod);
+  const transitions = selectedOrder ? (ALLOWED_TRANSITIONS[selectedOrder.status] || [])
+    .filter((status) => !['CANCELLED', 'RETURNED', 'REFUNDED'].includes(status)) : [];
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -150,11 +170,17 @@ export default function OrdersPage() {
   const handleConfirmPaymentVerification = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!verifyPaymentOrder) return;
+    const amount = Number(paymentAmountInput);
+    if (!Number.isSafeInteger(amount) || amount <= 0 || amount !== verifyPaymentOrder.totalAmount) {
+      showToast('error', 'Enter the received amount in paise. It must match the order total.');
+      return;
+    }
     setVerifyingPayment(true);
     try {
       const updated = await adminApi.markOrderPaymentReceived(verifyPaymentOrder.id || '', {
         utrNumber: utrInput.trim() || undefined,
         paymentProofUrl: paymentProofInput.trim() || undefined,
+        confirmedAmountPaise: amount,
       });
       showToast('success', `Payment verified and recorded for ${updated.orderNumber}`);
       setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
@@ -166,6 +192,42 @@ export default function OrdersPage() {
       showToast('error', err instanceof Error ? err.message : 'Failed to record payment verification.');
     } finally {
       setVerifyingPayment(false);
+    }
+  };
+
+  const handleCancel = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedOrder || cancelling) return;
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const input = adminCancelOrderSchema.safeParse({
+      reason: formData.get('reason'), password: formData.get('password'),
+    });
+    if (!input.success) {
+      setCancelError(input.error.issues[0]?.message || 'Check the cancellation fields.');
+      return;
+    }
+    setCancelError('');
+    setCancelling(true);
+    const passwordField = form.elements.namedItem('password') as HTMLInputElement;
+    passwordField.value = '';
+    try {
+      const result = await adminApi.cancelOrder(selectedOrder.id || selectedOrder.orderNumber, input.data);
+      setSelectedOrder(result.order);
+      cancelDialog.current?.close();
+      setCancelOpen(false);
+      const message = {
+        CANCELLED: result.refundRequired ? 'This order was already cancelled. Review the payment separately.' : 'This order was already cancelled.',
+        RETURN_REVIEW: 'Return review recorded in Activity Log. Arrange the return before restocking or refunding.',
+        PAYMENT_REVIEW: 'Payment review recorded in Activity Log. Reconcile the payment before releasing stock.',
+        INVENTORY_REVIEW: 'Inventory review recorded in Activity Log. The order and stock await reconciliation.',
+      }[result.outcome];
+      showToast('success', message);
+      void fetchOrders();
+    } catch (error) {
+      setCancelError(error instanceof Error ? error.message : 'Order cancellation could not be recorded.');
+    } finally {
+      setCancelling(false);
     }
   };
 
@@ -202,7 +264,7 @@ export default function OrdersPage() {
 
         <div className="flex items-center gap-2 overflow-x-auto">
           <Filter className="size-4 text-cocoa/50 shrink-0" />
-          {['ALL', 'PENDING', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'CANCELLED'].map((st) => (
+          {['ALL', ...Object.keys(STATUS_CONFIG)].map((st) => (
             <button
               key={st}
               onClick={() => setStatusFilter(st)}
@@ -346,30 +408,34 @@ export default function OrdersPage() {
                 </span>
               </div>
 
-              {ALLOWED_TRANSITIONS[selectedOrder.status]?.length > 0 ? (
-                <div className="flex items-center gap-2 pt-1">
+              {transitions.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 pt-1">
                   <span className="text-xs text-cocoa/70">Transition to:</span>
-                  {ALLOWED_TRANSITIONS[selectedOrder.status].map((nextSt) => (
+                  {transitions.map((nextSt) => (
                     <button
                       key={nextSt}
                       disabled={updatingStatus}
                       onClick={() => handleStatusTransition(selectedOrder.id || '', nextSt)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors disabled:opacity-50 ${
-                        nextSt === 'CANCELLED'
-                          ? 'bg-red-100 text-red-700 hover:bg-red-200'
-                          : 'bg-primary text-primary-foreground hover:bg-forest-deep'
-                      }`}
+                      className="px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-primary-foreground hover:bg-forest-deep transition-colors disabled:opacity-50"
                     >
                       Mark as {STATUS_CONFIG[nextSt]?.label}
                     </button>
                   ))}
                 </div>
-              ) : (
-                <p className="text-xs text-cocoa/60 italic">
-                  This order is in a terminal state ({selectedOrder.status}). No further transitions
-                  allowed.
-                </p>
               )}
+              {isOwner && cancellationAvailable ? (
+                <div className="space-y-2">
+                  <p className="text-xs text-cocoa/70">
+                    {requiresReturnReview ? 'This order requires a return review.' : requiresPaymentReview
+                      ? 'This order requires payment reconciliation before stock can be released.'
+                      : 'This order requires inventory review before cancellation.'}
+                  </p>
+                  <button type="button" disabled={updatingStatus} onClick={() => { setCancelError(''); setCancelOpen(true); }}
+                    className="rounded-lg border border-destructive px-3 py-1.5 text-xs font-bold text-destructive">
+                    Request Cancellation Review
+                  </button>
+                </div>
+              ) : <p className="text-xs text-cocoa/70">{isOwner ? 'Cancellation is unavailable for this status.' : 'Cancellation requires the Owner account.'}</p>}
             </div>
 
             {/* Payment Verification Status */}
@@ -391,7 +457,7 @@ export default function OrdersPage() {
                     <span className="text-cocoa/60 font-sans">UTR / Ref:</span> {selectedOrder.utrNumber}
                   </p>
                 )}
-                {selectedOrder.paymentProofUrl && (
+                {selectedOrder.paymentProofUrl && /^https?:\/\//i.test(selectedOrder.paymentProofUrl) && (
                   <p className="text-xs text-forest">
                     <a href={selectedOrder.paymentProofUrl} target="_blank" rel="noreferrer" className="underline font-semibold">
                       View Payment Proof
@@ -400,13 +466,14 @@ export default function OrdersPage() {
                 )}
               </div>
 
-              {selectedOrder.paymentStatus !== 'PAID' && ['WHATSAPP_UPI', 'CASH_ON_DELIVERY'].includes(selectedOrder.paymentMethod) && (
+              {isOwner && selectedOrder.status !== 'CANCELLED' && selectedOrder.paymentStatus === 'PENDING' && ['WHATSAPP_UPI', 'CASH_ON_DELIVERY'].includes(selectedOrder.paymentMethod) && (
                 <button
                   type="button"
                   onClick={() => {
                     setVerifyPaymentOrder(selectedOrder);
                     setUtrInput(selectedOrder.utrNumber || '');
                     setPaymentProofInput(selectedOrder.paymentProofUrl || '');
+                    setPaymentAmountInput('');
                   }}
                   className="px-3 py-1.5 rounded-lg bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 transition-colors shadow-sm"
                 >
@@ -526,6 +593,44 @@ export default function OrdersPage() {
         </div>
       )}
 
+      {cancelOpen && selectedOrder && (
+        <dialog ref={cancelDialog} aria-labelledby="cancel-order-title"
+          className="m-auto max-h-[90vh] w-11/12 max-w-md overflow-y-auto rounded-2xl border border-border bg-card p-6 text-cocoa shadow-xl backdrop:bg-foreground/50"
+          onCancel={(event) => {
+            event.preventDefault();
+            if (!cancelling) { event.currentTarget.close(); setCancelOpen(false); }
+          }}>
+          <form onSubmit={handleCancel} className="space-y-4">
+          <h2 id="cancel-order-title" className="font-display text-lg font-bold">Confirm cancellation review</h2>
+            <p className="text-sm">{selectedOrder.orderNumber} · {selectedOrder.customer.name} · {formatPrice(selectedOrder.totalAmount)}</p>
+            <p className="text-xs text-cocoa/70">{selectedOrder.status} · Payment {selectedOrder.paymentStatus}</p>
+            <p className="text-xs text-cocoa/70">
+              {requiresReturnReview ? 'This records a return review and preserves fulfilment and stock.'
+                : requiresPaymentReview ? 'This records a payment review and preserves stock.'
+                  : 'This records an inventory review. Order status and stock stay as recorded until reconciliation.'}
+            </p>
+            <label className="block space-y-1 text-sm">
+              <span>Cancellation reason</span>
+              <textarea name="reason" required maxLength={1000} rows={3} disabled={cancelling}
+                className="w-full rounded-lg border border-border bg-background p-2" />
+            </label>
+            <label className="block space-y-1 text-sm">
+              <span>Administrator password</span>
+              <input name="password" type="password" autoComplete="current-password" required maxLength={256} disabled={cancelling}
+                className="w-full rounded-lg border border-border bg-background p-2" />
+            </label>
+            {cancelError && <p role="alert" className="text-sm text-destructive">{cancelError}</p>}
+            <div className="flex flex-wrap justify-end gap-2">
+              <button type="button" disabled={cancelling} className="rounded-lg border border-border px-3 py-2 text-xs font-bold"
+                onClick={() => { cancelDialog.current?.close(); setCancelOpen(false); }}>Back</button>
+              <button type="submit" disabled={cancelling} className="rounded-lg border border-destructive px-3 py-2 text-xs font-bold text-destructive">
+                {cancelling ? 'Submitting…' : 'Confirm request'}
+              </button>
+            </div>
+          </form>
+        </dialog>
+      )}
+
       {/* Printable Packing Slip */}
       {packingSlipOrder && (
         <PackingSlipModal
@@ -556,6 +661,12 @@ export default function OrdersPage() {
             </div>
 
             <form onSubmit={handleConfirmPaymentVerification} className="space-y-4">
+              <label className="block space-y-1 text-xs font-semibold">
+                <span>Confirmed amount received (paise)</span>
+                <input type="number" min={1} step={1} required value={paymentAmountInput}
+                  onChange={(event) => setPaymentAmountInput(event.target.value)}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2" />
+              </label>
               <div>
                 <label className="block text-xs font-semibold text-cocoa mb-1">
                   UPI Reference / UTR Number

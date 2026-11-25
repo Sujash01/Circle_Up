@@ -3,7 +3,8 @@ import { adminOrderService } from '../../services/adminOrder.service.js';
 import { sendSuccess } from '../../utils/apiResponse.js';
 import { BadRequestError } from '../../errors/AppError.js';
 import { z } from 'zod';
-import { orderStatusSchema } from '@circleup/shared';
+import { adminCancelOrderSchema, orderStatusSchema } from '@circleup/shared';
+import { adminAuthService } from '../../services/adminAuth.service.js';
 
 const orderReferenceSchema = z.string().trim().min(8).max(100).regex(/^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|ORD-[A-Z0-9-]{8,80})$/i);
 const updateOrderStatusSchema = z.object({ status: orderStatusSchema }).strict();
@@ -15,6 +16,20 @@ const orderListQuerySchema = z.object({
 }).strict();
 
 export const adminOrderController = {
+  async cancel(req: Request, res: Response, next: NextFunction) {
+    try {
+      const reference = orderReferenceSchema.safeParse(req.params.id);
+      const parsed = adminCancelOrderSchema.safeParse(req.body);
+      if (!reference.success) throw new BadRequestError('Order reference is invalid.', 'VALIDATION_ERROR');
+      if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message || 'Request is invalid.', 'VALIDATION_ERROR');
+      const actor = req.adminUser;
+      if (!actor) throw new BadRequestError('Owner authentication is required.', 'UNAUTHORIZED');
+      await adminAuthService.reauthenticateOwner(actor, parsed.data.password);
+      return sendSuccess(res, await adminOrderService.cancelOrder(reference.data, parsed.data.reason, actor, req.ip));
+    } catch (error) {
+      next(error);
+    }
+  },
   async list(req: Request, res: Response, next: NextFunction) {
     try {
       const parsedQuery = orderListQuerySchema.safeParse(req.query);
@@ -169,9 +184,10 @@ export const adminOrderController = {
   async authorizeReservationRelease(req: Request, res: Response, next: NextFunction) {
     try {
       const releaseSchema = z.object({
-        reason: z.string().min(10).max(1000),
+        reason: z.string().trim().min(10).max(1000),
+        password: adminCancelOrderSchema.shape.password,
         cancellationProof: z.record(z.unknown()).optional(),
-      });
+      }).strict();
       const parsedBody = releaseSchema.safeParse(req.body);
       if (!parsedBody.success) {
         throw new BadRequestError('Reservation release request is invalid: reason (>= 10 chars) is required.', 'VALIDATION_ERROR');
@@ -181,6 +197,7 @@ export const adminOrderController = {
       const actor = req.adminUser;
       if (!actor) throw new BadRequestError('Owner authentication is required.', 'UNAUTHORIZED');
 
+      await adminAuthService.reauthenticateOwner(actor, parsedBody.data.password);
       const result = await adminOrderService.authorizeReservationRelease(
         parsedRef.data,
         {

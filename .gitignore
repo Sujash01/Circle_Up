@@ -12,6 +12,7 @@ build/
 .env
 .env.*
 !.env.example
+/.local/stage4b-deployment/
 
 # Uploads & Media
 uploads/

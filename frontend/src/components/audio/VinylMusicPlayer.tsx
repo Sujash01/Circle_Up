@@ -162,11 +162,16 @@ export function VinylMusicPlayer() {
 
   useEffect(() => {
     if (!lofiAudio.isUserExplicitlyPaused()) {
+      lofiAudio.attachGestureUnlock();
       void lofiAudio.start(false);
     }
-    return lofiAudio.subscribe((newState) => {
+    const unsubscribe = lofiAudio.subscribe((newState) => {
       setState(newState);
     });
+    return () => {
+      unsubscribe();
+      lofiAudio.stop(false);
+    };
   }, []);
 
   const handleTogglePlay = async (e?: React.MouseEvent) => {

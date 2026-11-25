@@ -24,6 +24,8 @@ describe('admin product persistence contract', () => {
     vi.spyOn(adminClient, 'put').mockRejectedValue(new Error('orders unavailable'));
     await expect(adminApi.getOrders()).rejects.toThrow();
     await expect(adminApi.updateOrderStatus('ORD-261122-12345678', 'CANCELLED')).rejects.toThrow();
-    await expect(adminApi.markOrderPaymentReceived('ORD-261122-12345678')).rejects.toThrow();
+    await expect(adminApi.markOrderPaymentReceived('ORD-261122-12345678', {
+      utrNumber: 'receipt-123', confirmedAmountPaise: 10000,
+    })).rejects.toThrow();
   });
 });

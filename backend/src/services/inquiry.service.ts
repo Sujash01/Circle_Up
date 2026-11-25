@@ -16,10 +16,9 @@ interface SupabaseInquiryRow {
 export const inquiryService = {
   async create(input: CreateInquiryPayload): Promise<Inquiry> {
     const { data, error } = await getSupabaseAdminClient()
-      .from('inquiries')
-      .insert(input)
-      .select('id,name,email,subject,message,status,created_at,updated_at')
-      .single();
+      .rpc('submit_contact_inquiry', {
+        p_name: input.name, p_email: input.email, p_subject: input.subject, p_message: input.message,
+      });
 
     if (error || !data) {
       throw new ServiceUnavailableError(

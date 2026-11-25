@@ -1,77 +1,88 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Mail, Search, RefreshCw, MessageSquare, CheckCircle, Clock, XCircle, Send } from 'lucide-react';
 import { adminApi } from '../services/adminApi';
 import { useAdminToast } from '../context/AdminToastContext';
 import { AdminTableSkeleton } from '../components/AdminSkeleton';
 
-interface Inquiry {
-  id: string;
-  name: string;
-  email: string;
-  phone: string | null;
-  category: string;
-  subject: string;
-  message: string;
-  status: 'NEW' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
-  notes: string | null;
-  reply: string | null;
-  repliedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
+import type { AdminInquiry as Inquiry } from '@circleup/shared';
 
 export default function InquiriesPage() {
   const { showToast } = useAdminToast();
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | Inquiry['status']>('ALL');
+  const [error, setError] = useState('');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedInquiry, setSelectedInquiry] = useState<Inquiry | null>(null);
   const [notesInput, setNotesInput] = useState('');
   const [replyInput, setReplyInput] = useState('');
-  const [statusInput, setStatusInput] = useState<'NEW' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED'>('NEW');
+  const [statusInput, setStatusInput] = useState<Inquiry['status']>('NEW');
   const [submitting, setSubmitting] = useState(false);
+  const listRequest = useRef(0);
+  const detailRequest = useRef(0);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState('');
 
   const fetchInquiries = useCallback(async () => {
+    const request = ++listRequest.current;
     setLoading(true);
+    setError('');
     try {
       const res = await adminApi.getInquiries({
+        page,
         status: statusFilter !== 'ALL' ? statusFilter : undefined,
         search: searchTerm.trim() || undefined,
       });
-      const data = (res as { data: Inquiry[] })?.data || [];
-      setInquiries(data);
+      if (request !== listRequest.current) return;
+      setInquiries(res.data);
+      setTotalPages(res.meta.totalPages);
     } catch (err: unknown) {
-      showToast('error', err instanceof Error ? err.message : 'Failed to fetch inquiries.');
+      if (request === listRequest.current) setError(err instanceof Error ? err.message : 'Failed to fetch inquiries.');
     } finally {
-      setLoading(false);
+      if (request === listRequest.current) setLoading(false);
     }
-  }, [statusFilter, searchTerm, showToast]);
+  }, [page, statusFilter, searchTerm]);
 
   useEffect(() => {
     fetchInquiries();
   }, [fetchInquiries]);
 
-  const handleOpenDetail = (inquiry: Inquiry) => {
+  const handleOpenDetail = async (inquiry: Inquiry) => {
+    const request = ++detailRequest.current;
     setSelectedInquiry(inquiry);
-    setNotesInput(inquiry.notes || '');
     setReplyInput('');
-    setStatusInput(inquiry.status);
+    setDetailError('');
+    setDetailLoading(true);
+    try {
+      const current = await adminApi.getInquiry(inquiry.id);
+      if (request !== detailRequest.current) return;
+      setSelectedInquiry(current);
+      setNotesInput(current.notes || '');
+      setStatusInput(current.status);
+    } catch (error) {
+      if (request === detailRequest.current) setDetailError(error instanceof Error ? error.message : 'Could not load inquiry details.');
+    } finally {
+      if (request === detailRequest.current) setDetailLoading(false);
+    }
   };
 
   const handleSaveInquiry = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedInquiry) return;
+    if (!selectedInquiry || detailLoading || detailError) return;
     setSubmitting(true);
     try {
       const updated = (await adminApi.updateInquiry(selectedInquiry.id, {
         status: statusInput,
-        notes: notesInput.trim() || undefined,
+        notes: notesInput.trim(),
         reply: replyInput.trim() || undefined,
-      })) as Inquiry;
+      }));
 
       showToast('success', replyInput.trim() ? 'Reply sent to customer!' : 'Inquiry updated successfully.');
       setSelectedInquiry(updated);
+      setStatusInput(updated.status);
+      if (statusFilter !== 'ALL' && updated.status !== statusFilter) void fetchInquiries();
       setInquiries((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
       if (replyInput.trim()) setReplyInput('');
     } catch (err: unknown) {
@@ -85,12 +96,12 @@ export default function InquiriesPage() {
     switch (status) {
       case 'NEW':
         return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-terracotta/15 text-terracotta border border-terracotta/30"><Clock className="size-3" /> New</span>;
-      case 'IN_PROGRESS':
-        return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-700 border border-amber-500/30"><Clock className="size-3" /> In Progress</span>;
+      case 'IN_REVIEW':
+        return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-700 border border-amber-500/30"><Clock className="size-3" /> In Review</span>;
       case 'RESOLVED':
         return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-forest/15 text-forest-deep border border-forest/30"><CheckCircle className="size-3" /> Resolved</span>;
-      case 'CLOSED':
-        return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-500/15 text-gray-700 border border-gray-400/30"><XCircle className="size-3" /> Closed</span>;
+      case 'ARCHIVED':
+        return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-500/15 text-gray-700 border border-gray-400/30"><XCircle className="size-3" /> Archived</span>;
     }
   };
 
@@ -115,11 +126,11 @@ export default function InquiriesPage() {
       {/* Filter Tabs and Search */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-          {(['ALL', 'NEW', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'] as const).map((tab) => (
+          {(['ALL', 'NEW', 'IN_REVIEW', 'RESOLVED', 'ARCHIVED'] as const).map((tab) => (
             <button
               key={tab}
               type="button"
-              onClick={() => setStatusFilter(tab)}
+              onClick={() => { setStatusFilter(tab); setPage(1); }}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap ${
                 statusFilter === tab
                   ? 'bg-forest-deep text-white shadow-sm'
@@ -135,16 +146,24 @@ export default function InquiriesPage() {
           <input
             type="text"
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
             placeholder="Search by name, email, subject..."
             className="w-full pl-9 pr-3 py-1.5 text-xs bg-card border border-border rounded-lg text-cocoa focus:outline-none focus:ring-1 focus:ring-primary"
           />
         </div>
       </div>
 
+      {totalPages > 1 && <div className="flex items-center gap-3 text-xs">
+        <button type="button" disabled={page <= 1 || loading} onClick={() => setPage(page - 1)}>Previous</button>
+        <span>Page {page} of {totalPages}</span>
+        <button type="button" disabled={page >= totalPages || loading} onClick={() => setPage(page + 1)}>Next</button>
+      </div>}
+
       {/* Inquiry List & Detail Split View */}
       {loading ? (
         <AdminTableSkeleton rows={5} />
+      ) : error ? (
+        <p role="alert" className="rounded-xl border border-border bg-card p-4 text-sm">{error} <button type="button" onClick={fetchInquiries} className="underline">Retry</button></p>
       ) : inquiries.length === 0 ? (
         <div className="bg-card border border-border rounded-xl p-12 text-center space-y-3">
           <Mail className="size-10 mx-auto text-cocoa/40" />
@@ -158,10 +177,12 @@ export default function InquiriesPage() {
             {inquiries.map((inquiry) => {
               const isSelected = selectedInquiry?.id === inquiry.id;
               return (
-                <div
+                <button
+                  type="button"
                   key={inquiry.id}
-                  onClick={() => handleOpenDetail(inquiry)}
-                  className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                  disabled={submitting}
+                  onClick={() => void handleOpenDetail(inquiry)}
+                  className={`w-full p-4 text-left rounded-xl border cursor-pointer transition-all ${
                     isSelected
                       ? 'bg-card border-forest-deep shadow-md ring-1 ring-forest-deep'
                       : 'bg-card/70 border-border hover:bg-card hover:border-cocoa/30'
@@ -177,14 +198,18 @@ export default function InquiriesPage() {
                     <span>{inquiry.email} {inquiry.phone ? `• ${inquiry.phone}` : ''}</span>
                     <span>{new Date(inquiry.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
 
           {/* Detail & Reply column */}
           <div className="lg:col-span-6">
-            {selectedInquiry ? (
+            {detailLoading ? <AdminTableSkeleton rows={3} /> : detailError && selectedInquiry ? (
+              <p role="alert" className="rounded-xl border border-border bg-card p-4 text-sm">
+                {detailError} <button type="button" className="underline" onClick={() => void handleOpenDetail(selectedInquiry)}>Retry</button>
+              </p>
+            ) : selectedInquiry ? (
               <div className="bg-card border border-border rounded-xl p-6 space-y-5 sticky top-24">
                 <div className="flex items-start justify-between gap-3 border-b border-border pb-4">
                   <div>

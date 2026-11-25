@@ -15,13 +15,16 @@ import { adminApi } from '../services/adminApi';
 import { useAdminToast } from '../context/AdminToastContext';
 import { useAdminAuth } from '../context/AdminAuthContext';
 import { AdminCardSkeleton } from '../components/AdminSkeleton';
-import { normalizeBusinessWhatsappNumber, type SiteSettings } from '@circleup/shared';
+import { normalizeBusinessWhatsappNumber, siteSettingsUpdateSchema, type SiteSettings } from '@circleup/shared';
 
 export default function SiteSettingsPage() {
   const { isOwner } = useAdminAuth();
   const { showToast } = useAdminToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savedSettings, setSavedSettings] = useState<SiteSettings | null>(null);
+  const [loadError, setLoadError] = useState('');
+  const [saveFeedback, setSaveFeedback] = useState('');
   const [settings, setSettings] = useState<Partial<SiteSettings>>({
     announcementText: '',
     marqueePhrases: [],
@@ -33,17 +36,21 @@ export default function SiteSettingsPage() {
   const [newPhrase, setNewPhrase] = useState('');
 
   const fetchSettings = useCallback(async () => {
+    if (!isOwner) return;
     setLoading(true);
+    setLoadError('');
+    setSaveFeedback('');
     try {
       const data = await adminApi.getSettings();
-      setSettings(data || {});
+      setSavedSettings(data);
+      setSettings(data);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to fetch settings';
-      showToast('error', msg);
+      setLoadError(msg);
     } finally {
       setLoading(false);
     }
-  }, [showToast]);
+  }, [isOwner]);
 
   useEffect(() => {
     fetchSettings();
@@ -55,13 +62,33 @@ export default function SiteSettingsPage() {
       showToast('error', 'Only the store Owner can update site settings.');
       return;
     }
+    if (!savedSettings || loadError) return;
+    const patch = Object.fromEntries(Object.entries(settings).filter(([field, value]) =>
+      field !== 'updatedAt' && field !== 'contentVersion' &&
+      JSON.stringify(value) !== JSON.stringify(savedSettings[field as keyof SiteSettings])));
+    if (Object.keys(patch).length === 0) {
+      setSaveFeedback('Your settings are up to date.');
+      return;
+    }
+    if (patch.isWhatsappVerified === true) patch.whatsappNumber = settings.whatsappNumber ?? '';
+    const parsed = siteSettingsUpdateSchema.safeParse({ ...patch, contentVersion: savedSettings.contentVersion });
+    if (!parsed.success) {
+      const message = parsed.error.issues[0]?.message || 'Check the settings fields.';
+      setSaveFeedback(message);
+      showToast('error', message);
+      return;
+    }
     setSaving(true);
+    setSaveFeedback('');
     try {
-      const updated = await adminApi.updateSettings(settings);
+      const updated = await adminApi.updateSettings(parsed.data);
+      setSavedSettings(updated);
       setSettings(updated);
+      setSaveFeedback('Site settings saved.');
       showToast('success', 'Site settings saved successfully');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to update site settings';
+      setSaveFeedback(msg);
       showToast('error', msg);
     } finally {
       setSaving(false);
@@ -130,7 +157,7 @@ export default function SiteSettingsPage() {
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || loading || Boolean(loadError) || !savedSettings}
             className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-bold text-primary-foreground shadow-xs hover:bg-forest-deep transition-colors disabled:opacity-50"
           >
             <Save className="size-4" />
@@ -139,8 +166,11 @@ export default function SiteSettingsPage() {
         </div>
       </div>
 
+      {saveFeedback && <p role="status" className="rounded-lg border border-border bg-card p-3 text-sm">{saveFeedback}</p>}
       {loading ? (
         <AdminCardSkeleton count={2} />
+      ) : loadError ? (
+        <p role="alert" className="rounded-xl border border-border bg-card p-4 text-sm">{loadError} <button type="button" onClick={fetchSettings} className="underline">Retry</button></p>
       ) : (
         <form onSubmit={handleSave} className="space-y-6">
           {/* Top Announcement Bar */}
@@ -154,11 +184,22 @@ export default function SiteSettingsPage() {
             </p>
             <input
               type="text"
+              aria-label="Announcement text"
               value={settings.announcementText || ''}
               onChange={(e) => setSettings({ ...settings, announcementText: e.target.value })}
               placeholder="e.g. Use code THRIFT10 or CIRCLE20 in bag • Plastic-free packaging"
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs text-cocoa focus:border-primary focus:outline-none"
             />
+            <label className="block space-y-1 text-xs font-semibold">
+              <span>Announcement link</span>
+              <input type="text" value={settings.announcementLink || ''} onChange={(e) => setSettings({ ...settings, announcementLink: e.target.value })}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2" />
+            </label>
+            <label className="flex items-center gap-2 text-xs font-semibold">
+              <input type="checkbox" checked={settings.isAnnouncementActive ?? false}
+                onChange={(e) => setSettings({ ...settings, isAnnouncementActive: e.target.checked })} />
+              Show announcement
+            </label>
           </div>
 
           {/* Scrolling Marquee Phrases */}

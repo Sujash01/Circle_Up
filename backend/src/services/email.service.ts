@@ -210,14 +210,15 @@ export const emailService = {
 
   async sendInquiryReply(to: string, name: string, subject: string, replyMessage: string): Promise<boolean> {
     if (!to) return false;
+    const escapeHtml = (value: string) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
     const emailSubject = `Re: ${subject || 'Your CircleUp Inquiry'}`;
     const text = `Hello ${name || 'Friend'},\n\nThank you for reaching out to CircleUp.\n\n${replyMessage}\n\nWarmly,\nCircleUp Team`;
     const html = `
       <div style="font-family: Georgia, serif; max-width: 600px; margin: 0 auto; background: #f8f4e2; padding: 24px; border: 1px solid #ded7c6; border-radius: 8px;">
         <h2 style="color: #1e3a29; margin-top: 0;">CircleUp Support</h2>
-        <p>Hello ${name || 'Friend'},</p>
-        <div style="background: #ffffff; padding: 16px; border-radius: 6px; margin: 16px 0; border: 1px solid #e2dbca; white-space: pre-wrap;">${replyMessage}</div>
+        <p>Hello ${escapeHtml(name || 'Friend')},</p>
+        <div style="background: #ffffff; padding: 16px; border-radius: 6px; margin: 16px 0; border: 1px solid #e2dbca; white-space: pre-wrap;">${escapeHtml(replyMessage)}</div>
         <p style="font-size: 13px; color: #6b5e51;">CircleUp • Fashion That Lasts</p>
       </div>
     `;

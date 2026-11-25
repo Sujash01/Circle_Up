@@ -147,9 +147,11 @@ export const rentalService = {
       };
     }
 
-    const blocked = blockedOverride ?? this.getBlockedDatesForProduct(product);
+    const blocked = blockedOverride ?? new Set(product.unavailableDates);
     const conflictingDates = days.filter((d) => blocked.has(d));
-    const estimatedRentalFee = durationDays * product.dailyRate;
+    const estimatedRentalFee = durationDays === 3 || durationDays === 7 || durationDays === 14
+      ? product.durationRates?.[durationDays] ?? durationDays * product.dailyRate
+      : durationDays * product.dailyRate;
     const estimatedTotal = estimatedRentalFee + product.securityDeposit;
 
     if (conflictingDates.length > 0) {
@@ -174,7 +176,7 @@ export const rentalService = {
     };
   },
 
-  submitSimulatedRequest(params: {
+  async submitBookingRequest(params: {
     product: RentalProduct;
     size: string;
     startDate: string;
@@ -182,36 +184,14 @@ export const rentalService = {
     customerName: string;
     customerPhone: string;
     notes?: string;
-  }): { request?: SimulatedRentalRequest; error?: string } {
+  }): Promise<{ request?: SimulatedRentalRequest; error?: string }> {
     const quote = this.evaluateQuote(params.product, params.startDate, params.endDate);
     if (!quote.valid) {
       return { error: quote.error || 'Invalid rental dates.' };
     }
 
-    const record: SimulatedRentalRequest = {
-      id: `SIM-RNT-${Date.now().toString(36).toUpperCase()}`,
-      rentalProductId: params.product.id,
-      rentalProductName: params.product.name,
-      size: params.size,
-      startDate: params.startDate,
-      endDate: params.endDate,
-      durationDays: quote.durationDays,
-      estimatedRentalFee: quote.estimatedRentalFee,
-      securityDeposit: quote.securityDeposit,
-      estimatedTotal: quote.estimatedTotal,
-      customerName: params.customerName.trim(),
-      customerPhone: params.customerPhone.trim(),
-      notes: params.notes?.trim() || undefined,
-      createdAt: new Date().toISOString(),
-    };
-
-    const existing = this.loadSubmittedRequests();
-    writeStorage(RENTAL_REQUESTS_KEY, [record, ...existing]);
-    const syncRes = { request: record };
-
-    const p = (async () => {
-      try {
-        const persisted = await storefrontApi.submitRentalRequest({
+    try {
+      const persisted = await storefrontApi.submitRentalRequest({
           rentalProductId: params.product.id,
           rentalProductName: params.product.name,
           size: params.size,
@@ -224,14 +204,12 @@ export const rentalService = {
           customerName: params.customerName,
           customerPhone: params.customerPhone,
           notes: params.notes,
-        });
-        return { request: persisted };
-      } catch {
-        return syncRes;
-      }
-    })();
-
-    return Object.assign(p, syncRes);
+      });
+      writeStorage(RENTAL_REQUESTS_KEY, [persisted, ...this.loadSubmittedRequests().filter((request) => request.id !== persisted.id)]);
+      return { request: persisted };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'Could not submit your rental request.' };
+    }
   },
 };
 

@@ -1,21 +1,13 @@
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const {
-  mockCreateClient,
-  mockFrom,
-  mockInsert,
-  mockSelect,
-  mockSingle,
-} = vi.hoisted(() => {
-  const builder: Record<string, unknown> = {};
-  const mockInsert = vi.fn(() => builder);
-  const mockSelect = vi.fn(() => builder);
-  const mockSingle = vi.fn();
-  Object.assign(builder, { insert: mockInsert, select: mockSelect, single: mockSingle });
-  const mockFrom = vi.fn(() => builder);
-  const mockCreateClient = vi.fn(() => ({ from: mockFrom }));
-  return { chain: builder, mockCreateClient, mockFrom, mockInsert, mockSelect, mockSingle };
+const { mockCreateClient, mockSubmit } = vi.hoisted(() => {
+  const mockSubmit = vi.fn();
+  const mockCreateClient = vi.fn(() => ({
+    rpc: (name: string, input: unknown) => name === 'submit_contact_inquiry'
+      ? mockSubmit(input) : Promise.resolve({ data: null, error: null }),
+  }));
+  return { mockCreateClient, mockSubmit };
 });
 
 vi.mock('@supabase/supabase-js', () => ({
@@ -49,11 +41,8 @@ describe('POST /api/v1/contact', () => {
     Reflect.set(env, 'SUPABASE_SERVICE_ROLE_KEY', 'test-service-role-key-with-more-than-20-characters');
     nextIp++;
     mockCreateClient.mockClear();
-    mockFrom.mockClear();
-    mockInsert.mockClear();
-    mockSelect.mockClear();
-    mockSingle.mockReset();
-    mockSingle.mockResolvedValue({
+    mockSubmit.mockReset();
+    mockSubmit.mockResolvedValue({
       data: {
         id: 'a62b737e-264b-4ad1-ad89-ae64f21f5b54',
         name: 'Rohan Sen',
@@ -96,12 +85,11 @@ describe('POST /api/v1/contact', () => {
       'test-service-role-key-with-more-than-20-characters',
       expect.any(Object),
     );
-    expect(mockFrom).toHaveBeenCalledWith('inquiries');
-    expect(mockInsert).toHaveBeenCalledWith({
-      name: 'Rohan Sen',
-      email: 'rohan.sen@example.com',
-      subject: validPayload.subject,
-      message: validPayload.message,
+    expect(mockSubmit).toHaveBeenCalledWith({
+      p_name: 'Rohan Sen',
+      p_email: 'rohan.sen@example.com',
+      p_subject: validPayload.subject,
+      p_message: validPayload.message,
     });
   });
 
@@ -110,7 +98,7 @@ describe('POST /api/v1/contact', () => {
 
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('VALIDATION_ERROR');
-    expect(mockFrom).not.toHaveBeenCalled();
+    expect(mockSubmit).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -126,11 +114,11 @@ describe('POST /api/v1/contact', () => {
 
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('VALIDATION_ERROR');
-    expect(mockFrom).not.toHaveBeenCalled();
+    expect(mockSubmit).not.toHaveBeenCalled();
   });
 
   it('returns a storage error instead of success when Supabase insert fails', async () => {
-    mockSingle.mockResolvedValueOnce({ data: null, error: { message: 'database unavailable' } });
+    mockSubmit.mockResolvedValueOnce({ data: null, error: { message: 'database unavailable' } });
 
     const response = await contactRequest().send(validPayload);
 
@@ -149,7 +137,7 @@ describe('POST /api/v1/contact', () => {
     expect(response.status).toBe(503);
     expect(response.body.success).toBe(false);
     expect(response.body.data).toBeUndefined();
-    expect(mockFrom).not.toHaveBeenCalled();
+    expect(mockSubmit).not.toHaveBeenCalled();
   });
 
   it('allows five submissions per IP per 15 minutes and rejects the sixth', async () => {
@@ -162,6 +150,6 @@ describe('POST /api/v1/contact', () => {
     expect(responses.slice(0, 5).every((response) => response.status === 201)).toBe(true);
     expect(responses[5]?.status).toBe(429);
     expect(responses[5]?.body.error.code).toBe('RATE_LIMITED');
-    expect(mockInsert).toHaveBeenCalledTimes(5);
+    expect(mockSubmit).toHaveBeenCalledTimes(5);
   });
 });

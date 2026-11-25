@@ -84,6 +84,7 @@ export interface RentalProduct {
   condition: ProductCondition;
   sizes: string[];
   dailyRate: number;
+  durationRates?: Partial<Record<3 | 7 | 14, number>>;
   securityDeposit: number;
   minDays: number;
   maxDays: number;

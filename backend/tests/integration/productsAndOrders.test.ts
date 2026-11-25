@@ -82,19 +82,16 @@ const checkoutState = vi.hoisted(() => {
       const failure = (code: string, message: string) => ({ data: null, error: { message: JSON.stringify({ code, message }) } });
       if (!order) return failure('ORDER_NOT_FOUND', 'Order was not found.');
       if (adminAuditFailure) return { data: null, error: { message: 'injected audit insert failure' } };
-      if (name === 'admin_update_order_status') {
-        const transitions: Record<string, string[]> = { PENDING: ['CONFIRMED', 'CANCELLED'], CONFIRMED: ['SHIPPED', 'CANCELLED'], SHIPPED: ['DELIVERED', 'CANCELLED'], DELIVERED: [], CANCELLED: [] };
-        if (!transitions[String(order.status)]?.includes(String(params.p_new_status))) return failure('INVALID_STATUS_TRANSITION', 'This order status transition is not allowed.');
-        if (params.p_new_status === 'CANCELLED') {
-          const totals = new Map<string, number>();
-          for (const item of order.order_items || []) totals.set(item.serial_number, (totals.get(item.serial_number) || 0) + item.quantity);
-          for (const serial of totals.keys()) if (!products.has(serial)) return failure('ORDER_INVENTORY_UNAVAILABLE', 'A product required for inventory restoration no longer exists.');
-          for (const [serial, quantity] of totals) {
-            const product = products.get(serial)!;
-            product.stock += quantity;
-            if (product.status === 'SOLD_OUT') product.status = 'ACTIVE';
-          }
+      if (name === 'admin_cancel_order') {
+        const outcome = order.status === 'CANCELLED' ? 'CANCELLED' : 'INVENTORY_REVIEW';
+        if (outcome === 'INVENTORY_REVIEW' && !adminAuditRecords.some((entry) =>
+          entry.orderNumber === order.order_number && entry.outcome === outcome)) {
+          adminAuditRecords.push({ action: 'ORDER_STATUS_UPDATE', orderNumber: order.order_number, actor: params.p_actor_id, outcome });
         }
+        return { data: { order, order_items: order.order_items, outcome, refund_required: order.payment_status === 'PAID' }, error: null };
+      } else if (name === 'admin_update_order_status') {
+        const transitions: Record<string, string[]> = { PENDING: ['CONFIRMED'], CONFIRMED: ['SHIPPED'], SHIPPED: ['DELIVERED'], DELIVERED: [], CANCELLED: [] };
+        if (!transitions[String(order.status)]?.includes(String(params.p_new_status))) return failure('INVALID_STATUS_TRANSITION', 'This order status transition is not allowed.');
         order.status = params.p_new_status;
         order.updated_at = new Date().toISOString();
         adminAuditRecords.push({ action: 'ORDER_STATUS_UPDATE', orderNumber: order.order_number, actor: params.p_actor_id });
@@ -247,8 +244,17 @@ const staffSession = signSessionToken({
   sessionId: 'fixture-staff-session',
 });
 
+function cancelRequest(orderNumber: string) {
+  const actor = verifySessionToken(ownerSession)!;
+  const token = signSessionToken({ ...actor, userId: `${actor.userId}-${orderNumber}` });
+  return request(app).post(`/api/admin/orders/${orderNumber}/cancel`)
+    .set('Authorization', `Bearer ${token}`).set('X-CSRF-Token', actor.csrfToken)
+    .send({ reason: 'Customer requested cancellation.', password: 'fixture-password' });
+}
+
 beforeEach(() => {
   vi.spyOn(adminAuthService, 'validateSession').mockImplementation(async (token) => verifySessionToken(token));
+  vi.spyOn(adminAuthService, 'reauthenticateOwner').mockResolvedValue();
   checkoutState.reset();
   for (const product of SEED_PRODUCTS) checkoutState.products.set(product.serialNumber, { ...product, stock: 100, status: 'PUBLISHED' });
 });
@@ -439,12 +445,11 @@ describe('Products & Orders API', () => {
     checkoutState.setEnabled(true);
   });
 
-  it('cancels once, restores inventory atomically and rejects duplicate cancellation', async () => {
+  it('records one inventory review and leaves stock and order status intact on duplicate requests', async () => {
     const created = await checkoutRequest().set('Idempotency-Key', 'admin-cancel-order-key-001')
       .send(checkoutPayload([{ serialNumber: 'CU-001', quantity: 2 }]));
     const beforeCancel = checkoutState.products.get('CU-001')!.stock;
-    const cancel = () => request(app).put(`/api/admin/orders/${created.body.data.orderNumber}/status`)
-      .set('Authorization', `Bearer ${staffSession}`).set('X-CSRF-Token', 'phase1-staff-csrf').send({ status: 'CANCELLED' });
+    const cancel = () => cancelRequest(created.body.data.orderNumber);
     checkoutState.setAdminAuditFailure(true);
     const auditFailure = await cancel();
     expect(auditFailure.status).toBe(503);
@@ -453,50 +458,49 @@ describe('Products & Orders API', () => {
     checkoutState.setAdminAuditFailure(false);
     const first = await cancel();
     expect(first.status).toBe(200);
-    expect(checkoutState.products.get('CU-001')?.stock).toBe(beforeCancel + 2);
+    expect(checkoutState.products.get('CU-001')?.stock).toBe(beforeCancel);
     const duplicate = await cancel();
-    expect(duplicate.status).toBe(400);
-    expect(duplicate.body.error.code).toBe('INVALID_STATUS_TRANSITION');
-    expect(checkoutState.products.get('CU-001')?.stock).toBe(beforeCancel + 2);
+    expect(duplicate.status).toBe(200);
+    expect(duplicate.body.data.outcome).toBe('INVENTORY_REVIEW');
+    expect(checkoutState.adminAuditRecords).toHaveLength(1);
+    expect(checkoutState.products.get('CU-001')?.stock).toBe(beforeCancel);
   });
 
-  it('restores inventory without republishing an item archived after checkout', async () => {
+  it('leaves archived inventory intact after a request to cancel', async () => {
     const created = await checkoutRequest().set('Idempotency-Key', 'admin-cancel-archived-product-01')
       .send(checkoutPayload([{ serialNumber: 'CU-001', quantity: 1 }]));
     const product = checkoutState.products.get('CU-001')!;
     const beforeCancel = product.stock;
     product.status = 'ARCHIVED';
 
-    const cancelled = await request(app).put(`/api/v1/admin/orders/${created.body.data.orderNumber}/status`)
-      .set('Authorization', `Bearer ${staffSession}`).set('X-CSRF-Token', 'phase1-staff-csrf').send({ status: 'CANCELLED' });
+    const cancelled = await cancelRequest(created.body.data.orderNumber);
 
     expect(cancelled.status).toBe(200);
-    expect(product.stock).toBe(beforeCancel + 1);
+    expect(product.stock).toBe(beforeCancel);
     expect(product.status).toBe('ARCHIVED');
   });
 
-  it('serializes concurrent cancellations so inventory is restored exactly once', async () => {
+  it('accepts concurrent retries without adding stock or duplicating the review', async () => {
     const created = await checkoutRequest().set('Idempotency-Key', 'admin-cancel-race-order-01')
       .send(checkoutPayload([{ serialNumber: 'CU-002', quantity: 3 }]));
     const beforeCancel = checkoutState.products.get('CU-002')!.stock;
-    const cancel = () => request(app).put(`/api/admin/orders/${created.body.data.orderNumber}/status`)
-      .set('Authorization', `Bearer ${ownerSession}`).set('X-CSRF-Token', 'phase1-owner-csrf').send({ status: 'CANCELLED' });
+    const cancel = () => cancelRequest(created.body.data.orderNumber);
     const results = await Promise.all([cancel(), cancel()]);
-    expect(results.filter((result) => result.status === 200)).toHaveLength(1);
-    expect(results.filter((result) => result.status === 400)).toHaveLength(1);
-    expect(checkoutState.products.get('CU-002')?.stock).toBe(beforeCancel + 3);
+    expect(results.map((result) => result.status)).toEqual([200, 200]);
+    expect(checkoutState.adminAuditRecords).toHaveLength(1);
+    expect(checkoutState.products.get('CU-002')?.stock).toBe(beforeCancel);
   });
 
-  it('does not cancel or partially restore inventory when restoration fails', async () => {
+  it('records review without cancelling when inventory evidence is incomplete', async () => {
     const created = await checkoutRequest().set('Idempotency-Key', 'admin-cancel-rollback-001')
       .send(checkoutPayload([{ serialNumber: 'CU-001', quantity: 1 }]));
     const beforeStock = checkoutState.products.get('CU-001')!.stock;
     checkoutState.products.delete('CU-001');
-    const failed = await request(app).put(`/api/admin/orders/${created.body.data.orderNumber}/status`)
-      .set('Authorization', `Bearer ${staffSession}`).set('X-CSRF-Token', 'phase1-staff-csrf').send({ status: 'CANCELLED' });
-    expect(failed.status).toBe(503);
+    const failed = await cancelRequest(created.body.data.orderNumber);
+    expect(failed.status).toBe(200);
+    expect(failed.body.data.outcome).toBe('INVENTORY_REVIEW');
     expect(checkoutState.orders.get(created.body.data.orderNumber)?.status).toBe('CONFIRMED');
-    expect(checkoutState.adminAuditRecords).toHaveLength(0);
+    expect(checkoutState.adminAuditRecords).toHaveLength(1);
     expect(beforeStock).toBe(99);
   });
 

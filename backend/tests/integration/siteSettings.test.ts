@@ -27,37 +27,49 @@ const mockState = vi.hoisted(() => {
   let queryError: { message: string } | null = null;
   let selected = '*';
   let selectedTable = '';
+  let pendingUpdate: Record<string, unknown> | undefined;
+  let expectedVersion: unknown;
   const builder: Record<string, (...args: unknown[]) => unknown> = {};
-  const from = vi.fn((table: string) => { selectedTable = table; return builder; });
+  const from = vi.fn((table: string) => {
+    selectedTable = table;
+    pendingUpdate = undefined;
+    expectedVersion = undefined;
+    return builder;
+  });
   const select = vi.fn((columns = '*') => { selected = String(columns); return builder; });
-  const eq = vi.fn(() => builder);
-  const result = () => ({
+  const eq = vi.fn((column: string, value: unknown) => {
+    if (column === 'content_version') expectedVersion = value;
+    return builder;
+  });
+  const result = () => {
+    if (pendingUpdate && !queryError) {
+      if (expectedVersion !== undefined && row.content_version !== expectedVersion) return { data: null, error: null };
+      Object.assign(row, pendingUpdate, { content_version: Number(row.content_version) + 1, updated_at: new Date().toISOString() });
+    }
+    return {
     data: queryError ? null : selectedTable === 'products' ? [] : selected === 'content_version'
       ? { content_version: row.content_version }
       : { ...row },
     error: queryError,
-  });
+    };
+  };
   const single = vi.fn(async () => result());
   const maybeSingle = vi.fn(async () => result());
   const insert = vi.fn((values: Record<string, unknown>) => { Object.assign(row, values); return builder; });
-  const upsert = vi.fn((values: Record<string, unknown>) => {
-    Object.assign(row, values, { content_version: Number(row.content_version) + 1, updated_at: new Date().toISOString() });
-    return builder;
-  });
   const update = vi.fn((values: Record<string, unknown>) => {
-    Object.assign(row, values, { content_version: Number(row.content_version) + 1, updated_at: new Date().toISOString() });
+    pendingUpdate = values;
     return builder;
   });
   const chain = vi.fn(() => builder);
   const then = (resolve: (value: ReturnType<typeof result>) => unknown, reject?: (reason: unknown) => unknown) =>
     Promise.resolve({ data: queryError ? null : [], error: queryError }).then(resolve, reject);
   Object.assign(builder, {
-    select, eq, single, maybeSingle, insert, upsert, update, then,
+    select, eq, single, maybeSingle, insert, update, then,
     in: chain, order: chain, limit: chain, range: chain, gt: chain, gte: chain, lte: chain,
     neq: chain, not: chain, or: chain, ilike: chain, contains: chain,
   });
   return {
-    row, from, select, eq, single, maybeSingle, insert, upsert, update,
+    row, from, select, eq, single, maybeSingle, insert, update,
     reset: () => { Object.assign(row, initialRow); queryError = null; selected = '*'; selectedTable = ''; },
     setError: (error: { message: string } | null) => { queryError = error; },
   };
@@ -97,7 +109,6 @@ beforeEach(() => {
   mockState.single.mockClear();
   mockState.maybeSingle.mockClear();
   mockState.insert.mockClear();
-  mockState.upsert.mockClear();
   mockState.update.mockClear();
 });
 
@@ -155,7 +166,7 @@ describe('Site settings persistence and API contract', () => {
     const { updatedAt: _clientUpdatedAt, ...expectedSettings } = update;
     expect(response.body.data).toMatchObject({ ...expectedSettings, contentVersion: 5 });
     expect(response.body.data.updatedAt).not.toBe(update.updatedAt);
-    expect(mockState.upsert).toHaveBeenCalled();
+    expect(mockState.update).toHaveBeenCalled();
     expect(mockState.row).toMatchObject({
       announcement_text: 'Autumn archive',
       announcement_link: '/thrifted-treasure',
@@ -175,7 +186,7 @@ describe('Site settings persistence and API contract', () => {
 
     expect(anonymous.status).toBe(401);
     expect(staff.status).toBe(403);
-    expect(mockState.upsert).not.toHaveBeenCalled();
+    expect(mockState.update).not.toHaveBeenCalled();
   });
 
   it('publishes the official number only after an owner explicitly verifies it', async () => {
@@ -196,12 +207,29 @@ describe('Site settings persistence and API contract', () => {
     expect(mockState.row.whatsapp_number).toBe(official);
 
     await update({ whatsappNumber: official, isWhatsappVerified: true }).expect(200);
-    expect(mockState.upsert).toHaveBeenLastCalledWith({
-      id: 'default', whatsapp_number: official, is_whatsapp_verified: true,
+    expect(mockState.update).toHaveBeenLastCalledWith({
+      whatsapp_number: official, is_whatsapp_verified: true,
     });
     const verified = await request(app).get('/api/coupons/promotions').expect(200);
     expect(verified.body.data.whatsappNumber).toBe('916280746336');
     expect((await homepageService.getHomepagePayload()).siteSettings.whatsappNumber).toBe('916280746336');
+  });
+
+  it('persists partial changes and rejects stale settings revisions', async () => {
+    const save = (body: Record<string, unknown>) => request(app).put('/api/admin/settings')
+      .set('Authorization', `Bearer ${ownerToken}`).set('X-CSRF-Token', 'settings-owner-csrf').send(body);
+    await save({ contactPhone: '+91 11111 11111', contentVersion: 4 }).expect(200);
+    const stale = await save({ contactPhone: '+91 99999 99999', contentVersion: 4 });
+    expect(stale.status).toBe(409);
+    expect(stale.body.error.code).toBe('SETTINGS_VERSION_CONFLICT');
+    expect(mockState.row).toMatchObject({
+      contact_phone: '+91 11111 11111', contact_email: 'care@circleuponline.com',
+      announcement_text: 'Existing announcement', content_version: 5,
+    });
+    await save({ customDrop: { enabled: false }, contentVersion: 5 }).expect(200);
+    expect(mockState.row.curated_drop).toMatchObject({
+      label: 'Archive', description: 'Curated pieces', to: '/thrifted-treasure', enabled: false,
+    });
   });
 
   it('returns a storage error without synthetic fallback when Supabase fails', async () => {

@@ -4,7 +4,7 @@ import {
   type SiteSettings,
   type SiteSettingsUpdate,
 } from '@circleup/shared';
-import { ServiceUnavailableError } from '../errors/AppError.js';
+import { ConflictError, ServiceUnavailableError } from '../errors/AppError.js';
 import { getSupabaseAdminClient } from '../services/supabase.service.js';
 
 const DEFAULT_SETTINGS = siteSettingsSchema.parse({});
@@ -83,16 +83,26 @@ export const settingsRepository = {
   async updateSettings(settings: SiteSettingsUpdate): Promise<SiteSettings> {
     const client = getSupabaseAdminClient();
     const update = toDatabaseRow(settings);
+    let version = settings.contentVersion;
+    if (settings.customDrop !== undefined) {
+      const { data, error } = await client.from('site_settings')
+        .select('curated_drop,content_version').eq('id', 'default').maybeSingle();
+      if (error || !data || typeof data.content_version !== 'number') throw unavailable();
+      update.curated_drop = { ...data.curated_drop, ...settings.customDrop };
+      version ??= data.content_version;
+    }
     if (settings.whatsappNumber !== undefined && settings.isWhatsappVerified === undefined) {
       update.is_whatsapp_verified = false;
     }
-    const { data, error } = await client
-      .from('site_settings')
-      .upsert({ id: 'default', ...update })
-      .select('*')
-      .single();
-
-    if (error || !data) throw unavailable();
+    if (Object.keys(update).length === 0) return this.getSettings();
+    let request = client.from('site_settings').update(update).eq('id', 'default');
+    if (version !== undefined) request = request.eq('content_version', version);
+    const { data, error } = await request.select('*').maybeSingle();
+    if (error) throw unavailable();
+    if (!data && version !== undefined) {
+      throw new ConflictError('Site settings changed. Refresh before saving your edits.', 'SETTINGS_VERSION_CONFLICT');
+    }
+    if (!data) throw unavailable();
     return fromDatabaseRow(data as Record<string, unknown>);
   },
 

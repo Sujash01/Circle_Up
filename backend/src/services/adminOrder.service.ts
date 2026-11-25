@@ -4,7 +4,7 @@ import { parsePagination, buildPaginationMeta } from '../utils/pagination.js';
 import type { AdminSessionData } from './adminAuth.service.js';
 import { emailService } from './email.service.js';
 import { getSupabaseAdminClient, isSupabaseConfigured } from './supabase.service.js';
-import { ORDER_STATUS_TRANSITIONS, type OrderStatus } from '@circleup/shared';
+import { adminCancellationOutcomeSchema, ORDER_STATUS_TRANSITIONS, type OrderStatus } from '@circleup/shared';
 
 type OrderRow = Record<string, unknown>;
 
@@ -48,11 +48,13 @@ function mapOrder(row: OrderRow) {
     deliveryFee: Number(row.shipping_amount || 0),
     paymentMethod: row.payment_method || 'CASH_ON_DELIVERY',
     paymentStatus: row.payment_status || 'PENDING',
-    status: row.status || 'PENDING',
+    status: row.status === 'PROCESSING' ? 'PACKED' : row.status || 'PENDING',
     trackingNumber: row.tracking_number || '',
     courier: row.courier || '',
     promoCode: row.promo_code || undefined,
     notes: row.notes || undefined,
+    utrNumber: row.utr_number || undefined,
+    paymentProofUrl: row.payment_proof_url || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -94,7 +96,7 @@ function raiseRpcError(error: { message?: string; code?: string }): never {
   if (badRequestCodes.has(code)) {
     throw new BadRequestError(message, code);
   }
-  if (code === 'ORDER_CONFLICT') throw new ConflictError(message, code);
+  if (['ORDER_CONFLICT', 'ORDER_INVENTORY_UNAVAILABLE'].includes(code)) throw new ConflictError(message, code);
   throw unavailable(message);
 }
 
@@ -106,7 +108,12 @@ async function callOrderRpc(name: string, params: Record<string, unknown>): Prom
   } catch {
     throw unavailable();
   }
-  if (result.error) raiseRpcError(result.error);
+  if (result.error) {
+    if (name === 'admin_verify_order_payment' && ['PGRST202', '42883'].includes(result.error.code)) {
+      throw new ServiceUnavailableError('Payment verification requires the reconciled payment ledger.', 'PAYMENT_LEDGER_REQUIRED');
+    }
+    raiseRpcError(result.error);
+  }
   const data = result.data as OrderRow | null;
   if (!data || typeof data !== 'object') throw unavailable('Supabase did not confirm the order operation.');
   return data;
@@ -174,6 +181,22 @@ export function computeReturnFingerprint(params: {
 }
 
 export const adminOrderService = {
+  async cancelOrder(orderRef: string, reason: string, actor: AdminSessionData, ipAddress?: string) {
+    const result = await callOrderRpc('admin_cancel_order', {
+      p_order_ref: normalizeOrderRef(orderRef),
+      p_reason: reason,
+      p_actor_id: actor.userId,
+      p_ip_address: ipAddress || null,
+    });
+    const outcome = adminCancellationOutcomeSchema.safeParse(result.outcome);
+    const order = result.order as OrderRow | undefined;
+    if (!order || !outcome.success) throw unavailable('Supabase did not confirm the cancellation request.');
+    return {
+      order: mapOrder({ ...order, order_items: result.order_items }),
+      outcome: outcome.data,
+      refundRequired: result.refund_required === true,
+    };
+  },
   async listOrders(query: { page?: unknown; limit?: unknown; status?: string; search?: string }) {
     const { page, limit, skip } = parsePagination(query);
     if (!isSupabaseConfigured()) throw unavailable('Supabase order storage is not configured.');
@@ -182,7 +205,8 @@ export const adminOrderService = {
       .select('*, order_items(*)', { count: 'exact' })
       .order('created_at', { ascending: false });
 
-    if (query.status && query.status.toLowerCase() !== 'all') request = request.eq('status', query.status.toUpperCase());
+    if (query.status === 'PACKED') request = request.in('status', ['PACKED', 'PROCESSING']);
+    else if (query.status && query.status !== 'ALL') request = request.eq('status', query.status.toUpperCase());
     const search = query.search?.trim().replace(/[\\%_.,()]/g, ' ');
     if (search) request = request.or(`order_number.ilike.%${search}%,customer_name.ilike.%${search}%,customer_email.ilike.%${search}%,customer_phone.ilike.%${search}%`);
 
@@ -204,6 +228,9 @@ export const adminOrderService = {
     actor: AdminSessionData,
     auditContext: { ipAddress?: string; userAgent?: string },
   ) {
+    if (['CANCELLED', 'RETURNED', 'REFUNDED'].includes(newStatus)) {
+      throw new BadRequestError('Use the authorized cancellation, return, or refund workflow.', 'CANCELLATION_REAUTH_REQUIRED');
+    }
     if (!ORDER_STATUS_TRANSITIONS[newStatus] && newStatus !== 'PENDING') {
       throw new BadRequestError('Order status is invalid.', 'VALIDATION_ERROR');
     }
@@ -431,11 +458,11 @@ export const adminOrderService = {
     if (!isSupabaseConfigured()) throw unavailable('Supabase order storage is not configured.');
     let result;
     try {
-      result = await getSupabaseAdminClient().rpc('admin_get_daily_reconciliation', { p_days: days });
+      result = await getSupabaseAdminClient().rpc('admin_get_daily_reconciliation_evidence', { p_days: days });
     } catch {
       throw unavailable('Failed to retrieve reconciliation data from Supabase.');
     }
-    if (result.error) throw unavailable(`Failed to retrieve reconciliation data: ${result.error.message}`);
+    if (result.error) throw unavailable('Failed to retrieve reconciliation data.');
     return result.data || [];
   },
 };
