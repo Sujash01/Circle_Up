@@ -17,6 +17,7 @@ export function EventDetailPage() {
   const [phone, setPhone] = useState('');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [registration, setRegistration] = useState<EventRegistration | null>(null);
 
   if (notFound) {
@@ -34,6 +35,7 @@ export function EventDetailPage() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     setError('');
     setRegistration(null);
 
@@ -50,17 +52,24 @@ export function EventDetailPage() {
       return;
     }
 
-    const res = await eventService.registerForEvent({ event, name, email, phone, notes });
-    if (res.error || !res.registration) {
-      setError(res.error ?? 'Could not complete registration. Please try again.');
-      return;
-    }
+    setIsSubmitting(true);
+    try {
+      const res = await eventService.registerForEvent({ event, name, email, phone, notes });
+      if (res.error || !res.registration) {
+        setError(res.error ?? 'Could not complete registration. Please try again.');
+        return;
+      }
 
-    setRegistration(res.registration);
-    setName('');
-    setEmail('');
-    setPhone('');
-    setNotes('');
+      setRegistration(res.registration);
+      setName('');
+      setEmail('');
+      setPhone('');
+      setNotes('');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not complete registration. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -195,9 +204,10 @@ export function EventDetailPage() {
 
           <button
             type="submit"
-            className="w-full bg-primary py-3.5 text-xs font-semibold uppercase tracking-widest text-primary-foreground hover:bg-forest-deep transition-colors"
+            disabled={isSubmitting}
+            className="w-full bg-primary py-3.5 text-xs font-semibold uppercase tracking-widest text-primary-foreground hover:bg-forest-deep transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            RSVP for Event
+            {isSubmitting ? 'Reserving Spot...' : 'RSVP for Event'}
           </button>
 
           {registration && (

@@ -18,6 +18,9 @@ import {
   INVENTORY_STATUSES,
   type InventoryStatusCode,
   extractCategoryCodeFromSerial,
+  formatDisplaySerial,
+  cleanSizeLabel,
+  extractMeasurementsFromSizeString,
 } from '@circleup/shared';
 
 function WhatsAppIcon({ className = 'size-4' }: { className?: string }) {
@@ -63,6 +66,19 @@ export function ProductDetailPage() {
 
   const isPurchasable = Boolean(product && invStatus.isPurchasable && product.stock > 0);
 
+  const extractedMeasurements = useMemo(() => {
+    if (typeof product?.measurements === 'string' && product.measurements.trim().length > 0) {
+      return product.measurements;
+    }
+    if (product?.sizes && product.sizes.length > 0) {
+      for (const sz of product.sizes) {
+        const extracted = extractMeasurementsFromSizeString(sz);
+        if (extracted) return extracted;
+      }
+    }
+    return undefined;
+  }, [product]);
+
   const availableVariants: ProductVariant[] = useMemo(() => {
     if (product && Array.isArray(product.variants) && product.variants.length > 0) {
       return product.variants;
@@ -72,9 +88,9 @@ export function ProductDetailPage() {
         ? product.sizes
         : ['One Size'];
     return sizes.map((sz, idx) => ({
-      id: `${product?.serialNumber || product?.id || 'var'}-${idx}-${sz.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
-      label: sz,
-      size: sz,
+      id: `${product?.serialNumber || product?.id || 'var'}-${idx}-${cleanSizeLabel(sz).toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+      label: cleanSizeLabel(sz),
+      size: cleanSizeLabel(sz),
       stock: product?.stock ?? 1,
     }));
   }, [product]);
@@ -122,7 +138,7 @@ export function ProductDetailPage() {
       image: product.images?.map((img) =>
         img.startsWith('http') ? img : `https://circleuponline.com${img}`
       ) || [imageUrl],
-      sku: product.serialNumber || product.id,
+      sku: formatDisplaySerial(product.serialNumber, product.id),
       brand: {
         '@type': 'Brand',
         name: 'CircleUp',
@@ -274,7 +290,7 @@ export function ProductDetailPage() {
                   {invStatus.badgeText}
                 </span>
                 <span className="font-mono text-[0.7rem] bg-secondary px-2 py-0.5 text-cocoa font-medium tracking-wide border border-foreground/10">
-                  SERIAL: {product.serialNumber || product.id.toUpperCase()}
+                  SERIAL: {formatDisplaySerial(product.serialNumber, product.id)}
                 </span>
               </div>
             </div>
@@ -299,7 +315,7 @@ export function ProductDetailPage() {
 
           <dl className="grid grid-cols-2 gap-y-2 text-xs border-y border-foreground/15 py-4">
             <dt className="uppercase tracking-wider text-terracotta">Item Serial No.</dt>
-            <dd className="font-mono font-medium text-cocoa">{product.serialNumber || product.id.toUpperCase()}</dd>
+            <dd className="font-mono font-medium text-cocoa">{formatDisplaySerial(product.serialNumber, product.id)}</dd>
 
             {catCode && (
               <>
@@ -531,7 +547,7 @@ export function ProductDetailPage() {
         categorySlug={product.category}
         productName={product.name}
         measurementsData={product.measurementsData}
-        measurementsText={typeof product.measurements === 'string' ? product.measurements : undefined}
+        measurementsText={extractedMeasurements}
       />
     </div>
   );

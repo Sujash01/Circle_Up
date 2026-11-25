@@ -10,6 +10,7 @@ import {
   INVENTORY_STATUSES,
   type InventoryStatusCode,
   extractCategoryCodeFromSerial,
+  formatDisplaySerial,
 } from '@circleup/shared';
 
 interface ProductCardProps {
@@ -34,8 +35,8 @@ export function ProductCard({
   );
   const tilt = ((tiltHash % 5) - 2) * 0.22;
 
-  const rawSerial = product.serialNumber || product.id.toUpperCase();
-  const catCode = product.categoryCode || extractCategoryCodeFromSerial(rawSerial);
+  const rawSerial = formatDisplaySerial(product.serialNumber, product.id);
+  const catCode = product.categoryCode || extractCategoryCodeFromSerial(product.serialNumber || '');
   const rawStatus = (product.status || '').toUpperCase() as InventoryStatusCode;
   const statusMeta =
     INVENTORY_STATUSES[rawStatus] ||

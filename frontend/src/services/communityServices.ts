@@ -1,4 +1,5 @@
 import { SAMPLE_COMMUNITY_POSTS } from '@/data/community';
+import { SAMPLE_EVENTS } from '@/data/events';
 import { storefrontApi } from './storefrontApi';
 import { SAMPLE_REVIEWS } from '@/data/reviews';
 import type {
@@ -59,10 +60,18 @@ export const reviewService = {
 
 export const eventService = {
   async getAllEvents(): Promise<EventItem[]> {
-    return storefrontApi.getEvents();
+    try {
+      const live = await storefrontApi.getEvents();
+      if (live && live.length > 0) return live;
+      return SAMPLE_EVENTS;
+    } catch {
+      return SAMPLE_EVENTS;
+    }
   },
 
   async getEventById(id: string): Promise<EventItem> {
+    const sample = SAMPLE_EVENTS.find((e) => e.id === id);
+    if (sample) return sample;
     return storefrontApi.getEvent(id);
   },
 

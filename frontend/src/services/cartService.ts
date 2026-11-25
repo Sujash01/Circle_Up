@@ -1,4 +1,4 @@
-import { calculateCheckoutDeliveryFee, formatPrice, normalizeBusinessWhatsappNumber } from '@circleup/shared';
+import { calculateCheckoutDeliveryFee, formatPrice, normalizeBusinessWhatsappNumber, formatDisplaySerial } from '@circleup/shared';
 import type { CartItem, CartState, Product, ProductVariant } from '@/types/storefront';
 export type { CartItem, CartState };
 import { readStorage, writeStorage } from './storage';
@@ -14,8 +14,10 @@ export function buildBusinessWhatsappUrl(businessNumber: string | undefined, mes
 }
 
 export function getCartItemSerialNumber(item: CartItem): string {
-  return item.serialNumber || productService.getProductById(item.productId)?.serialNumber
-    || productService.getProductBySlug(item.slug)?.serialNumber || item.productId.toUpperCase();
+  return formatDisplaySerial(
+    item.serialNumber || productService.getProductById(item.productId)?.serialNumber || productService.getProductBySlug(item.slug)?.serialNumber,
+    item.productId
+  );
 }
 
 export function generateCartId(): string {
@@ -213,7 +215,7 @@ export const cartService = {
       'Hi CircleUp! I would like to enquire about this piece:',
       `• ${product.name}${variantLabel ? ` (${variantLabel})` : ''}`,
       `• Price: ${formatPrice(unitPrice)}`,
-      `• Ref: ${product.serialNumber || product.id.toUpperCase()}`,
+      `• Ref: ${formatDisplaySerial(product.serialNumber, product.id)}`,
       ...(selection ? [`• Size: ${selection.size}`] : []),
       `• Quantity: ${quantity}`,
       `Estimated Shipping: ${formatPrice(shipping)}`,

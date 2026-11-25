@@ -2,7 +2,12 @@ import { useEffect, useState } from 'react';
 import { CATEGORIES, CATEGORY_MAP } from '@/data/categories';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { apiClient } from '@/services/apiClient';
-import { extractCategoryCodeFromSerial, normalizePriceToPaise } from '@circleup/shared';
+import {
+  extractCategoryCodeFromSerial,
+  normalizePriceToPaise,
+  cleanSizeLabel,
+  formatDisplaySerial,
+} from '@circleup/shared';
 import type {
   CategoryMeta,
   GenderTag,
@@ -146,19 +151,23 @@ function mapSupabaseRowToProduct(row: Record<string, unknown>): Product {
   const sizes = Array.isArray(row.sizes) ? (row.sizes as string[]) : [];
   const tags = Array.isArray(row.tags) ? (row.tags as string[]) : [];
 
-  const rawSerial = (row.serial_number as string) || (row.id as string)?.toUpperCase();
+  const rawSerial = (row.serial_number as string) || undefined;
+  const displaySerial = formatDisplaySerial(rawSerial, row.id as string);
   const rawStatus = (row.status as string) || (stock > 0 ? 'AVAILABLE' : 'SOLD');
   const catCode = (row.category_code as string) || (rawSerial ? extractCategoryCodeFromSerial(rawSerial) : undefined);
 
   const resolvedVariants: Product['variants'] =
     Array.isArray(row.variants) && row.variants.length > 0
       ? (row.variants as Product['variants'])
-      : (sizes.length > 0 ? sizes : ['One Size']).map((sz, idx) => ({
-          id: `${rawSerial || 'var'}-${idx}-${sz.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
-          label: sz,
-          size: sz,
-          stock: Math.max(1, Math.floor(stock / (sizes.length || 1))),
-        }));
+      : (sizes.length > 0 ? sizes : ['One Size']).map((sz, idx) => {
+          const cleanSz = cleanSizeLabel(sz);
+          return {
+            id: `${displaySerial || 'var'}-${idx}-${cleanSz.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+            label: cleanSz,
+            size: cleanSz,
+            stock: Math.max(1, Math.floor(stock / (sizes.length || 1))),
+          };
+        });
 
   return {
     id: (row.id as string) || (row.serial_number as string) || 'cu-unknown',

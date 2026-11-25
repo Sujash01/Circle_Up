@@ -566,3 +566,74 @@ export function resolveSizeChartForCategory(
 
   return undefined;
 }
+
+/**
+ * Safely formats a product serial number for public customer display,
+ * preventing accidental exposure of internal 36-character database UUIDs.
+ */
+export function formatDisplaySerial(serialNumber?: string | null, id?: string | null): string {
+  const isUuid = (val: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val.trim());
+
+  if (serialNumber && serialNumber.trim().length > 0 && !isUuid(serialNumber)) {
+    return serialNumber.trim().toUpperCase();
+  }
+
+  if (id && id.trim().length > 0) {
+    const cleanId = id.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+    return `CU-${cleanId.slice(0, 6)}`;
+  }
+
+  return 'CU-PIECE';
+}
+
+/**
+ * Extracts a clean, concise size code (e.g. "L", "S-M", "One Size", "UK 3")
+ * from complex raw inventory strings containing embedded measurements.
+ */
+export function cleanSizeLabel(rawSize?: string | null): string {
+  if (!rawSize || typeof rawSize !== 'string') {
+    return 'One Size';
+  }
+
+  const trimmed = rawSize.trim();
+  if (!trimmed || trimmed === '-' || trimmed === '—') {
+    return 'One Size';
+  }
+
+  // If the size string begins with measurement brackets like "(length-14')" or "{bust-32'}"
+  if (trimmed.startsWith('(') || trimmed.startsWith('{')) {
+    return 'One Size';
+  }
+
+  // If size contains delimiter before measurements, e.g. "L {Kurti..." or "S-M (chest..."
+  const beforeBracket = trimmed.split(/[{\(]/)[0]?.trim();
+  if (beforeBracket && beforeBracket.length > 0) {
+    if (/^UK\s*\d+$/i.test(beforeBracket)) {
+      return beforeBracket.replace(/^UK\s*(\d+)$/i, 'UK $1');
+    }
+    return beforeBracket;
+  }
+
+  // Normalize UK sizes like "UK4" -> "UK 4"
+  if (/^UK\s*\d+$/i.test(trimmed)) {
+    return trimmed.replace(/^UK\s*(\d+)$/i, 'UK $1');
+  }
+
+  return trimmed;
+}
+
+/**
+ * Extracts detailed measurements string from raw inventory size strings.
+ */
+export function extractMeasurementsFromSizeString(rawSize?: string | null): string | undefined {
+  if (!rawSize || typeof rawSize !== 'string') return undefined;
+
+  const match = rawSize.match(/[{(\[](.*)[})\]]/);
+  if (match && match[1]) {
+    return match[1].trim();
+  }
+
+  return undefined;
+}
+
