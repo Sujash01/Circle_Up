@@ -5,8 +5,21 @@ import { sendCreated, sendSuccess } from '../../utils/apiResponse.js';
 import { adminLoginSchema } from '@circleup/shared';
 import { z } from 'zod';
 
-const adminCreateSchema = z.object({ email: z.string().email().max(254), name: z.string().trim().min(1).max(120), password: z.string().min(8).max(256), role: z.enum(['owner', 'staff']).default('staff') }).strict();
-const adminUpdateSchema = z.object({ email: z.string().email().max(254).optional(), name: z.string().trim().min(1).max(120).optional(), role: z.enum(['owner', 'staff']).optional(), isActive: z.boolean().optional(), password: z.string().min(8).max(256).optional() }).strict().refine((value) => Object.keys(value).length > 0, 'At least one field is required.');
+const adminCreateSchema = z.object({
+  email: z.string().email().max(254),
+  name: z.string().trim().min(1).max(120),
+  password: z.string().min(8).max(256),
+  role: z.enum(['owner', 'staff']).default('staff'),
+  permissions: z.array(z.string()).optional(),
+}).strict();
+const adminUpdateSchema = z.object({
+  email: z.string().email().max(254).optional(),
+  name: z.string().trim().min(1).max(120).optional(),
+  role: z.enum(['owner', 'staff']).optional(),
+  isActive: z.boolean().optional(),
+  password: z.string().min(8).max(256).optional(),
+  permissions: z.array(z.string()).optional(),
+}).strict().refine((value) => Object.keys(value).length > 0, 'At least one field is required.');
 const passwordChangeSchema = z.object({ currentPassword: z.string().min(1).max(256), newPassword: z.string().min(8).max(256) }).strict();
 
 export const adminAuthController = {
@@ -31,6 +44,7 @@ export const adminAuthController = {
             email: result.user.email,
             name: result.user.name,
             role: result.user.role as 'owner' | 'staff',
+            permissions: result.user.permissions || [],
             csrfToken: result.csrfToken,
             expiresAt: Date.now() + 24 * 60 * 60 * 1000,
             sessionId: result.sessionId,
@@ -81,6 +95,7 @@ export const adminAuthController = {
           email: req.adminUser?.email,
           name: req.adminUser?.name,
           role: req.adminUser?.role,
+          permissions: req.adminUser?.permissions || [],
         },
         csrfToken: req.adminUser?.csrfToken,
       });
@@ -134,9 +149,24 @@ export const adminAuthController = {
       const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
       const input = adminUpdateSchema.parse(req.body);
       const updated = await adminAuthService.updateAdminUser(id, req.adminUser!.userId, input);
-      const safeDiff = { email: input.email, name: input.name, role: input.role, isActive: input.isActive };
+      const safeDiff = { email: input.email, name: input.name, role: input.role, isActive: input.isActive, permissions: input.permissions };
       await auditService.record({ actor: req.adminUser, action: 'ADMIN_USER_UPDATE', entity: 'AdminUser', entityId: updated.id, diff: safeDiff, req });
       return sendSuccess(res, updated);
+    } catch (error) { next(error); }
+  },
+
+  async deleteUser(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+      const result = await adminAuthService.deleteAdminUser(id, req.adminUser!.userId);
+      await auditService.record({
+        actor: req.adminUser,
+        action: 'ADMIN_USER_DELETE',
+        entity: 'AdminUser',
+        entityId: id,
+        req,
+      });
+      return sendSuccess(res, result);
     } catch (error) { next(error); }
   },
 };

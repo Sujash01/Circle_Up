@@ -27,7 +27,7 @@ const upload = multer({
 adminRouter.use(noStoreCache);
 
 // === DASHBOARD OVERVIEW & AGGREGATES (P1-6) ===
-adminRouter.get('/overview', requireAdminAuth(), adminOverviewController.getOverview);
+adminRouter.get('/overview', requireAdminAuth('overview:view'), adminOverviewController.getOverview);
 
 // === AUTHENTICATION ===
 adminRouter.post('/auth/login', adminAuthRateLimiter, adminAuthController.login);
@@ -43,46 +43,47 @@ adminRouter.get('/users', requireAdminAuth('owner'), adminAuthController.listUse
 adminRouter.get('/users/:id', requireAdminAuth('owner'), adminAuthController.getUser);
 adminRouter.post('/users', requireAdminAuth('owner'), verifyAdminCsrf, adminAuthController.createUser);
 adminRouter.patch('/users/:id', requireAdminAuth('owner'), verifyAdminCsrf, adminAuthController.updateUser);
+adminRouter.delete('/users/:id', requireAdminAuth('owner'), verifyAdminCsrf, adminAuthController.deleteUser);
 
 // === PRODUCTS (CRUD, BULK, SOFT & PERMANENT DELETE) ===
-adminRouter.get('/products', requireAdminAuth(), adminProductController.list);
-adminRouter.get('/products/:id', requireAdminAuth(), adminProductController.getById);
-adminRouter.post('/products', requireAdminAuth(), verifyAdminCsrf, adminProductController.create);
-adminRouter.put('/products/:id', requireAdminAuth(), verifyAdminCsrf, adminProductController.update);
+adminRouter.get('/products', requireAdminAuth('products:view'), adminProductController.list);
+adminRouter.get('/products/:id', requireAdminAuth('products:view'), adminProductController.getById);
+adminRouter.post('/products', requireAdminAuth('products:create'), verifyAdminCsrf, adminProductController.create);
+adminRouter.put('/products/:id', requireAdminAuth('products:edit'), verifyAdminCsrf, adminProductController.update);
 adminRouter.post(
   '/products/:id/duplicate',
-  requireAdminAuth(),
+  requireAdminAuth('products:copy'),
   verifyAdminCsrf,
   adminProductController.duplicate,
 );
-adminRouter.post('/products/bulk', requireAdminAuth(), verifyAdminCsrf, adminProductController.bulk);
+adminRouter.post('/products/bulk', requireAdminAuth('products:edit'), verifyAdminCsrf, adminProductController.bulk);
 adminRouter.delete(
   '/products/:id',
-  requireAdminAuth(),
+  requireAdminAuth('products:archive'),
   verifyAdminCsrf,
   adminProductController.softDelete,
 );
 adminRouter.post(
   '/products/:id/restore',
-  requireAdminAuth(),
+  requireAdminAuth('products:archive'),
   verifyAdminCsrf,
   adminProductController.restore,
 );
 adminRouter.delete(
   '/products/:id/permanent',
-  requireAdminAuth('owner'),
+  requireAdminAuth('products:delete'),
   verifyAdminCsrf,
   adminProductController.permanentDelete,
 );
 
 // === ORDERS (LIST & STATUS TRANSITIONS) ===
 adminRouter.get('/orders/reconciliation', requireAdminAuth('owner'), adminOrderController.getReconciliation);
-adminRouter.get('/orders', requireAdminAuth(), adminOrderController.list);
+adminRouter.get('/orders', requireAdminAuth('orders:view'), adminOrderController.list);
 adminRouter.post('/orders/:id/cancel', requireAdminAuth('owner'), verifyAdminCsrf,
   adminOrderReauthenticationLimiter, adminOrderController.cancel);
 adminRouter.put(
   '/orders/:id/status',
-  requireAdminAuth(),
+  requireAdminAuth('orders:manage'),
   verifyAdminCsrf,
   adminOrderController.updateStatus,
 );
@@ -100,7 +101,7 @@ adminRouter.post(
 );
 adminRouter.post(
   '/orders/:id/returns/inspection',
-  requireAdminAuth(),
+  requireAdminAuth('orders:manage'),
   verifyAdminCsrf,
   adminOrderController.recordReturnInspection,
 );
@@ -113,45 +114,45 @@ adminRouter.post(
 );
 adminRouter.post(
   '/orders/:id/fulfillments',
-  requireAdminAuth(),
+  requireAdminAuth('orders:manage'),
   verifyAdminCsrf,
   adminOrderController.createFulfillment,
 );
 
 // === INQUIRIES (CONTACT INBOX) ===
-adminRouter.get('/inquiries', requireAdminAuth(), adminInquiryController.list);
-adminRouter.get('/inquiries/:id', requireAdminAuth(), adminInquiryController.getById);
-adminRouter.patch('/inquiries/:id', requireAdminAuth(), verifyAdminCsrf, adminInquiryController.update);
+adminRouter.get('/inquiries', requireAdminAuth('inquiries:view'), adminInquiryController.list);
+adminRouter.get('/inquiries/:id', requireAdminAuth('inquiries:view'), adminInquiryController.getById);
+adminRouter.patch('/inquiries/:id', requireAdminAuth('inquiries:manage'), verifyAdminCsrf, adminInquiryController.update);
 
 // === CUSTOMERS (CRM) ===
-adminRouter.get('/customers', requireAdminAuth(), adminCustomerController.list);
-adminRouter.get('/customers/:id', requireAdminAuth(), adminCustomerController.getById);
-adminRouter.patch('/customers/:id', requireAdminAuth('owner'), verifyAdminCsrf, adminCustomerController.update);
+adminRouter.get('/customers', requireAdminAuth('customers:view'), adminCustomerController.list);
+adminRouter.get('/customers/:id', requireAdminAuth('customers:view'), adminCustomerController.getById);
+adminRouter.patch('/customers/:id', requireAdminAuth('customers:manage'), verifyAdminCsrf, adminCustomerController.update);
 
 // === MEDIA UPLOAD ===
 adminRouter.post(
   '/media/upload',
-  requireAdminAuth(),
+  requireAdminAuth(['products:create', 'products:edit']),
   verifyAdminCsrf,
-  upload.array('images', 5),
+  upload.any(),
   adminMediaController.upload,
 );
-adminRouter.delete('/media', requireAdminAuth(), verifyAdminCsrf, adminMediaController.delete);
+adminRouter.delete('/media', requireAdminAuth(['products:create', 'products:edit', 'products:delete']), verifyAdminCsrf, adminMediaController.delete);
 
 // === SITE SETTINGS (OWNER ONLY FOR MUTATION) ===
-adminRouter.get('/settings', requireAdminAuth(), adminSettingsController.getSettings);
+adminRouter.get('/settings', requireAdminAuth('settings:view'), adminSettingsController.getSettings);
 adminRouter.put(
   '/settings',
   requireAdminAuth('owner'),
   verifyAdminCsrf,
   adminSettingsController.updateSettings,
 );
-adminRouter.get('/activity', requireAdminAuth('owner'), adminSettingsController.getActivity);
+adminRouter.get('/activity', requireAdminAuth('activity:view'), adminSettingsController.getActivity);
 
 // === COUPONS ===
-adminRouter.get('/coupons', requireAdminAuth(), adminCouponController.list);
-adminRouter.post('/coupons', requireAdminAuth(), verifyAdminCsrf, adminCouponController.create);
-adminRouter.put('/coupons/:id', requireAdminAuth(), verifyAdminCsrf, adminCouponController.update);
+adminRouter.get('/coupons', requireAdminAuth('coupons:view'), adminCouponController.list);
+adminRouter.post('/coupons', requireAdminAuth('coupons:manage'), verifyAdminCsrf, adminCouponController.create);
+adminRouter.put('/coupons/:id', requireAdminAuth('coupons:manage'), verifyAdminCsrf, adminCouponController.update);
 adminRouter.delete(
   '/coupons/:id',
   requireAdminAuth('owner'),
@@ -160,16 +161,16 @@ adminRouter.delete(
 );
 
 // === RENTALS ===
-adminRouter.get('/rental-bookings', requireAdminAuth(), adminRentalController.listBookings);
-adminRouter.patch('/rental-bookings/:id', requireAdminAuth(), verifyAdminCsrf, adminRentalController.updateBooking);
-adminRouter.get('/rentals', requireAdminAuth(), adminRentalController.list);
-adminRouter.post('/rentals', requireAdminAuth(), verifyAdminCsrf, adminRentalController.create);
-adminRouter.put('/rentals/:id', requireAdminAuth(), verifyAdminCsrf, adminRentalController.update);
+adminRouter.get('/rental-bookings', requireAdminAuth('rentals_events:view'), adminRentalController.listBookings);
+adminRouter.patch('/rental-bookings/:id', requireAdminAuth('rentals_events:manage'), verifyAdminCsrf, adminRentalController.updateBooking);
+adminRouter.get('/rentals', requireAdminAuth('rentals_events:view'), adminRentalController.list);
+adminRouter.post('/rentals', requireAdminAuth('rentals_events:manage'), verifyAdminCsrf, adminRentalController.create);
+adminRouter.put('/rentals/:id', requireAdminAuth('rentals_events:manage'), verifyAdminCsrf, adminRentalController.update);
 adminRouter.delete('/rentals/:id', requireAdminAuth('owner'), verifyAdminCsrf, adminRentalController.delete);
 
 // === EVENTS ===
-adminRouter.get('/events', requireAdminAuth(), adminEventController.list);
-adminRouter.post('/events', requireAdminAuth(), verifyAdminCsrf, adminEventController.create);
-adminRouter.put('/events/:id', requireAdminAuth(), verifyAdminCsrf, adminEventController.update);
+adminRouter.get('/events', requireAdminAuth('rentals_events:view'), adminEventController.list);
+adminRouter.post('/events', requireAdminAuth('rentals_events:manage'), verifyAdminCsrf, adminEventController.create);
+adminRouter.put('/events/:id', requireAdminAuth('rentals_events:manage'), verifyAdminCsrf, adminEventController.update);
 adminRouter.delete('/events/:id', requireAdminAuth('owner'), verifyAdminCsrf, adminEventController.delete);
 

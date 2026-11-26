@@ -19,25 +19,32 @@ import {
 
 export function AdminSidebar() {
   const { pathname } = useLocation();
-  const { user, isOwner, logout } = useAdminAuth();
+  const { user, isOwner, hasPermission, logout } = useAdminAuth();
 
-  const navItems = [
-    { label: 'Overview', to: '/admin', icon: LayoutDashboard, exact: true },
-    { label: 'Products', to: '/admin/products', icon: Package },
-    { label: 'Collections', to: '/admin/collections', icon: Layers },
-    { label: 'Orders', to: '/admin/orders', icon: ShoppingBag },
-    { label: 'Customers', to: '/admin/customers', icon: Users },
-    { label: 'Inquiries', to: '/admin/inquiries', icon: Mail },
-    { label: 'Rentals & Events', to: '/admin/rentals-events', icon: CalendarDays },
-    { label: 'Coupons', to: '/admin/coupons', icon: Ticket },
+  const allNavItems = [
+    { label: 'Overview', to: '/admin', icon: LayoutDashboard, exact: true, permission: 'overview:view' },
+    { label: 'Products', to: '/admin/products', icon: Package, permission: 'products:view' },
+    { label: 'Collections', to: '/admin/collections', icon: Layers, permission: 'products:view' },
+    { label: 'Orders', to: '/admin/orders', icon: ShoppingBag, permission: 'orders:view' },
+    { label: 'Customers', to: '/admin/customers', icon: Users, permission: 'customers:view' },
+    { label: 'Inquiries', to: '/admin/inquiries', icon: Mail, permission: 'inquiries:view' },
+    { label: 'Rentals & Events', to: '/admin/rentals-events', icon: CalendarDays, permission: 'rentals_events:view' },
+    { label: 'Coupons', to: '/admin/coupons', icon: Ticket, permission: 'coupons:view' },
     ...(isOwner
       ? [
-          { label: 'Site Settings', to: '/admin/settings', icon: Settings },
-          { label: 'Activity Log', to: '/admin/activity', icon: History },
+          { label: 'Team Accounts', to: '/admin/team', icon: Users, permission: 'team:manage' },
         ]
       : []),
+    { label: 'Site Settings', to: '/admin/settings', icon: Settings, permission: 'settings:view' },
+    { label: 'Activity Log', to: '/admin/activity', icon: History, permission: 'activity:view' },
     { label: 'My Account', to: '/admin/account', icon: UserCheck },
   ];
+
+  const navItems = allNavItems.filter((item) => {
+    if (!item.permission) return true;
+    if (item.to === '/admin/team') return isOwner;
+    return isOwner || hasPermission(item.permission);
+  });
 
   return (
     <aside

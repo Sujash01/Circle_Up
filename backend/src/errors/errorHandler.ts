@@ -42,6 +42,26 @@ function normalizeError(err: unknown): NormalizedError {
     };
   }
 
+  if (err && typeof err === 'object' && (err as { name?: string }).name === 'MulterError') {
+    const multerErr = err as { code?: string; message?: string };
+    let message = 'File upload failed.';
+    let code = 'UPLOAD_ERROR';
+    if (multerErr.code === 'LIMIT_FILE_SIZE') {
+      message = 'Image exceeds maximum allowed size of 8MB.';
+      code = 'FILE_TOO_LARGE';
+    } else if (multerErr.code === 'LIMIT_FILE_COUNT' || multerErr.code === 'LIMIT_UNEXPECTED_FILE') {
+      message = 'Too many files uploaded or unexpected file field.';
+      code = 'TOO_MANY_FILES';
+    } else if (multerErr.message) {
+      message = multerErr.message;
+    }
+    return {
+      statusCode: 400,
+      code,
+      message,
+    };
+  }
+
   const fallbackMessage =
     env.NODE_ENV === 'production'
       ? 'An unexpected internal error occurred'

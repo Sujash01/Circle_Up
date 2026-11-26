@@ -57,8 +57,13 @@ adminClient.interceptors.request.use((config) => {
   }
   // When transmitting FormData, remove default Content-Type so Axios/browser sets boundary automatically
   if (config.data instanceof FormData && config.headers) {
-    delete config.headers['Content-Type'];
-    delete config.headers['content-type'];
+    if (typeof config.headers.delete === 'function') {
+      config.headers.delete('Content-Type');
+      config.headers.delete('content-type');
+    } else {
+      delete config.headers['Content-Type'];
+      delete config.headers['content-type'];
+    }
   }
   return config;
 });
@@ -189,16 +194,23 @@ export const adminApi = {
     } catch (err) { throw normalizeApiError(err); }
   },
 
-  async createAdminUser(input: { email: string; name: string; password: string; role: 'owner' | 'staff' }) {
+  async createAdminUser(input: { email: string; name: string; password: string; role: 'owner' | 'staff'; permissions?: string[] }) {
     try {
       const res = await adminClient.post<{ data: AdminUser }>('/users', input);
       return res.data.data;
     } catch (err) { throw normalizeApiError(err); }
   },
 
-  async updateAdminUser(id: string, input: { email?: string; name?: string; role?: 'owner' | 'staff'; isActive?: boolean; password?: string }) {
+  async updateAdminUser(id: string, input: { email?: string; name?: string; role?: 'owner' | 'staff'; isActive?: boolean; password?: string; permissions?: string[] }) {
     try {
       const res = await adminClient.patch<{ data: AdminUser }>(`/users/${id}`, input);
+      return res.data.data;
+    } catch (err) { throw normalizeApiError(err); }
+  },
+
+  async deleteAdminUser(id: string) {
+    try {
+      const res = await adminClient.delete<{ data: { success: boolean; deletedId: string } }>(`/users/${id}`);
       return res.data.data;
     } catch (err) { throw normalizeApiError(err); }
   },

@@ -135,9 +135,13 @@ describe('Phase 3: Admin Backend (/api/admin/*)', () => {
 
   beforeAll(async () => {
     vi.spyOn(adminAuthService, 'validateSession').mockImplementation(async (token) => verifySessionToken(token));
-    const users = new Map<string, { id: string; email: string; name: string; password: string; role: 'owner' | 'staff' }>();
+    const users = new Map<string, { id: string; email: string; name: string; password: string; role: 'owner' | 'staff'; permissions: string[] }>();
     vi.spyOn(adminAuthService, 'createAdminUser').mockImplementation(async (input) => {
-      const row = { id: `fixture-${input.role}`, email: input.email.toLowerCase(), name: input.name, password: input.password, role: input.role };
+      const perms = (input as any).permissions || (input.role === 'staff' ? [
+        'overview:view', 'products:view', 'products:create', 'products:edit', 'products:archive', 'products:copy', 'products:delete',
+        'orders:view', 'orders:manage', 'coupons:view', 'coupons:manage', 'rentals_events:view', 'rentals_events:manage', 'inquiries:view', 'inquiries:manage',
+      ] : []);
+      const row = { id: `fixture-${input.role}`, email: input.email.toLowerCase(), name: input.name, password: input.password, role: input.role, permissions: perms };
       users.set(row.email, row);
       return row;
     });
@@ -145,8 +149,8 @@ describe('Phase 3: Admin Backend (/api/admin/*)', () => {
       const user = users.get(email.toLowerCase());
       if (!user || user.password !== password) throw new UnauthorizedError('Invalid admin email or password.', 'INVALID_CREDENTIALS');
       const csrfToken = `csrf-${user.id}`;
-      const sessionToken = signSessionToken({ userId: user.id, email: user.email, name: user.name, role: user.role, csrfToken, expiresAt: Date.now() + 86400000, sessionId: `session-${user.id}` });
-      return { user: { id: user.id, email: user.email, name: user.name, role: user.role }, csrfToken, sessionToken, sessionId: `session-${user.id}` };
+      const sessionToken = signSessionToken({ userId: user.id, email: user.email, name: user.name, role: user.role, permissions: user.permissions, csrfToken, expiresAt: Date.now() + 86400000, sessionId: `session-${user.id}` });
+      return { user: { id: user.id, email: user.email, name: user.name, role: user.role, permissions: user.permissions }, csrfToken, sessionToken, sessionId: `session-${user.id}` };
     });
     vi.spyOn(adminAuthService, 'listAdminUsers').mockResolvedValue([{ id: 'fixture-owner', email: 'owner@circleuponline.com', name: 'Store Owner', role: 'owner', isActive: true }]);
     vi.spyOn(adminAuthService, 'getAdminUserById').mockResolvedValue({ id: 'fixture-staff', email: 'staff@circleuponline.com', name: 'Store Staff', role: 'staff', isActive: true });
@@ -508,7 +512,42 @@ describe('Phase 3: Admin Backend (/api/admin/*)', () => {
         .attach('images', Buffer.from('not-an-image'), 'fake.jpg');
       expect(result.status).toBe(503);
       expect(result.body.success).not.toBe(true);
+      expect(result.body.error.code).toBe('STORAGE_UNAVAILABLE');
       upload.mockRestore();
+    });
+
+    it('accepts upload with alternate field name like "image" or "file"', async () => {
+      const validPng = await sharp({
+        create: { width: 50, height: 50, channels: 3, background: { r: 50, g: 50, b: 50 } },
+      }).png().toBuffer();
+
+      const upload = vi.spyOn(storageService, 'processAndStoreImage').mockResolvedValue({
+        original: 'https://circleup.supabase.co/storage/v1/object/public/product-images/products/hash/obj/800w.webp',
+        w400: 'https://circleup.supabase.co/storage/v1/object/public/product-images/products/hash/obj/400w.webp',
+        w800: 'https://circleup.supabase.co/storage/v1/object/public/product-images/products/hash/obj/800w.webp',
+        w1600: 'https://circleup.supabase.co/storage/v1/object/public/product-images/products/hash/obj/1600w.webp',
+        hash: 'alt-field-hash',
+      });
+
+      const res = await request(app)
+        .post('/api/admin/media/upload')
+        .set('Cookie', ownerCookie)
+        .set('X-CSRF-Token', ownerCsrf)
+        .attach('image', validPng, 'single-item.png');
+
+      expect(res.status).toBe(201);
+      expect(res.body.data.hash).toBe('alt-field-hash');
+      upload.mockRestore();
+    });
+
+    it('returns 400 when no file is attached', async () => {
+      const res = await request(app)
+        .post('/api/admin/media/upload')
+        .set('Cookie', ownerCookie)
+        .set('X-CSRF-Token', ownerCsrf);
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('NO_FILE_UPLOADED');
     });
   });
 

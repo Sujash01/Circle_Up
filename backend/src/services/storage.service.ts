@@ -19,11 +19,34 @@ const VARIANTS = ['400w.webp', '800w.webp', '1600w.webp'] as const;
 const COLLECTIONS = new Set<MediaCollection>(['products', 'events', 'rentals', 'general']);
 const MIME_BY_FORMAT: Record<string, string> = { jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
 const ALLOWED_MIMES_BY_FORMAT: Record<string, string[]> = {
-  jpeg: ['image/jpeg', 'image/jpg', 'image/pjpeg'],
+  jpeg: ['image/jpeg', 'image/jpg', 'image/pjpeg', 'image/jfif'],
   png: ['image/png', 'image/x-png'],
   webp: ['image/webp'],
 };
 const unavailable = (message = 'Supabase Storage is unavailable.') => new ServiceUnavailableError(message, 'STORAGE_UNAVAILABLE');
+
+let bucketEnsured = false;
+async function ensureBucket(client: ReturnType<typeof getSupabaseServiceClient>): Promise<void> {
+  if (bucketEnsured) return;
+  try {
+    if (typeof client.storage?.getBucket === 'function') {
+      const { data: bucket, error } = await client.storage.getBucket(BUCKET);
+      if (!bucket || error) {
+        if (typeof client.storage?.createBucket === 'function') {
+          await client.storage.createBucket(BUCKET, {
+            public: true,
+            fileSizeLimit: 10 * 1024 * 1024,
+            allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif'],
+          });
+        }
+      }
+    }
+    bucketEnsured = true;
+  } catch {
+    // If bucket creation fails or client doesn't support getBucket/createBucket (e.g. mock),
+    // proceed and let upload attempt directly
+  }
+}
 
 function getVariantBuffers(input: Buffer) {
   return Promise.all([
@@ -45,10 +68,12 @@ async function inspectImage(fileBuffer: Buffer, declaredMimeType?: string): Prom
     throw new BadRequestError('Unsupported image format. Allowed formats: JPEG, PNG, WebP.', 'UNSUPPORTED_FORMAT');
   }
   if (declaredMimeType) {
-    const normalizedDeclared = declaredMimeType.toLowerCase().trim();
-    const allowedMimes = ALLOWED_MIMES_BY_FORMAT[metadata.format] || [MIME_BY_FORMAT[metadata.format]];
-    if (!allowedMimes.includes(normalizedDeclared)) {
-      throw new BadRequestError('Uploaded MIME type does not match the image contents.', 'MIME_CONTENT_MISMATCH');
+    const cleanDeclared = declaredMimeType.split(';')[0]?.toLowerCase().trim() || '';
+    if (cleanDeclared && cleanDeclared !== 'application/octet-stream') {
+      const allowedMimes = ALLOWED_MIMES_BY_FORMAT[metadata.format] || [MIME_BY_FORMAT[metadata.format]];
+      if (!allowedMimes.includes(cleanDeclared)) {
+        throw new BadRequestError('Uploaded MIME type does not match the image contents.', 'MIME_CONTENT_MISMATCH');
+      }
     }
   }
   return metadata;
@@ -138,16 +163,29 @@ export const storageService = {
     const objectUuid = crypto.randomUUID();
     const paths = VARIANTS.map((variant) => pathFor(collection, fullHash, objectUuid, variant));
     const client = getSupabaseServiceClient();
+    await ensureBucket(client);
     const bucket = client.storage.from(BUCKET);
     const storedPaths: string[] = [];
 
     try {
       for (const [index, path] of paths.entries()) {
-        const { data, error } = await bucket.upload(path, variants[index]!, {
+        let uploadResult = await bucket.upload(path, variants[index]!, {
           contentType: 'image/webp',
           cacheControl: '31536000',
           upsert: false,
         });
+
+        if (uploadResult.error && (uploadResult.error.message?.toLowerCase().includes('not found') || (uploadResult.error as { statusCode?: number }).statusCode === 404)) {
+          bucketEnsured = false;
+          await ensureBucket(client);
+          uploadResult = await bucket.upload(path, variants[index]!, {
+            contentType: 'image/webp',
+            cacheControl: '31536000',
+            upsert: false,
+          });
+        }
+
+        const { data, error } = uploadResult;
         if (error || !data) throw unavailable(error?.message || 'Supabase Storage did not confirm image upload.');
         storedPaths.push(path);
       }
@@ -155,8 +193,9 @@ export const storageService = {
       if (storedPaths.length) {
         try { await bucket.remove(storedPaths); } catch { /* Preserve the upload error; a later storage sweep can clean up. */ }
       }
-      if (error instanceof ServiceUnavailableError) throw error;
-      throw unavailable();
+      if (error instanceof ServiceUnavailableError || error instanceof BadRequestError) throw error;
+      const msg = error instanceof Error ? error.message : 'Supabase Storage is unavailable.';
+      throw unavailable(msg);
     }
 
     const urls = paths.map((path) => publicObjectUrl(client, path));
@@ -176,5 +215,9 @@ export const storageService = {
     const { data, error } = await client.storage.from(BUCKET).remove(managed.paths);
     if (error || !data || data.length !== managed.paths.length) throw unavailable(error?.message || 'Supabase Storage did not confirm image deletion.');
     return { deleted: true };
+  },
+
+  _resetBucketCacheForTesting(): void {
+    bucketEnsured = false;
   },
 };

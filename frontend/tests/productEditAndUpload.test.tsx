@@ -1,4 +1,4 @@
-﻿import React, { act } from 'react';
+import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -20,7 +20,7 @@ describe('Product Edit & Image Upload Flow', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.spyOn(adminApi, 'getMe').mockResolvedValue({
-      user: { id: 'admin-1', email: 'owner@circleup.in', role: 'owner', name: 'Owner', isActive: true },
+      user: { id: 'admin-1', email: 'owner@circleup.in', role: 'owner', name: 'Owner', isActive: true, permissions: [] },
       csrfToken: 'mock-csrf-token',
     });
     container = document.createElement('div');
@@ -278,5 +278,198 @@ describe('Product Edit & Image Upload Flow', () => {
     // Check that /assets/rtw-1.webp placeholder is not present
     const placeholderImg = container.querySelector('img[src="/assets/rtw-1.webp"]');
     expect(placeholderImg).toBeNull();
+  });
+
+  it('surfaces upload failure clearly in toast and does not inject silent placeholders', async () => {
+    vi.spyOn(adminApi, 'uploadMedia').mockRejectedValue(new Error('Bucket product-images is not available'));
+
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/admin/products/new']}>
+          <AdminToastProvider>
+            <Routes>
+              <Route path="/admin/products/new" element={<ProductFormPage />} />
+            </Routes>
+          </AdminToastProvider>
+        </MemoryRouter>
+      );
+    });
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const testFile = new File(['bad-bits'], 'broken.jpg', { type: 'image/jpeg' });
+
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        value: [testFile],
+        writable: true,
+      });
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    // Check that error toast was surfaced
+    const toast = document.querySelector('.bg-red-500, [role="alert"]') || container.querySelector('.bg-red-500');
+    expect(toast).not.toBeNull();
+    expect(document.body.textContent).toContain('Bucket product-images is not available');
+
+    // Zero placeholder images injected
+    const imgs = container.querySelectorAll('img');
+    expect(imgs.length).toBe(0);
+  });
+
+  it('creates product with uploaded image and persists URL to backend payload', async () => {
+    const uploadedUrl = 'https://circleup.supabase.co/storage/v1/object/public/product-images/products/h3/u3/800w.webp';
+    vi.spyOn(adminApi, 'uploadMedia').mockResolvedValue([
+      { original: uploadedUrl, w400: uploadedUrl, w800: uploadedUrl, w1600: uploadedUrl, hash: 'h3' },
+    ]);
+    const createSpy = vi.spyOn(adminApi, 'createProduct').mockResolvedValue({
+      id: 'prod-new-1',
+      serialNumber: 'CU-NEW-1',
+      name: 'Artisan Wool Shawl',
+      slug: 'artisan-wool-shawl',
+      price: 180000,
+      stock: 1,
+      status: 'AVAILABLE',
+      category: 'womens-one-piece',
+      images: [uploadedUrl],
+    } as unknown as Product);
+
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/admin/products/new']}>
+          <AdminToastProvider>
+            <Routes>
+              <Route path="/admin/products/new" element={<ProductFormPage />} />
+            </Routes>
+          </AdminToastProvider>
+        </MemoryRouter>
+      );
+    });
+
+    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+
+    // Set name
+    const nameInput = container.querySelector('input[placeholder="e.g. Vintage Silk Pleated Midi Skirt"]') as HTMLInputElement;
+    await act(async () => {
+      nativeSetter?.call(nameInput, 'Artisan Wool Shawl');
+      nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+      nameInput.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    // Set price
+    const priceInput = container.querySelector('input[placeholder="2550"]') as HTMLInputElement;
+    await act(async () => {
+      nativeSetter?.call(priceInput, '1800');
+      priceInput.dispatchEvent(new Event('input', { bubbles: true }));
+      priceInput.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    // Upload image
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const testFile = new File(['shawl-bits'], 'shawl.webp', { type: 'image/webp' });
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        value: [testFile],
+        writable: true,
+      });
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    // Submit form
+    const form = container.querySelector('form') as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    const calledPayload = createSpy.mock.calls[0]![0];
+    expect(calledPayload.name).toBe('Artisan Wool Shawl');
+    expect(calledPayload.price).toBe(180000);
+    expect(calledPayload.images).toEqual([uploadedUrl]);
+  });
+
+  it('replaces image on existing product, deletes removed image, and saves updated image array', async () => {
+    const oldUrl = 'https://circleup.supabase.co/storage/v1/object/public/product-images/products/old/old/800w.webp';
+    const newUrl = 'https://circleup.supabase.co/storage/v1/object/public/product-images/products/new/new/800w.webp';
+
+    const mockProduct = {
+      id: 'uuid-048',
+      serialNumber: 'CU-048',
+      name: 'Vintage Silk Shirt',
+      slug: 'vintage-silk-shirt-cu-048',
+      price: 180000,
+      stock: 1,
+      status: 'AVAILABLE',
+      category: 'womens-one-piece',
+      images: [oldUrl],
+    } as unknown as Product;
+
+    vi.spyOn(adminApi, 'getProduct').mockResolvedValue(mockProduct);
+    vi.spyOn(adminApi, 'uploadMedia').mockResolvedValue([
+      { original: newUrl, w400: newUrl, w800: newUrl, w1600: newUrl, hash: 'new-hash' },
+    ]);
+    const updateSpy = vi.spyOn(adminApi, 'updateProduct').mockResolvedValue({
+      ...mockProduct,
+      images: [newUrl],
+    } as unknown as Product);
+    const deleteMediaSpy = vi.spyOn(adminApi, 'deleteMedia').mockResolvedValue({ deleted: true });
+
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/admin/products/CU-048/edit']}>
+          <AdminToastProvider>
+            <Routes>
+              <Route path="/admin/products/:id/edit" element={<ProductFormPage />} />
+            </Routes>
+          </AdminToastProvider>
+        </MemoryRouter>
+      );
+    });
+
+    for (let i = 0; i < 20; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      if (container.querySelector(`img[src="${oldUrl}"]`)) break;
+    }
+
+    // Verify existing image loaded
+    expect(container.querySelector(`img[src="${oldUrl}"]`)).not.toBeNull();
+
+    // Click remove image button
+    const removeBtn = container.querySelector('button[title="Remove image"]') as HTMLButtonElement;
+    expect(removeBtn).not.toBeNull();
+    await act(async () => {
+      removeBtn.click();
+    });
+
+    // Old image is removed from UI
+    expect(container.querySelector(`img[src="${oldUrl}"]`)).toBeNull();
+
+    // Upload new image
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const newFile = new File(['new-bits'], 'new.webp', { type: 'image/webp' });
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        value: [newFile],
+        writable: true,
+      });
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    // New image is rendered as cover
+    expect(container.querySelector(`img[src="${newUrl}"]`)).not.toBeNull();
+
+    // Submit update
+    const form = container.querySelector('form') as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+    const calledPayload = updateSpy.mock.calls[0]![1];
+    expect(calledPayload.images).toEqual([newUrl]);
+
+    // Verify that old unreferenced image was removed via deleteMedia
+    expect(deleteMediaSpy).toHaveBeenCalledWith(oldUrl);
   });
 });

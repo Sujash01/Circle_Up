@@ -463,5 +463,131 @@ describe('Supabase Catalog Service - Unit Tests', () => {
         images: ['https://circleup.supabase.co/storage/v1/object/public/product-images/products/hash/uuid/800w.webp'],
       }));
     });
+
+    describe('permanentDeleteProduct', () => {
+      const mockProduct = {
+        id: '44444444-5555-6666-7777-888888888888',
+        serial_number: 'CU-DEL-01',
+        name: 'Delete Me Product',
+      };
+
+      it('calls delete_product_if_unordered RPC and returns success when RPC is available', async () => {
+        const mockRpc = vi.fn().mockResolvedValue({
+          data: [{ deleted_id: mockProduct.id, serial_number: mockProduct.serial_number }],
+          error: null,
+        });
+        const mockMaybeSingle = vi.fn().mockResolvedValue({ data: mockProduct, error: null });
+        const mockEq = vi.fn().mockReturnValue({ maybeSingle: mockMaybeSingle });
+        const mockClient = {
+          rpc: mockRpc,
+          from: vi.fn().mockReturnValue({
+            select: vi.fn().mockReturnValue({ eq: mockEq }),
+          }),
+        } as any;
+
+        const res = await supabaseCatalogService.permanentDeleteProduct('CU-DEL-01', mockClient);
+        expect(res).toEqual({
+          message: 'Product CU-DEL-01 permanently removed.',
+        });
+        expect(mockRpc).toHaveBeenCalledWith('delete_product_if_unordered', {
+          p_product_id: mockProduct.id,
+        });
+      });
+
+      it('safely falls back when RPC is missing from schema cache (PGRST202) and verifies orders before deletion', async () => {
+        const mockRpc = vi.fn().mockResolvedValue({
+          data: null,
+          error: {
+            code: 'PGRST202',
+            message: 'Could not find the function public.delete_product_if_unordered(p_product_id) in the schema cache',
+          },
+        });
+        const mockProductMaybeSingle = vi.fn().mockResolvedValue({ data: mockProduct, error: null });
+
+        // Order items check: returns empty (clean)
+        const mockOrderItemsLimit = vi.fn().mockResolvedValue({ data: [], error: null });
+        const mockOrderItemsOr = vi.fn().mockReturnValue({ limit: mockOrderItemsLimit });
+
+        // Reservations check: returns empty (clean)
+        const mockReservationsLimit = vi.fn().mockResolvedValue({ data: [], error: null });
+        const mockReservationsEq = vi.fn().mockReturnValue({ limit: mockReservationsLimit });
+
+        // Product delete
+        const mockDeleteSelect = vi.fn().mockResolvedValue({
+          data: [{ id: mockProduct.id, serial_number: mockProduct.serial_number }],
+          error: null,
+        });
+        const mockDeleteEq = vi.fn().mockReturnValue({ select: mockDeleteSelect });
+        const mockDelete = vi.fn().mockReturnValue({ eq: mockDeleteEq });
+
+        const mockClient = {
+          rpc: mockRpc,
+          from: vi.fn((table: string) => {
+            if (table === 'products') {
+              return {
+                select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ maybeSingle: mockProductMaybeSingle }) }),
+                delete: mockDelete,
+              };
+            }
+            if (table === 'order_items') {
+              return {
+                select: vi.fn().mockReturnValue({ or: mockOrderItemsOr }),
+              };
+            }
+            if (table === 'stock_reservations') {
+              return {
+                select: vi.fn().mockReturnValue({ eq: mockReservationsEq }),
+              };
+            }
+            return {};
+          }),
+        } as any;
+
+        const res = await supabaseCatalogService.permanentDeleteProduct('CU-DEL-01', mockClient);
+        expect(res).toEqual({
+          message: 'Product CU-DEL-01 permanently removed.',
+        });
+        expect(mockDelete).toHaveBeenCalled();
+      });
+
+      it('rejects deletion via fallback with PRODUCT_IN_ORDERS when product is referenced in order_items', async () => {
+        const mockRpc = vi.fn().mockResolvedValue({
+          data: null,
+          error: {
+            code: 'PGRST202',
+            message: 'Could not find the function public.delete_product_if_unordered(p_product_id) in the schema cache',
+          },
+        });
+        const mockProductMaybeSingle = vi.fn().mockResolvedValue({ data: mockProduct, error: null });
+
+        // Order items check: returns an existing order item reference!
+        const mockOrderItemsLimit = vi.fn().mockResolvedValue({
+          data: [{ id: 'order-item-uuid-1', order_id: 'order-uuid-1' }],
+          error: null,
+        });
+        const mockOrderItemsOr = vi.fn().mockReturnValue({ limit: mockOrderItemsLimit });
+
+        const mockClient = {
+          rpc: mockRpc,
+          from: vi.fn((table: string) => {
+            if (table === 'products') {
+              return {
+                select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ maybeSingle: mockProductMaybeSingle }) }),
+              };
+            }
+            if (table === 'order_items') {
+              return {
+                select: vi.fn().mockReturnValue({ or: mockOrderItemsOr }),
+              };
+            }
+            return {};
+          }),
+        } as any;
+
+        await expect(
+          supabaseCatalogService.permanentDeleteProduct('CU-DEL-01', mockClient)
+        ).rejects.toThrow('Cannot permanently delete product CU-DEL-01 because it exists in existing orders');
+      });
+    });
   });
 });

@@ -55,7 +55,7 @@ function buildProductRow(
     original_price: data.originalPrice != null ? normalizePriceToPaise(data.originalPrice) : null,
     compare_at_price: data.compareAtPrice != null ? normalizePriceToPaise(data.compareAtPrice) : null,
     stock: data.stock ?? 1,
-    images: Array.isArray(data.images) && data.images.length > 0 ? data.images : ['/assets/rtw-1.jpg'],
+    images: Array.isArray(data.images) ? data.images : [],
     sizes: Array.isArray(data.sizes) ? data.sizes : [],
     variants: Array.isArray(data.variants) ? data.variants : [],
     category: data.category || 'thrifted-treasure',
@@ -732,12 +732,77 @@ export const supabaseCatalogService = {
     const product = await getAnyProductByIdentifier(id, client);
     const { data, error } = await client.rpc('delete_product_if_unordered', { p_product_id: product.id });
     if (error) {
-      if (error.code === '23503' || error.message.includes('PRODUCT_IN_ORDERS')) {
+      if (error.code === '23503' || error.message?.includes('PRODUCT_IN_ORDERS')) {
         throw new BadRequestError(`Cannot permanently delete product ${product.serialNumber} because it exists in existing orders. Soft-delete (archive) instead to preserve customer audit trail.`, 'PRODUCT_IN_ORDERS');
       }
-      if (error.code === 'P0002' || error.message.includes('PRODUCT_NOT_FOUND')) {
+      if (error.code === 'P0002' || error.message?.includes('PRODUCT_NOT_FOUND')) {
         throw new NotFoundError(`Product "${id}" not found.`, 'PRODUCT_NOT_FOUND');
       }
+
+      const isMissingRpc =
+        error.code === 'PGRST202' ||
+        error.message?.includes('schema cache') ||
+        error.message?.includes('delete_product_if_unordered') ||
+        error.message?.includes('does not exist');
+
+      if (isMissingRpc) {
+        // Safe fallback when RPC is not in schema cache:
+        // 1. Verify product has no references in order_items (by product_id or serial_number)
+        const { data: orderRefs, error: orderCheckErr } = await client
+          .from('order_items')
+          .select('id')
+          .or(`product_id.eq.${product.id},serial_number.ilike.${product.serialNumber.trim()}`)
+          .limit(1);
+
+        if (orderCheckErr) {
+          throw new ServiceUnavailableError(`Failed to verify product order history: ${orderCheckErr.message}`, 'DATABASE_ERROR');
+        }
+
+        if (orderRefs && orderRefs.length > 0) {
+          throw new BadRequestError(
+            `Cannot permanently delete product ${product.serialNumber} because it exists in existing orders. Soft-delete (archive) instead to preserve customer audit trail.`,
+            'PRODUCT_IN_ORDERS',
+          );
+        }
+
+        // 2. Verify product has no active stock reservations
+        const { data: reservationRefs, error: resCheckErr } = await client
+          .from('stock_reservations')
+          .select('id')
+          .eq('product_id', product.id)
+          .limit(1);
+
+        if (!resCheckErr && reservationRefs && reservationRefs.length > 0) {
+          throw new BadRequestError(
+            `Cannot permanently delete product ${product.serialNumber} because it is referenced in stock reservations.`,
+            'PRODUCT_IN_ORDERS',
+          );
+        }
+
+        // 3. Atomically delete the row from products
+        const { data: deleted, error: delErr } = await client
+          .from('products')
+          .delete()
+          .eq('id', product.id)
+          .select('id, serial_number');
+
+        if (delErr) {
+          if (delErr.code === '23503') {
+            throw new BadRequestError(
+              `Cannot permanently delete product ${product.serialNumber} because it is referenced by existing orders.`,
+              'PRODUCT_IN_ORDERS',
+            );
+          }
+          throw new ServiceUnavailableError(`Failed to delete product: ${delErr.message}`, 'DATABASE_ERROR');
+        }
+
+        if (!deleted || deleted.length === 0) {
+          throw new NotFoundError(`Product "${id}" not found.`, 'PRODUCT_NOT_FOUND');
+        }
+
+        return { message: `Product ${product.serialNumber} permanently removed.` };
+      }
+
       throw new ServiceUnavailableError(`Failed to delete product: ${error.message}`, 'DATABASE_ERROR');
     }
     if (!Array.isArray(data) || data.length !== 1) {

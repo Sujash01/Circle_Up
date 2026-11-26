@@ -28,7 +28,7 @@ import {
 
 export function ProductsPage() {
   const navigate = useNavigate();
-  const { isOwner } = useAdminAuth();
+  const { hasPermission } = useAdminAuth();
   const { showToast } = useAdminToast();
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -173,13 +173,15 @@ export function ProductsPage() {
             {filteredProducts.length} of {products.length} products displayed
           </p>
         </div>
-        <Link
-          to="/admin/products/new"
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1e2a1c] text-[#f8f4e2] text-xs font-semibold hover:bg-[#1e2a1c]/90 transition-all shadow-sm"
-        >
-          <Plus className="size-4" />
-          Add Thrift Piece
-        </Link>
+        {hasPermission('products:create') && (
+          <Link
+            to="/admin/products/new"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1e2a1c] text-[#f8f4e2] text-xs font-semibold hover:bg-[#1e2a1c]/90 transition-all shadow-sm"
+          >
+            <Plus className="size-4" />
+            Add Thrift Piece
+          </Link>
+        )}
       </div>
 
       {/* Filter and Search Bar */}
@@ -445,45 +447,51 @@ export function ProductsPage() {
                             <Eye className="size-3.5" />
                           </Link>
 
-                          <button
-                            type="button"
-                            onClick={() => navigate(`/admin/products/${p.serialNumber}/edit`)}
-                            className="p-1.5 rounded-lg hover:bg-[#1e2a1c]/10 text-[#1e2a1c]/70 hover:text-[#1e2a1c] transition-colors"
-                            title="Edit product"
-                          >
-                            <Edit2 className="size-3.5" />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleDuplicate(p.serialNumber)}
-                            className="p-1.5 rounded-lg hover:bg-[#1e2a1c]/10 text-[#1e2a1c]/70 hover:text-[#1e2a1c] transition-colors"
-                            title="Duplicate as draft copy"
-                          >
-                            <Copy className="size-3.5" />
-                          </button>
-
-                          {isArchived ? (
+                          {hasPermission('products:edit') && (
                             <button
                               type="button"
-                              onClick={() => handleRestore(p.serialNumber)}
-                              className="p-1.5 rounded-lg hover:bg-emerald-100 text-emerald-800 transition-colors"
-                              title="Restore to catalog"
+                              onClick={() => navigate(`/admin/products/${p.serialNumber}/edit`)}
+                              className="p-1.5 rounded-lg hover:bg-[#1e2a1c]/10 text-[#1e2a1c]/70 hover:text-[#1e2a1c] transition-colors"
+                              title="Edit product"
                             >
-                              <RefreshCw className="size-3.5" />
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleSoftDelete(p.serialNumber)}
-                              className="p-1.5 rounded-lg hover:bg-stone-200 text-stone-700 transition-colors"
-                              title="Archive / Soft Delete"
-                            >
-                              <Archive className="size-3.5" />
+                              <Edit2 className="size-3.5" />
                             </button>
                           )}
 
-                          {isOwner && (
+                          {hasPermission('products:copy') && (
+                            <button
+                              type="button"
+                              onClick={() => handleDuplicate(p.serialNumber)}
+                              className="p-1.5 rounded-lg hover:bg-[#1e2a1c]/10 text-[#1e2a1c]/70 hover:text-[#1e2a1c] transition-colors"
+                              title="Duplicate as draft copy"
+                            >
+                              <Copy className="size-3.5" />
+                            </button>
+                          )}
+
+                          {hasPermission('products:archive') && (
+                            isArchived ? (
+                              <button
+                                type="button"
+                                onClick={() => handleRestore(p.serialNumber)}
+                                className="p-1.5 rounded-lg hover:bg-emerald-100 text-emerald-800 transition-colors"
+                                title="Restore to catalog"
+                              >
+                                <RefreshCw className="size-3.5" />
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleSoftDelete(p.serialNumber)}
+                                className="p-1.5 rounded-lg hover:bg-stone-200 text-stone-700 transition-colors"
+                                title="Archive / Soft Delete"
+                              >
+                                <Archive className="size-3.5" />
+                              </button>
+                            )
+                          )}
+
+                          {hasPermission('products:delete') && (
                             <button
                               type="button"
                               onClick={() => setPermanentDeleteTarget(p)}

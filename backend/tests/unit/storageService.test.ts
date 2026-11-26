@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({
   uploads: [] as Array<{ path: string; contentType: string; upsert: boolean }>,
   removed: [] as string[][],
+  buckets: new Set<string>(['product-images']),
+  createdBuckets: [] as string[],
   failUploadAt: 0,
   referenceError: false,
   references: new Set<string>(),
@@ -12,6 +14,15 @@ const state = vi.hoisted(() => ({
 vi.mock('../../src/config/supabase.js', () => ({
   getSupabaseServiceClient: () => ({
     storage: {
+      getBucket: async (name: string) => {
+        if (!state.buckets.has(name)) return { data: null, error: new Error('Bucket not found') };
+        return { data: { id: name, name }, error: null };
+      },
+      createBucket: async (name: string) => {
+        state.buckets.add(name);
+        state.createdBuckets.push(name);
+        return { data: { name }, error: null };
+      },
       from: () => ({
         upload: async (path: string, _body: Buffer, options: { contentType: string; upsert: boolean }) => {
           state.uploads.push({ path, contentType: options.contentType, upsert: options.upsert });
@@ -52,6 +63,8 @@ async function pngBuffer() {
 
 describe('Supabase Storage image lifecycle', () => {
   beforeEach(() => {
+    storageService._resetBucketCacheForTesting();
+    state.buckets = new Set<string>(['product-images']);
     state.uploads = [];
     state.removed = [];
     state.failUploadAt = 0;
@@ -118,7 +131,30 @@ describe('Supabase Storage image lifecycle', () => {
     const result3 = await storageService.processAndStoreImage(jpegBuffer, 'photo3.jpg', 'products', 'image/pjpeg');
     expect(result3.w800).toContain('/storage/v1/object/public/product-images/products/');
 
+    const result4 = await storageService.processAndStoreImage(jpegBuffer, 'photo4.jpg', 'products', 'image/jfif');
+    expect(result4.w800).toContain('/storage/v1/object/public/product-images/products/');
+
+    const result5 = await storageService.processAndStoreImage(jpegBuffer, 'photo5.jpg', 'products', 'application/octet-stream');
+    expect(result5.w800).toContain('/storage/v1/object/public/product-images/products/');
+
+    const result6 = await storageService.processAndStoreImage(jpegBuffer, 'photo6.jpg', 'products', 'image/jpeg; charset=utf-8');
+    expect(result6.w800).toContain('/storage/v1/object/public/product-images/products/');
+
     // Deleting an image URL with query params should canonicalize pathname
     await expect(storageService.deleteImage(`${result1.w800}?v=123`)).resolves.toEqual({ deleted: true });
+  });
+
+  it('surfaces genuine Supabase Storage errors and automatically ensures bucket if missing', async () => {
+    state.buckets.clear();
+    const file = await pngBuffer();
+    const result = await storageService.processAndStoreImage(file, 'auto-create.png', 'products', 'image/png');
+    expect(state.buckets.has('product-images')).toBe(true);
+    expect(result.w800).toContain('/storage/v1/object/public/product-images/products/');
+
+    // When upload genuinely fails with error message, that error message is surfaced in exception
+    state.uploads = [];
+    state.failUploadAt = 1;
+    await expect(storageService.processAndStoreImage(file, 'fail.png', 'products', 'image/png'))
+      .rejects.toThrow('storage offline');
   });
 });

@@ -18,6 +18,9 @@ export const adminMediaController = {
       if (uploadList.length === 0) {
         throw new BadRequestError('At least one file must be uploaded.', 'NO_FILE_UPLOADED');
       }
+      if (uploadList.length > 10) {
+        throw new BadRequestError('A maximum of 10 images can be uploaded at once.', 'TOO_MANY_FILES');
+      }
       const collection = collectionSchema.parse(req.body?.collection);
 
       const results: UploadedImageVariants[] = [];

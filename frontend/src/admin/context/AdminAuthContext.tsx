@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { adminApi } from '../services/adminApi';
-import type { AdminUser } from '@circleup/shared';
+import { hasPermission as checkUserPermission, type AdminUser } from '@circleup/shared';
 
 interface AdminAuthContextValue {
   user: AdminUser | null;
@@ -9,6 +9,7 @@ interface AdminAuthContextValue {
   isLoading: boolean;
   loading: boolean;
   isAuthenticated: boolean;
+  hasPermission: (permission: string) => boolean;
   login: (credentials: { email: string; password: string }) => Promise<void>;
   logout: () => Promise<void>;
   checkSession: () => Promise<void>;
@@ -51,6 +52,10 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
 
   const isOwner = user?.role === 'owner';
 
+  const hasPermission = (permission: string): boolean => {
+    return checkUserPermission(user, permission);
+  };
+
   return (
     <AdminAuthContext.Provider
       value={{
@@ -60,6 +65,7 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         loading: isLoading,
         isAuthenticated: Boolean(user),
+        hasPermission,
         login,
         logout,
         checkSession,

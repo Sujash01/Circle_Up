@@ -239,6 +239,7 @@ const staffSession = signSessionToken({
   email: 'staff@circleuponline.com',
   name: 'Test Staff',
   role: 'staff',
+  permissions: ['orders:view', 'orders:manage', 'products:view', 'products:create', 'products:edit'],
   csrfToken: 'phase1-staff-csrf',
   expiresAt: Date.now() + 60_000,
   sessionId: 'fixture-staff-session',

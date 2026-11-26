@@ -12,7 +12,7 @@ declare global {
   }
 }
 
-export function requireAdminAuth(allowedRole?: 'owner' | 'staff') {
+export function requireAdminAuth(allowedRoleOrPermission?: 'owner' | 'staff' | string | string[]) {
   return (req: Request, _res: Response, next: NextFunction): void => {
     // Read session from signed cookie or Bearer token
     const token =
@@ -27,7 +27,28 @@ export function requireAdminAuth(allowedRole?: 'owner' | 'staff') {
 
     void adminAuthService.validateSession(token).then((session) => {
       if (!session) return next(new UnauthorizedError('Invalid, expired, or revoked admin session.', 'INVALID_SESSION'));
-      if (allowedRole === 'owner' && session.role !== 'owner') return next(new ForbiddenError('Owner privilege required for this action.', 'FORBIDDEN_ROLE'));
+      if (allowedRoleOrPermission) {
+        if (allowedRoleOrPermission === 'owner') {
+          if (session.role !== 'owner') return next(new ForbiddenError('Owner privilege required for this action.', 'FORBIDDEN_ROLE'));
+        } else if (allowedRoleOrPermission === 'staff') {
+          // both owner and staff are allowed
+        } else if (Array.isArray(allowedRoleOrPermission)) {
+          if (session.role !== 'owner') {
+            const hasAny = allowedRoleOrPermission.some((p) => session.permissions?.includes(p));
+            if (!hasAny) {
+              return next(new ForbiddenError(`Permission denied: requires one of [${allowedRoleOrPermission.join(', ')}] permissions.`, 'FORBIDDEN_PERMISSION'));
+            }
+          }
+        } else {
+          // Single permission string
+          if (session.role !== 'owner') {
+            const hasPerm = session.permissions?.includes(allowedRoleOrPermission);
+            if (!hasPerm) {
+              return next(new ForbiddenError(`Permission denied: missing "${allowedRoleOrPermission}" permission.`, 'FORBIDDEN_PERMISSION'));
+            }
+          }
+        }
+      }
       req.adminUser = session;
       next();
     }).catch(next);

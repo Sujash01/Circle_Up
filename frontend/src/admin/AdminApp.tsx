@@ -19,9 +19,10 @@ const SiteSettingsPage = lazy(() => import('./pages/SiteSettingsPage'));
 const ActivityLogPage = lazy(() => import('./pages/ActivityLogPage'));
 const AccountPage = lazy(() => import('./pages/AccountPage'));
 const InquiriesPage = lazy(() => import('./pages/InquiriesPage'));
+const TeamManagementPage = lazy(() => import('./pages/TeamManagementPage'));
 
 function ProtectedAdminRoutes() {
-  const { user, loading } = useAdminAuth();
+  const { user, isOwner, loading } = useAdminAuth();
 
   if (loading) {
     return (
@@ -61,6 +62,7 @@ function ProtectedAdminRoutes() {
           <Route path="coupons" element={<CouponsPage />} />
           <Route path="settings" element={<SiteSettingsPage />} />
           <Route path="activity" element={<ActivityLogPage />} />
+          <Route path="team" element={isOwner ? <TeamManagementPage /> : <Navigate to="/admin/overview" replace />} />
           <Route path="inquiries" element={<InquiriesPage />} />
           <Route path="account" element={<AccountPage />} />
           <Route path="*" element={<Navigate to="/admin/overview" replace />} />

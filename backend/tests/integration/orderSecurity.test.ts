@@ -498,14 +498,14 @@ describe('Order & Admin Security Remediation Suite', () => {
       expect(res.body.error.code).toBe('FORBIDDEN_ROLE');
     });
 
-    it('Staff cannot permanently delete products (requires owner role)', async () => {
+    it('Staff cannot permanently delete products (requires owner role or products:delete permission)', async () => {
       const res = await request(app)
         .delete('/api/v1/admin/products/prod-123/permanent')
         .set('Authorization', `Bearer ${staffSessionToken}`)
         .set('X-CSRF-Token', 'staff-csrf-token-5678');
 
       expect(res.status).toBe(403);
-      expect(res.body.error.code).toBe('FORBIDDEN_ROLE');
+      expect(['FORBIDDEN_ROLE', 'FORBIDDEN_PERMISSION']).toContain(res.body.error.code);
     });
 
     it('Staff cannot mutate site settings (requires owner role)', async () => {

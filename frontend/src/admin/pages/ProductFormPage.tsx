@@ -219,8 +219,9 @@ export function ProductFormPage() {
       setIsUploading(true);
       const results = await adminApi.uploadMedia(Array.from(files));
       setNewUploadUrls((current) => [...current, ...results.map((result) => result.w800)]);
-      // Filter out any default placeholder if present
-      const currentRealImages = images.filter((img) => img.url !== '/assets/rtw-1.webp');
+      // Filter out any default placeholder or mock assets if present
+      const isPlaceholder = (url: string) => url.startsWith('/assets/') || url.includes('placeholder');
+      const currentRealImages = images.filter((img) => !isPlaceholder(img.url));
       const hasCoverAlready = currentRealImages.some((img) => img.isCover);
       const newItems: ImageItem[] = results.map((r, i) => ({
         url: r.w800,
@@ -420,7 +421,6 @@ export function ProductFormPage() {
       setIsDirty(false);
       navigate('/admin/products');
     } catch (err: unknown) {
-      await Promise.allSettled(newUploadUrls.map((url) => adminApi.deleteMedia(url)));
       showToast(err instanceof Error ? err.message : 'Failed to save product.', 'error');
     } finally {
       setIsSaving(false);

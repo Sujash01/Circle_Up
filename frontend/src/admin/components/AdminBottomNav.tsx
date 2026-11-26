@@ -13,6 +13,7 @@ import {
   Settings,
   History,
   UserCheck,
+  Users,
   X,
   LogOut,
   ExternalLink,
@@ -20,7 +21,7 @@ import {
 
 export function AdminBottomNav() {
   const { pathname } = useLocation();
-  const { isOwner, logout } = useAdminAuth();
+  const { isOwner, hasPermission, logout } = useAdminAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const mainTabs = [
@@ -30,18 +31,23 @@ export function AdminBottomNav() {
   ];
 
   const moreItems = [
-    { label: 'Collections & Tiles', to: '/admin/collections', icon: Layers },
-    { label: 'Rentals & Events', to: '/admin/rentals-events', icon: CalendarDays },
-    { label: 'Coupons', to: '/admin/coupons', icon: Ticket },
-    { label: 'Inquiries', to: '/admin/inquiries', icon: Mail },
+    { label: 'Collections & Tiles', to: '/admin/collections', icon: Layers, permission: 'products:view' },
+    { label: 'Rentals & Events', to: '/admin/rentals-events', icon: CalendarDays, permission: 'rentals_events:view' },
+    { label: 'Coupons', to: '/admin/coupons', icon: Ticket, permission: 'coupons:view' },
+    { label: 'Inquiries', to: '/admin/inquiries', icon: Mail, permission: 'inquiries:view' },
     ...(isOwner
       ? [
-          { label: 'Site Settings', to: '/admin/settings', icon: Settings },
-          { label: 'Activity Log', to: '/admin/activity', icon: History },
+          { label: 'Team Accounts', to: '/admin/team', icon: Users, permission: 'team:manage' },
         ]
       : []),
+    { label: 'Site Settings', to: '/admin/settings', icon: Settings, permission: 'settings:view' },
+    { label: 'Activity Log', to: '/admin/activity', icon: History, permission: 'activity:view' },
     { label: 'My Account', to: '/admin/account', icon: UserCheck },
-  ];
+  ].filter((item) => {
+    if (!item.permission) return true;
+    if (item.to === '/admin/team') return isOwner;
+    return isOwner || hasPermission(item.permission);
+  });
 
   return (
     <>

@@ -9,6 +9,7 @@ export interface AdminSessionData {
   email: string;
   name: string;
   role: 'owner' | 'staff';
+  permissions: string[];
   csrfToken: string;
   expiresAt: number;
   lastActiveAt?: number;
@@ -78,6 +79,7 @@ export function verifySessionToken(token: string): AdminSessionData | null {
     const value = JSON.parse(Buffer.from(payload, 'base64url').toString()) as AdminSessionData;
     if (!value.userId || !value.sessionId || !value.csrfToken || !Number.isFinite(value.expiresAt) || value.expiresAt <= Date.now()) return null;
     if (value.role !== 'owner' && value.role !== 'staff') return null;
+    value.permissions = Array.isArray(value.permissions) ? value.permissions : [];
     return value;
   } catch { return null; }
 }
@@ -116,7 +118,7 @@ export const adminAuthService = {
     const cleanEmail = email.trim().toLowerCase();
     let result;
     try {
-      result = await client.from('admin_users').select('id,email,full_name,role,password_hash,is_active,failed_attempts,locked_until').eq('email', cleanEmail).maybeSingle();
+      result = await client.from('admin_users').select('id,email,full_name,role,permissions,password_hash,is_active,failed_attempts,locked_until').eq('email', cleanEmail).maybeSingle();
     } catch { throw dbUnavailable(); }
     if (result.error) throw dbUnavailable();
     const user = result.data;
@@ -140,9 +142,12 @@ export const adminAuthService = {
     if (reset.error) throw dbUnavailable();
     const sessionId = crypto.randomUUID();
     const csrfToken = generateCsrfToken();
+    const userPermissions: string[] = Array.isArray(user.permissions) ? user.permissions : [];
     const sessionData: AdminSessionData = {
       userId: String(user.id), email: user.email, name: user.full_name,
-      role: user.role === 'owner' ? 'owner' : 'staff', csrfToken,
+      role: user.role === 'owner' ? 'owner' : 'staff',
+      permissions: userPermissions,
+      csrfToken,
       expiresAt: Date.now() + SESSION_TTL_MS,
       lastActiveAt: Date.now(),
       sessionId,
@@ -152,7 +157,18 @@ export const adminAuthService = {
       id: sessionId, user_id: user.id, token_hash: SESSION_HASH(sessionToken), expires_at: new Date(sessionData.expiresAt).toISOString(),
     }));
     if (stored.error) throw dbUnavailable();
-    return { user: { id: sessionData.userId, email: sessionData.email, name: sessionData.name, role: sessionData.role }, sessionToken, csrfToken, sessionId };
+    return {
+      user: {
+        id: sessionData.userId,
+        email: sessionData.email,
+        name: sessionData.name,
+        role: sessionData.role,
+        permissions: sessionData.permissions,
+      },
+      sessionToken,
+      csrfToken,
+      sessionId,
+    };
   },
 
   async validateSession(token: string): Promise<AdminSessionData | null> {
@@ -162,11 +178,19 @@ export const adminAuthService = {
       return null; // Expired due to 15-minute inactivity
     }
     const client = await requiredClient();
-    const { data, error } = await databaseCall(() => client.from('admin_auth_sessions').select('id,expires_at,revoked_at,admin_users!inner(id,email,full_name,role,is_active)').eq('id', session.sessionId).eq('token_hash', SESSION_HASH(token)).is('revoked_at', null).gt('expires_at', new Date().toISOString()).maybeSingle());
+    const { data, error } = await databaseCall(() => client.from('admin_auth_sessions').select('id,expires_at,revoked_at,admin_users!inner(id,email,full_name,role,permissions,is_active)').eq('id', session.sessionId).eq('token_hash', SESSION_HASH(token)).is('revoked_at', null).gt('expires_at', new Date().toISOString()).maybeSingle());
     if (error) throw dbUnavailable();
     const user = data?.admin_users as unknown as Record<string, unknown> | undefined;
     if (!user || user.is_active !== true || String(user.id) !== session.userId) return null;
-    return { ...session, lastActiveAt: Date.now(), email: String(user.email), name: String(user.full_name), role: user.role === 'owner' ? 'owner' : 'staff' };
+    const permissions: string[] = Array.isArray(user.permissions) ? (user.permissions as string[]) : [];
+    return {
+      ...session,
+      lastActiveAt: Date.now(),
+      email: String(user.email),
+      name: String(user.full_name),
+      role: user.role === 'owner' ? 'owner' : 'staff',
+      permissions,
+    };
   },
 
   async verifyOwnerMfaCode(_userId: string, code: string): Promise<boolean> {
@@ -195,7 +219,7 @@ export const adminAuthService = {
     }
   },
 
-  async createAdminUser(data: { email: string; password: string; name: string; role: 'owner' | 'staff'; force?: boolean }) {
+  async createAdminUser(data: { email: string; password: string; name: string; role: 'owner' | 'staff'; permissions?: string[]; force?: boolean }) {
     validateAdminPassword(data.password);
     const client = await requiredClient();
     const cleanEmail = data.email.trim().toLowerCase();
@@ -207,32 +231,69 @@ export const adminAuthService = {
       if (owner.data) throw new ConflictError('An owner account already exists.', 'OWNER_EXISTS');
     }
     const passwordHash = await this.hashPassword(data.password);
-    const { data: created, error } = await databaseCall(() => client.from('admin_users').insert({ email: cleanEmail, full_name: data.name.trim(), role: data.role, password_hash: passwordHash, is_active: true }).select('id,email,full_name,role,is_active,created_at,updated_at').single());
+    const userPermissions = data.role === 'owner' ? [] : (data.permissions || []);
+    const { data: created, error } = await databaseCall(() => client.from('admin_users').insert({
+      email: cleanEmail,
+      full_name: data.name.trim(),
+      role: data.role,
+      permissions: userPermissions,
+      password_hash: passwordHash,
+      is_active: true,
+    }).select('id,email,full_name,role,permissions,is_active,created_at,updated_at').single());
     if (error) {
       if (error.code === '23505') throw new ConflictError('An administrator with that email already exists.', 'DUPLICATE_EMAIL');
       throw dbUnavailable();
     }
     if (!created) throw dbUnavailable();
-    return { id: created.id, email: created.email, name: created.full_name, role: created.role, isActive: created.is_active, createdAt: created.created_at, updatedAt: created.updated_at };
+    return {
+      id: created.id,
+      email: created.email,
+      name: created.full_name,
+      role: created.role,
+      permissions: created.permissions || [],
+      isActive: created.is_active,
+      createdAt: created.created_at,
+      updatedAt: created.updated_at,
+    };
   },
 
   async listAdminUsers() {
     const client = await requiredClient();
-    const { data, error } = await databaseCall(() => client.from('admin_users').select('id,email,full_name,role,is_active,last_login_at,created_at,updated_at').order('created_at', { ascending: false }));
+    const { data, error } = await databaseCall(() => client.from('admin_users').select('id,email,full_name,role,permissions,is_active,last_login_at,created_at,updated_at').order('created_at', { ascending: false }));
     if (error) throw dbUnavailable();
-    return (data || []).map((user) => ({ id: user.id, email: user.email, name: user.full_name, role: user.role, isActive: user.is_active, lastLoginAt: user.last_login_at, createdAt: user.created_at, updatedAt: user.updated_at }));
+    return (data || []).map((user) => ({
+      id: user.id,
+      email: user.email,
+      name: user.full_name,
+      role: user.role,
+      permissions: user.permissions || [],
+      isActive: user.is_active,
+      lastLoginAt: user.last_login_at,
+      createdAt: user.created_at,
+      updatedAt: user.updated_at,
+    }));
   },
 
   async getAdminUserById(id: string) {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new BadRequestError('Invalid administrator ID.', 'INVALID_ID');
     const client = await requiredClient();
-    const { data, error } = await databaseCall(() => client.from('admin_users').select('id,email,full_name,role,is_active,last_login_at,created_at,updated_at').eq('id', id).maybeSingle());
+    const { data, error } = await databaseCall(() => client.from('admin_users').select('id,email,full_name,role,permissions,is_active,last_login_at,created_at,updated_at').eq('id', id).maybeSingle());
     if (error) throw dbUnavailable();
     if (!data) throw new NotFoundError('Admin user not found.', 'USER_NOT_FOUND');
-    return { id: data.id, email: data.email, name: data.full_name, role: data.role, isActive: data.is_active, lastLoginAt: data.last_login_at, createdAt: data.created_at, updatedAt: data.updated_at };
+    return {
+      id: data.id,
+      email: data.email,
+      name: data.full_name,
+      role: data.role,
+      permissions: data.permissions || [],
+      isActive: data.is_active,
+      lastLoginAt: data.last_login_at,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+    };
   },
 
-  async updateAdminUser(targetId: string, actorId: string, patch: { email?: string; name?: string; role?: 'owner' | 'staff'; isActive?: boolean; password?: string }) {
+  async updateAdminUser(targetId: string, actorId: string, patch: { email?: string; name?: string; role?: 'owner' | 'staff'; isActive?: boolean; password?: string; permissions?: string[] }) {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(targetId)) throw new BadRequestError('Invalid administrator ID.', 'INVALID_ID');
     if (targetId === actorId && (patch.role !== undefined || patch.isActive === false)) throw new ForbiddenError('You cannot change your own role or deactivate your own account.', 'SELF_ADMIN_CHANGE_FORBIDDEN');
     if (patch.password !== undefined) validateAdminPassword(patch.password);
@@ -243,20 +304,88 @@ export const adminAuthService = {
     if (patch.name !== undefined) update.name = patch.name.trim();
     if (patch.role !== undefined) update.role = patch.role;
     if (patch.isActive !== undefined) update.is_active = patch.isActive;
+    if (patch.permissions !== undefined) update.permissions = patch.permissions;
     if (patch.password !== undefined) update.password_hash = await this.hashPassword(patch.password);
-    const { data: response, error } = await databaseCall(() => client.rpc('admin_update_user', { p_actor_id: actorId, p_target_id: targetId, p_patch: update }));
-    if (error) {
-      if (error.message?.includes('USER_NOT_FOUND')) throw new NotFoundError('Admin user not found.', 'USER_NOT_FOUND');
-      if (error.message?.includes('LAST_OWNER_REQUIRED')) throw new ConflictError('The last active owner cannot be demoted or deactivated.', 'LAST_OWNER_REQUIRED');
-      if (error.code === '23505') throw new ConflictError('An administrator with that email already exists.', 'DUPLICATE_EMAIL');
-      if (error.message?.includes('SELF_ADMIN_CHANGE_FORBIDDEN') || error.code === '42501') throw new ForbiddenError('Owner privilege required for this action.', 'FORBIDDEN_ROLE');
+
+    let data: {
+      id: string; email: string; full_name: string; role: 'owner' | 'staff'; permissions?: string[]; is_active: boolean;
+      last_login_at: string | null; created_at: string; updated_at: string;
+    } | null = null;
+
+    const rpcRes = await databaseCall(() => client.rpc('admin_update_user', { p_actor_id: actorId, p_target_id: targetId, p_patch: update }));
+    if (rpcRes.error) {
+      if (rpcRes.error.message?.includes('USER_NOT_FOUND') || rpcRes.error.code === 'P0002') throw new NotFoundError('Admin user not found.', 'USER_NOT_FOUND');
+      if (rpcRes.error.message?.includes('LAST_OWNER_REQUIRED')) throw new ConflictError('The last active owner cannot be demoted or deactivated.', 'LAST_OWNER_REQUIRED');
+      if (rpcRes.error.code === '23505') throw new ConflictError('An administrator with that email already exists.', 'DUPLICATE_EMAIL');
+      if (rpcRes.error.message?.includes('SELF_ADMIN_CHANGE_FORBIDDEN') || rpcRes.error.message?.includes('OWNER_REQUIRED') || rpcRes.error.code === '42501') throw new ForbiddenError('Owner privilege required for this action.', 'FORBIDDEN_ROLE');
+
+      // Fallback if RPC is missing or fails with schema error
+      if (rpcRes.error.code === 'PGRST202' || rpcRes.error.message?.includes('schema cache') || rpcRes.error.message?.includes('function')) {
+        const actor = await databaseCall(() => client.from('admin_users').select('id,role,is_active').eq('id', actorId).maybeSingle());
+        if (!actor.data || actor.data.role !== 'owner' || !actor.data.is_active) throw new ForbiddenError('Owner privilege required for this action.', 'FORBIDDEN_ROLE');
+        const target = await databaseCall(() => client.from('admin_users').select('*').eq('id', targetId).maybeSingle());
+        if (!target.data) throw new NotFoundError('Admin user not found.', 'USER_NOT_FOUND');
+        if (target.data.role === 'owner' && target.data.is_active && (patch.role === 'staff' || patch.isActive === false)) {
+          const owners = await databaseCall(() => client.from('admin_users').select('id').eq('role', 'owner').eq('is_active', true));
+          if ((owners.data?.length || 0) <= 1) throw new ConflictError('The last active owner cannot be demoted or deactivated.', 'LAST_OWNER_REQUIRED');
+        }
+        const directUpdate = await databaseCall(() => client.from('admin_users').update({
+          ...update,
+          updated_at: new Date().toISOString(),
+        }).eq('id', targetId).select('id,email,full_name,role,permissions,is_active,last_login_at,created_at,updated_at').single());
+        if (directUpdate.error) {
+          if (directUpdate.error.code === '23505') throw new ConflictError('An administrator with that email already exists.', 'DUPLICATE_EMAIL');
+          throw dbUnavailable();
+        }
+        data = directUpdate.data;
+        if (patch.isActive === false || patch.role !== undefined || patch.password !== undefined || patch.permissions !== undefined) {
+          await databaseCall(() => client.from('admin_auth_sessions').update({ revoked_at: new Date().toISOString() }).eq('user_id', targetId).is('revoked_at', null));
+        }
+      } else {
+        throw dbUnavailable();
+      }
+    } else {
+      data = (Array.isArray(rpcRes.data) ? rpcRes.data[0] : rpcRes.data) as typeof data;
+    }
+
+    if (!data) throw dbUnavailable();
+    return {
+      id: data.id,
+      email: data.email,
+      name: data.full_name,
+      role: data.role,
+      permissions: data.permissions || [],
+      isActive: data.is_active,
+      lastLoginAt: data.last_login_at,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+    };
+  },
+
+  async deleteAdminUser(targetId: string, actorId: string) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(targetId)) throw new BadRequestError('Invalid administrator ID.', 'INVALID_ID');
+    if (targetId === actorId) throw new ForbiddenError('You cannot delete your own account.', 'SELF_ADMIN_CHANGE_FORBIDDEN');
+    const client = await requiredClient();
+    const rpcRes = await databaseCall(() => client.rpc('admin_delete_user', { p_actor_id: actorId, p_target_id: targetId }));
+    if (rpcRes.error) {
+      if (rpcRes.error.message?.includes('USER_NOT_FOUND') || rpcRes.error.code === 'P0002') throw new NotFoundError('Admin user not found.', 'USER_NOT_FOUND');
+      if (rpcRes.error.message?.includes('CANNOT_DELETE_OWNER')) throw new ForbiddenError('Owner accounts cannot be deleted.', 'CANNOT_DELETE_OWNER');
+      if (rpcRes.error.message?.includes('OWNER_REQUIRED') || rpcRes.error.code === '42501') throw new ForbiddenError('Owner privilege required for this action.', 'FORBIDDEN_ROLE');
+
+      // Fallback if RPC is missing
+      if (rpcRes.error.code === 'PGRST202' || rpcRes.error.message?.includes('schema cache') || rpcRes.error.message?.includes('function')) {
+        const actor = await databaseCall(() => client.from('admin_users').select('id,role,is_active').eq('id', actorId).maybeSingle());
+        if (!actor.data || actor.data.role !== 'owner' || !actor.data.is_active) throw new ForbiddenError('Owner privilege required for this action.', 'FORBIDDEN_ROLE');
+        const target = await databaseCall(() => client.from('admin_users').select('id,role').eq('id', targetId).maybeSingle());
+        if (!target.data) throw new NotFoundError('Admin user not found.', 'USER_NOT_FOUND');
+        if (target.data.role === 'owner') throw new ForbiddenError('Owner accounts cannot be deleted.', 'CANNOT_DELETE_OWNER');
+        await databaseCall(() => client.from('admin_auth_sessions').update({ revoked_at: new Date().toISOString() }).eq('user_id', targetId).is('revoked_at', null));
+        const delRes = await databaseCall(() => client.from('admin_users').delete().eq('id', targetId));
+        if (delRes.error) throw dbUnavailable();
+        return { success: true, deletedId: targetId };
+      }
       throw dbUnavailable();
     }
-    const data = (Array.isArray(response) ? response[0] : response) as {
-      id: string; email: string; full_name: string; role: 'owner' | 'staff'; is_active: boolean;
-      last_login_at: string | null; created_at: string; updated_at: string;
-    } | null;
-    if (!data) throw dbUnavailable();
-    return { id: data.id, email: data.email, name: data.full_name, role: data.role, isActive: data.is_active, lastLoginAt: data.last_login_at, createdAt: data.created_at, updatedAt: data.updated_at };
+    return { success: true, deletedId: targetId };
   },
 };
