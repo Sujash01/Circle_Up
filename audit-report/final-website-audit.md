@@ -1,9 +1,9 @@
 # CircleUp Production Final Website Audit & Deployment Handover
 
-**Document Version:** 2.0  
+**Document Version:** 2.1  
 **Target Environment:** `https://circleuponline.com` (Production)  
 **Repository:** `https://github.com/Sujash01/Circle_Up`  
-**Current Baseline Commit:** `b2120ce` (`fixed backend`)  
+**Deployed Production Commit:** `0db48c0` (`feat(release-a): finalize approved bag enquiry template and pre-deployment audit`)  
 **Production Stack:** React + TypeScript (Vite), Node.js + Express (Vercel Serverless), Supabase (PostgreSQL 15), WhatsApp Integration (+916280746336)  
 
 ---
@@ -101,3 +101,24 @@ All Stage 4B.2 financial and inventory cancellation work remains safely quaranti
 1. **Database Schema:** Stage 4B.2 inventory restoration and idempotency logic are verified in isolated PostgreSQL integration tests (`scripts/test_real_postgres_checkout.mjs`).
 2. **Historical Order Precondition:** A read-only production audit of historical orders is required before applying Stage 4B.2 migrations to verify payment reconciliation records.
 3. **Preservation:** All Stage 4B.2 code branches and isolated test harnesses remain intact and ready for future release approval.
+
+---
+
+## 6. Live Production Smoke Testing & Verification
+
+Empirical verification executed against live production environment (`https://circleuponline.com`):
+
+| Scope | Check / Endpoint | Result | Observation |
+| :--- | :--- | :---: | :--- |
+| **Commit Verification** | Production Bundle & Assets | **0db48c0** | Verified bundle scripts containing `Hey CircleUp! 🌿` template and `CU-` serial prefixing. |
+| **API Health** | `GET /api/health` | **HTTP 200** | `{"success":true,"data":{"status":"ok","db":"connected","environment":"production"}}`. |
+| **Payment Mode** | `GET /api/v1/payments/razorpay/availability` | **HTTP 200** | `{"success":true,"data":{"available":false}}` (Razorpay disabled). |
+| **WhatsApp Promotions** | `GET /api/v1/coupons/promotions` | **HTTP 200** | Serving verified phone `916280746336` and banner promotion. |
+| **Storefront Products** | `GET /api/v1/products?limit=5` | **HTTP 200** | Accurate integer paise pricing (`295000` = ₹2,950), clean serial numbers (`CU-047`). |
+| **Brand Imagery** | Visual Inspection (`prod-pdp-390.png`) | **COMPLIANT** | Zero model photos; garments photographed on mannequins/flat-lays. |
+| **Mobile Responsiveness** | 320px (`prod-pdp-320.png`, `prod-cart-320.png`) | **VERIFIED** | Clean vertical stacking, zero horizontal blowout or scrollbar at 320px. |
+| **Mobile 390px** | 390px (`prod-home-390.png`, `prod-events-390.png`) | **VERIFIED** | Touch targets >= 44px; tactile vintage paper and margin lines render cleanly. |
+| **Customer Auth UI** | `/signin` (`prod-signin-390.png`) | **VERIFIED** | "CONTINUE WITH GOOGLE" OAuth button and email/phone authentication forms rendered. |
+| **Admin CRM Protection** | `GET /api/v1/admin/orders` | **HTTP 401** | `{"code":"UNAUTHORIZED","message":"Admin authentication required."}`. |
+| **Admin Audio Cleanliness** | `/admin/login` (`prod-admin-login.png`) | **VERIFIED** | Dedicated store management portal; zero audio/music controls present. |
+| **Cron Endpoint Protection** | `POST /api/v1/cron/expire-reservations` | **HTTP 401** | `{"code":"CRON_NOT_CONFIGURED"}`. Confirms endpoint fails safely closed pending secret rotation. |
