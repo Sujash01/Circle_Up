@@ -248,6 +248,26 @@ export function ProductFormPage() {
     setIsDirty(true);
   };
 
+  const handleSetCover = (index: number) => {
+    setImages((prev) => prev.map((img, i) => ({ ...img, isCover: i === index })));
+    setIsDirty(true);
+  };
+
+  const handleMoveImage = (index: number, direction: -1 | 1) => {
+    setImages((prev) => {
+      const targetIndex = index + direction;
+      if (targetIndex < 0 || targetIndex >= prev.length) return prev;
+      const next = [...prev];
+      const currentImage = next[index];
+      const targetImage = next[targetIndex];
+      if (!currentImage || !targetImage) return prev;
+      next[index] = targetImage;
+      next[targetIndex] = currentImage;
+      return next;
+    });
+    setIsDirty(true);
+  };
+
   const handleCategoryCodeChange = (newCode: string) => {
     setCategoryCode(newCode);
     const meta = INVENTORY_CATEGORIES[newCode];
@@ -737,6 +757,35 @@ export function ProductFormPage() {
                       title="Remove image"
                     >
                       <X className="size-3" />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => handleSetCover(idx)}
+                      disabled={img.isCover}
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${img.isCover ? 'bg-[#1e2a1c] text-[#f8f4e2] cursor-default' : 'bg-[#1e2a1c]/10 text-[#1e2a1c] hover:bg-[#1e2a1c]/20'}`}
+                    >
+                      {img.isCover ? 'Cover Image' : 'Choose Cover'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMoveImage(idx, -1)}
+                      disabled={idx === 0}
+                      aria-label={`Move image ${idx + 1} left`}
+                      className="px-2.5 py-1.5 rounded-lg bg-[#1e2a1c]/10 text-[#1e2a1c] text-xs font-semibold hover:bg-[#1e2a1c]/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      ← Move Left
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMoveImage(idx, 1)}
+                      disabled={idx === images.length - 1}
+                      aria-label={`Move image ${idx + 1} right`}
+                      className="px-2.5 py-1.5 rounded-lg bg-[#1e2a1c]/10 text-[#1e2a1c] text-xs font-semibold hover:bg-[#1e2a1c]/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Move Right →
                     </button>
                   </div>
 
