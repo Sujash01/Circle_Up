@@ -406,15 +406,15 @@ export function CustomerAccountPage() {
                 )}
               </div>
               <p className="text-xs text-foreground/70 mt-1 flex flex-wrap items-center gap-2">
-                <span>{currentUser.email}</span>
+                <span className="break-all">{currentUser.email}</span>
                 {currentUser.phone && (
                   <>
                     <span>•</span>
-                    <span>{currentUser.phone}</span>
+                    <span className="whitespace-nowrap">{currentUser.phone}</span>
                   </>
                 )}
                 <span>•</span>
-                <span className="text-terracotta font-medium">Verified Member</span>
+                <span className="text-terracotta font-medium whitespace-nowrap">Verified Member</span>
               </p>
             </div>
           </div>

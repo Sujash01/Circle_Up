@@ -297,9 +297,9 @@ describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
       expect(destination && `${destination.origin}${destination.pathname}`).toBe('https://wa.me/916280746336');
       const message = destination?.searchParams.get('text');
       expect(message).toContain('Discount (DROP): -₹1.01');
-      expect(message).toContain('Artisan Embroidered Vest (Ref: BN-001, Size: M) x1');
-      expect(message).toContain('Estimated Shipping: ₹90');
-      expect(message).toContain('Estimated Total: ₹1,089.99');
+      expect(message).toContain('• Artisan Embroidered Vest (Ref: BN-001 | M) × 1 — ₹1,001');
+      expect(message).toContain('Shipping: ₹90');
+      expect(message).toContain('Total: ₹1,089.99');
     } finally {
       act(() => root.unmount());
     }
@@ -326,8 +326,8 @@ describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
       const link = host.querySelector<HTMLAnchorElement>('a[href^="https://wa.me/"]');
       const message = link && new URL(link.href).searchParams.get('text');
       expect(message).toContain('Discount (AUTO10): -₹1.01');
-      expect(message).toContain('Estimated Shipping: ₹90');
-      expect(message).toContain('Estimated Total: ₹1,089.99');
+      expect(message).toContain('Shipping: ₹90');
+      expect(message).toContain('Total: ₹1,089.99');
       expect(createOrder).not.toHaveBeenCalled();
       expect(cartService.loadCart().promoCode).toBeUndefined();
     } finally {

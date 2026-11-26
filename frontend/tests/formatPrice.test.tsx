@@ -231,10 +231,10 @@ describe('P0-1 Monetary Specification & Integer Paise Formatting', () => {
     const waCheckout = cartService.buildWhatsAppCheckout(cartState, 'Please deliver soon');
     expect(waCheckout.totals.subtotal).toBe(55000);
     expect(waCheckout.totals.estimatedTotal).toBe(64000);
-    expect(waCheckout.message).toMatch(/1\. Vintage Uniqlo Zipper Hoodie \(Ref: .+, Size: M\) x1 — ₹550/);
+    expect(waCheckout.message).toMatch(/• Vintage Uniqlo Zipper Hoodie \(Ref: .+ \| M\) × 1 — ₹550/);
     expect(waCheckout.message).toContain('Subtotal: ₹550');
-    expect(waCheckout.message).toContain('Estimated Shipping: ₹90');
-    expect(waCheckout.message).toContain('Estimated Total: ₹640');
+    expect(waCheckout.message).toContain('Shipping: ₹90');
+    expect(waCheckout.message).toContain('Total: ₹640');
     expect(waCheckout.message).not.toContain('₹55,000');
 
     const waProduct = cartService.buildProductWhatsAppUrl(TEST_PRODUCT_550, 'Size M', '919111222333');

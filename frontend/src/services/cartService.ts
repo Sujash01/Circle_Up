@@ -174,15 +174,16 @@ export const cartService = {
   } {
     const totals = estimatedTotals ?? this.calculateTotals(state);
     const itemLines = state.items.map(
-      (item, idx) =>
-        `${idx + 1}. ${item.name} (Ref: ${getCartItemSerialNumber(item)}, Size: ${item.size}) x${item.quantity} — ${formatPrice(
+      (item) =>
+        `• ${item.name} (Ref: ${getCartItemSerialNumber(item)} | ${item.size}) × ${item.quantity} — ${formatPrice(
           item.unitPrice * item.quantity,
         )}`,
     );
 
     const lines = [
-      'Hi CircleUp! I would like to enquire about purchasing:',
-      `Cart ID: ${state.cartId}`,
+      'Hey CircleUp! 🌿 I’ve got my eye on something from your store and would love to grab it!',
+      '',
+      'My cart 🛒',
       '',
       ...itemLines,
       '',
@@ -190,11 +191,13 @@ export const cartService = {
       ...(totals.discount > 0
         ? [`Discount (${totals.discountLabel}): -${formatPrice(totals.discount)}`]
         : []),
-      `Estimated Shipping: ${formatPrice(totals.deliveryFee)}`,
-      `Estimated Total: ${formatPrice(totals.estimatedTotal)}`,
+      `Shipping: ${formatPrice(totals.deliveryFee)}`,
+      `Total: ${formatPrice(totals.estimatedTotal)}`,
+      '',
+      `Cart ID: ${state.cartId}`,
       ...(customerNote.trim() ? ['', `Note: ${customerNote.trim()}`] : []),
       '',
-      '(Please confirm availability and payment details.)',
+      'Let me know if it’s still available and how I can seal the deal! ✨',
     ];
 
     const message = lines.join('\n');
