@@ -38,6 +38,11 @@ const productState = vi.hoisted(() => {
   return {
     rows,
     list: async () => ({ products: [...rows], total: rows.length, page: 1, limit: 20 }),
+    getById: async (id: string) => {
+      const row = find(id);
+      if (!row) throw new Error('Product not found.');
+      return { ...row };
+    },
     create: async (input: Record<string, any>) => {
       const serialNumber = input.serialNumber || `CU-${String(nextSerial++).padStart(3, '0')}`;
       const row = { id: `product-${serialNumber}`, serialNumber, slug: input.slug || `${input.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${serialNumber.toLowerCase()}`, status: 'PUBLISHED', stock: 1, images: [], sizes: [], ...input };
@@ -71,6 +76,7 @@ vi.mock('../../src/services/supabaseCatalog.service.js', async (importOriginal) 
     supabaseCatalogService: {
       ...actual.supabaseCatalogService,
       listAdminProducts: productState.list,
+      getAdminProduct: productState.getById,
       createProduct: productState.create,
       updateProduct: productState.update,
       duplicateProduct: productState.duplicate,
@@ -367,6 +373,17 @@ describe('Phase 3: Admin Backend (/api/admin/*)', () => {
       expect(res.body.data.name).toBe('Vintage Silk Slip Dress');
       expect(res.body.data).toHaveProperty('serialNumber');
       createdSerial = res.body.data.serialNumber;
+    });
+
+    it('retrieves an admin product by serial number or slug', async () => {
+      const serial = await ensureProduct();
+      const res = await request(app)
+        .get(`/api/admin/products/${serial}`)
+        .set('Cookie', ownerCookie);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.serialNumber).toBe(serial);
     });
 
     it('updates product attributes', async () => {

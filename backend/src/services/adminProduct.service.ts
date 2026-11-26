@@ -15,6 +15,10 @@ export const adminProductService = {
     return supabaseCatalogService.listAdminProducts(query);
   },
 
+  getById(id: string) {
+    return supabaseCatalogService.getAdminProduct(id);
+  },
+
   async create(data: Partial<ProductType>) {
     const created = await supabaseCatalogService.createProduct(data);
     await bumpCatalogVersion();

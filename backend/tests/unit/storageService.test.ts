@@ -106,4 +106,19 @@ describe('Supabase Storage image lifecycle', () => {
     await expect(storageService.deleteImage(upload.w800)).rejects.toMatchObject({ statusCode: 503, code: 'STORAGE_UNAVAILABLE' });
     expect(state.removed).toHaveLength(1);
   });
+
+  it('accepts legitimate JPEG mime variants (image/jpeg, image/jpg, image/pjpeg) and canonicalizes URLs with query strings', async () => {
+    const jpegBuffer = await sharp({ create: { width: 32, height: 20, channels: 3, background: { r: 80, g: 30, b: 20 } } }).jpeg().toBuffer();
+    const result1 = await storageService.processAndStoreImage(jpegBuffer, 'photo.jpg', 'products', 'image/jpeg');
+    expect(result1.w800).toContain('/storage/v1/object/public/product-images/products/');
+
+    const result2 = await storageService.processAndStoreImage(jpegBuffer, 'photo2.jpg', 'products', 'image/jpg');
+    expect(result2.w800).toContain('/storage/v1/object/public/product-images/products/');
+
+    const result3 = await storageService.processAndStoreImage(jpegBuffer, 'photo3.jpg', 'products', 'image/pjpeg');
+    expect(result3.w800).toContain('/storage/v1/object/public/product-images/products/');
+
+    // Deleting an image URL with query params should canonicalize pathname
+    await expect(storageService.deleteImage(`${result1.w800}?v=123`)).resolves.toEqual({ deleted: true });
+  });
 });

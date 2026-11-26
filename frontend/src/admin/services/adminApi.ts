@@ -55,6 +55,11 @@ adminClient.interceptors.request.use((config) => {
   if (csrf && config.headers && !['get', 'head', 'options'].includes(config.method?.toLowerCase() || '')) {
     config.headers['X-CSRF-Token'] = csrf;
   }
+  // When transmitting FormData, remove default Content-Type so Axios/browser sets boundary automatically
+  if (config.data instanceof FormData && config.headers) {
+    delete config.headers['Content-Type'];
+    delete config.headers['content-type'];
+  }
   return config;
 });
 
@@ -206,6 +211,15 @@ export const adminApi = {
         meta: { total: number; page: number; limit: number; totalPages: number; hasNext: boolean };
       }>('/products', { params });
       return res.data;
+    } catch (err) {
+      throw normalizeApiError(err);
+    }
+  },
+
+  async getProduct(id: string) {
+    try {
+      const res = await adminClient.get<{ data: Product }>(`/products/${encodeURIComponent(id)}`);
+      return res.data.data;
     } catch (err) {
       throw normalizeApiError(err);
     }
@@ -407,7 +421,6 @@ export const adminApi = {
       const res = await adminClient.post<{ data: MediaUploadResult | MediaUploadResult[] }>(
         '/media/upload',
         formData,
-        { headers: { 'Content-Type': 'multipart/form-data' } },
       );
       return Array.isArray(res.data.data) ? res.data.data : [res.data.data];
     } catch (err) {

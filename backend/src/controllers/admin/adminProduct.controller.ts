@@ -33,6 +33,16 @@ export const adminProductController = {
     }
   },
 
+  async getById(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = String(req.params.id);
+      const product = await adminProductService.getById(id);
+      return sendSuccess(res, product);
+    } catch (error) {
+      next(error);
+    }
+  },
+
   async create(req: Request, res: Response, next: NextFunction) {
     try {
       const product = await adminProductService.create(req.body);

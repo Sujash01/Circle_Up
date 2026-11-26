@@ -46,6 +46,7 @@ adminRouter.patch('/users/:id', requireAdminAuth('owner'), verifyAdminCsrf, admi
 
 // === PRODUCTS (CRUD, BULK, SOFT & PERMANENT DELETE) ===
 adminRouter.get('/products', requireAdminAuth(), adminProductController.list);
+adminRouter.get('/products/:id', requireAdminAuth(), adminProductController.getById);
 adminRouter.post('/products', requireAdminAuth(), verifyAdminCsrf, adminProductController.create);
 adminRouter.put('/products/:id', requireAdminAuth(), verifyAdminCsrf, adminProductController.update);
 adminRouter.post(

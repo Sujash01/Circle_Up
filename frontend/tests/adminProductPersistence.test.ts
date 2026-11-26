@@ -28,4 +28,40 @@ describe('admin product persistence contract', () => {
       utrNumber: 'receipt-123', confirmedAmountPaise: 10000,
     })).rejects.toThrow();
   });
+
+  it('adminApi.getProduct fetches product by serialNumber, slug, or ID', async () => {
+    const mockProduct = { id: 'uuid-1', serialNumber: 'CU-042', name: 'Vintage Shirt', price: 250000 };
+    const getSpy = vi.spyOn(adminClient, 'get').mockResolvedValue({ data: { success: true, data: mockProduct } });
+
+    const result = await adminApi.getProduct('CU-042');
+    expect(result).toEqual(mockProduct);
+    expect(getSpy).toHaveBeenCalledWith('/products/CU-042');
+
+    getSpy.mockRejectedValueOnce(new Error('Product not found'));
+    await expect(adminApi.getProduct('unknown')).rejects.toThrow();
+  });
+
+  it('adminApi.uploadMedia transmits FormData without overriding multipart boundary', async () => {
+    const file = new File(['dummy content'], 'swatch.png', { type: 'image/png' });
+    const mockUploadResult = {
+      original: 'https://circleup.supabase.co/storage/v1/object/public/product-images/products/hash/uuid/800w.webp',
+      w400: 'https://circleup.supabase.co/storage/v1/object/public/product-images/products/hash/uuid/400w.webp',
+      w800: 'https://circleup.supabase.co/storage/v1/object/public/product-images/products/hash/uuid/800w.webp',
+      w1600: 'https://circleup.supabase.co/storage/v1/object/public/product-images/products/hash/uuid/1600w.webp',
+      hash: '0123456789abcdef',
+    };
+
+    let capturedHeaders: Record<string, unknown> | undefined;
+    const postSpy = vi.spyOn(adminClient, 'post').mockImplementation(async (url, data, config) => {
+      capturedHeaders = config?.headers;
+      return { data: { success: true, data: mockUploadResult } };
+    });
+
+    const results = await adminApi.uploadMedia([file], 'products');
+    expect(results).toHaveLength(1);
+    expect(results[0]?.w800).toContain('/800w.webp');
+    expect(postSpy).toHaveBeenCalledWith('/media/upload', expect.any(FormData));
+    // Header must NOT be fixed string 'multipart/form-data' without boundary
+    expect(capturedHeaders?.['Content-Type']).toBeUndefined();
+  });
 });

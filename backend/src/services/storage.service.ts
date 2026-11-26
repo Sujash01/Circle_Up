@@ -18,6 +18,11 @@ const MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024;
 const VARIANTS = ['400w.webp', '800w.webp', '1600w.webp'] as const;
 const COLLECTIONS = new Set<MediaCollection>(['products', 'events', 'rentals', 'general']);
 const MIME_BY_FORMAT: Record<string, string> = { jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
+const ALLOWED_MIMES_BY_FORMAT: Record<string, string[]> = {
+  jpeg: ['image/jpeg', 'image/jpg', 'image/pjpeg'],
+  png: ['image/png', 'image/x-png'],
+  webp: ['image/webp'],
+};
 const unavailable = (message = 'Supabase Storage is unavailable.') => new ServiceUnavailableError(message, 'STORAGE_UNAVAILABLE');
 
 function getVariantBuffers(input: Buffer) {
@@ -39,8 +44,12 @@ async function inspectImage(fileBuffer: Buffer, declaredMimeType?: string): Prom
   if (!metadata.format || !MIME_BY_FORMAT[metadata.format]) {
     throw new BadRequestError('Unsupported image format. Allowed formats: JPEG, PNG, WebP.', 'UNSUPPORTED_FORMAT');
   }
-  if (declaredMimeType && declaredMimeType.toLowerCase() !== MIME_BY_FORMAT[metadata.format]) {
-    throw new BadRequestError('Uploaded MIME type does not match the image contents.', 'MIME_CONTENT_MISMATCH');
+  if (declaredMimeType) {
+    const normalizedDeclared = declaredMimeType.toLowerCase().trim();
+    const allowedMimes = ALLOWED_MIMES_BY_FORMAT[metadata.format] || [MIME_BY_FORMAT[metadata.format]];
+    if (!allowedMimes.includes(normalizedDeclared)) {
+      throw new BadRequestError('Uploaded MIME type does not match the image contents.', 'MIME_CONTENT_MISMATCH');
+    }
   }
   return metadata;
 }
@@ -82,7 +91,16 @@ function managedImagePaths(imageUrl: string): { collection: MediaCollection; dig
   }
   const paths = VARIANTS.map((name) => pathFor(safeCollection, safeDigest, safeObjectUuid, name));
   const urls = paths.map((path) => publicObjectUrl(client, path));
-  if (!urls.includes(imageUrl)) throw new BadRequestError('Image URL is not canonical for this storage bucket.', 'INVALID_IMAGE_URL');
+  const urlMatches = urls.some((u) => {
+    if (u === imageUrl) return true;
+    try {
+      const uParsed = new URL(u);
+      return uParsed.pathname === parsed.pathname;
+    } catch {
+      return false;
+    }
+  });
+  if (!urlMatches) throw new BadRequestError('Image URL is not canonical for this storage bucket.', 'INVALID_IMAGE_URL');
   return { collection: safeCollection, digest: safeDigest, urls, paths };
 }
 

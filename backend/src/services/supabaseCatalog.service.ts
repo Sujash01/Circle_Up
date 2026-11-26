@@ -632,12 +632,21 @@ export const supabaseCatalogService = {
     if (updates.chestPick !== undefined) rowUpdates.chest_pick = updates.chestPick;
     if (updates.isNewArrival !== undefined) rowUpdates.is_new_arrival = updates.isNewArrival;
     if (updates.status !== undefined) rowUpdates.status = updates.status;
+    if (updates.serialNumber !== undefined && updates.serialNumber.trim()) {
+      rowUpdates.serial_number = updates.serialNumber.trim().toUpperCase();
+      if (updates.categoryCode === undefined) {
+        const derivedCode = extractCategoryCodeFromSerial(rowUpdates.serial_number as string);
+        if (derivedCode) rowUpdates.category_code = derivedCode;
+      }
+    }
 
-    let updateQuery = client.from('products').update(rowUpdates);
-    updateQuery = UUID_REGEX.test(trimmed)
-      ? updateQuery.eq('id', trimmed)
-      : updateQuery.eq('serial_number', trimmed.toUpperCase());
-    const { data: updated, error } = await updateQuery.select('*').maybeSingle();
+    const existing = await getAnyProductByIdentifier(trimmed, client);
+    const { data: updated, error } = await client
+      .from('products')
+      .update(rowUpdates)
+      .eq('id', existing.id)
+      .select('*')
+      .maybeSingle();
 
     if (error) {
       if (error.code === '23505') throw new BadRequestError('Serial number or slug already in use.', 'DUPLICATE_PRODUCT');
@@ -645,6 +654,15 @@ export const supabaseCatalogService = {
     }
     if (!updated) throw new NotFoundError(`Product "${id}" not found.`, 'PRODUCT_NOT_FOUND');
     return mapSupabaseRowToProductItem(updated);
+  },
+
+  /**
+   * Fetches an authoritative admin product item by UUID, serialNumber, or slug,
+   * without suppressing internal or hidden statuses (DRAFT, ARCHIVED, NEED_ATTENTION, MISSING).
+   */
+  async getAdminProduct(identifier: string, clientOverride?: SupabaseClient): Promise<IProductItem> {
+    const client = clientOverride || getSupabaseAdminClient();
+    return getAnyProductByIdentifier(identifier, client);
   },
 
   /**

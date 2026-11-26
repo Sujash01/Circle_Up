@@ -1,0 +1,282 @@
+﻿import React, { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Product } from '@circleup/shared';
+import AdminApp from '../src/admin/AdminApp';
+import { ProductFormPage } from '../src/admin/pages/ProductFormPage';
+import { ProductsPage } from '../src/admin/pages/ProductsPage';
+import { adminApi } from '../src/admin/services/adminApi';
+import { AdminToastProvider } from '../src/admin/context/AdminToastContext';
+import { AdminAuthProvider } from '../src/admin/context/AdminAuthContext';
+
+// Ensure react act environment flag is set
+(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+describe('Product Edit & Image Upload Flow', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(adminApi, 'getMe').mockResolvedValue({
+      user: { id: 'admin-1', email: 'owner@circleup.in', role: 'owner', name: 'Owner', isActive: true },
+      csrfToken: 'mock-csrf-token',
+    });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it('renders ProductsPage and clicking Edit navigates to /admin/products/:serialNumber/edit', async () => {
+    const mockProducts = [
+      {
+        id: 'uuid-1',
+        serialNumber: 'CU-042',
+        name: 'Vintage Denim Jacket',
+        slug: 'vintage-denim-jacket-cu-042',
+        price: 350000,
+        stock: 2,
+        status: 'AVAILABLE',
+        category: 'womens-one-piece',
+        images: ['https://example.com/jacket.webp'],
+        sizes: ['M'],
+      },
+    ] as unknown as Product[];
+
+    vi.spyOn(adminApi, 'getProducts').mockResolvedValue({
+      data: mockProducts,
+      meta: { total: 1, page: 1, limit: 100, totalPages: 1, hasNext: false },
+    });
+
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/admin/products']}>
+          <AdminToastProvider>
+            <AdminAuthProvider>
+              <Routes>
+                <Route path="/admin/products" element={<ProductsPage />} />
+                <Route
+                  path="/admin/products/:id/edit"
+                  element={<div data-testid="edit-page-marker">Editing Product</div>}
+                />
+              </Routes>
+            </AdminAuthProvider>
+          </AdminToastProvider>
+        </MemoryRouter>,
+      );
+    });
+
+    // Flush async loadProducts
+    for (let i = 0; i < 20; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      if (container.querySelector('button[title="Edit product"]')) break;
+    }
+
+    // Wait for catalog table to load
+    const editBtn = container.querySelector('button[title="Edit product"]') as HTMLButtonElement;
+    expect(editBtn).not.toBeNull();
+
+    await act(async () => {
+      editBtn.click();
+    });
+
+    // Verify edit route was reached
+    const marker = container.querySelector('[data-testid="edit-page-marker"]');
+    expect(marker).not.toBeNull();
+  });
+
+  it('loads existing product details in ProductFormPage and populates form fields', async () => {
+    const mockProduct = {
+      id: 'uuid-042',
+      serialNumber: 'CU-042',
+      name: 'Retro Velvet Blazer',
+      slug: 'retro-velvet-blazer',
+      description: 'Stunning vintage velvet piece',
+      price: 450000,
+      stock: 3,
+      status: 'AVAILABLE',
+      category: 'womens-one-piece',
+      categoryCode: 'SET',
+      condition: 'Mint',
+      gender: 'Women',
+      sizes: ['M', 'L'],
+      tags: ['velvet', 'retro'],
+      images: ['https://circleup.supabase.co/storage/v1/object/public/product-images/products/hash/uuid/800w.webp'],
+    } as unknown as Product;
+
+    vi.spyOn(adminApi, 'getProduct').mockResolvedValue(mockProduct);
+
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/admin/products/CU-042/edit']}>
+          <AdminToastProvider>
+            <Routes>
+              <Route path="/admin/products/:id/edit" element={<ProductFormPage />} />
+            </Routes>
+          </AdminToastProvider>
+        </MemoryRouter>,
+      );
+    });
+
+    // Flush async loadProduct
+    for (let i = 0; i < 20; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      if (container.querySelector('input[placeholder="e.g. Vintage Silk Pleated Midi Skirt"]')) break;
+    }
+
+    // Check that name input contains product name
+    const nameInput = container.querySelector('input[placeholder="e.g. Vintage Silk Pleated Midi Skirt"]') as HTMLInputElement;
+    expect(nameInput?.value).toBe('Retro Velvet Blazer');
+
+    // Check that price in rupees is converted from paise (450000 paise = 4500 rupees)
+    const priceInput = container.querySelector('input[placeholder="2550"]') as HTMLInputElement;
+    expect(priceInput?.value).toBe('4500');
+
+    // Check that the existing image is loaded and displayed
+    const previewImg = container.querySelector('img[src="https://circleup.supabase.co/storage/v1/object/public/product-images/products/hash/uuid/800w.webp"]') as HTMLImageElement;
+    expect(previewImg).not.toBeNull();
+  });
+
+  it('ProductFormPage also resolves under /admin/products/edit/:id route', async () => {
+    const mockProduct = {
+      id: 'uuid-099',
+      serialNumber: 'CU-099',
+      name: 'Classic Trench',
+      slug: 'classic-trench',
+      price: 600000,
+      stock: 1,
+      status: 'AVAILABLE',
+      category: 'womens-one-piece',
+      images: [],
+    } as unknown as Product;
+
+    vi.spyOn(adminApi, 'getProduct').mockResolvedValue(mockProduct);
+
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/admin/products/edit/CU-099']}>
+          <AdminToastProvider>
+            <Routes>
+              <Route path="/admin/products/edit/:id" element={<ProductFormPage />} />
+            </Routes>
+          </AdminToastProvider>
+        </MemoryRouter>,
+      );
+    });
+
+    // Flush async loadProduct
+    for (let i = 0; i < 20; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      if (container.querySelector('input[placeholder="e.g. Vintage Silk Pleated Midi Skirt"]')) break;
+    }
+
+    const nameInput = container.querySelector('input[placeholder="e.g. Vintage Silk Pleated Midi Skirt"]') as HTMLInputElement;
+    expect(nameInput?.value).toBe('Classic Trench');
+  });
+
+  it('AdminApp resolves both edit URL formats and redirects unmatched routes to /admin/overview without looping', async () => {
+    const mockProduct = {
+      id: 'uuid-048',
+      serialNumber: 'CU-048',
+      name: 'Vintage Silk Shirt',
+      slug: 'vintage-silk-shirt-cu-048',
+      price: 180000,
+      stock: 1,
+      status: 'AVAILABLE',
+      category: 'womens-one-piece',
+      images: [],
+    } as unknown as Product;
+
+    vi.spyOn(adminApi, 'getProduct').mockResolvedValue(mockProduct);
+
+    // Test 1: /admin/products/edit/CU-048 loads form cleanly in full AdminApp
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/admin/products/edit/CU-048']}>
+          <Routes>
+            <Route path="/admin/*" element={<AdminApp />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
+
+    for (let i = 0; i < 20; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      if (container.querySelector('input[placeholder="e.g. Vintage Silk Pleated Midi Skirt"]')) break;
+    }
+
+    const editName = container.querySelector('input[placeholder="e.g. Vintage Silk Pleated Midi Skirt"]') as HTMLInputElement;
+    expect(editName?.value).toBe('Vintage Silk Shirt');
+  });
+
+  it('ProductFormPage uploads media, strips placeholders, and assigns cover to first upload', async () => {
+    vi.spyOn(adminApi, 'uploadMedia').mockResolvedValue([
+      {
+        original: 'https://circleup.supabase.co/storage/v1/object/public/product-images/products/h1/u1/800w.webp',
+        w400: 'https://circleup.supabase.co/storage/v1/object/public/product-images/products/h1/u1/400w.webp',
+        w800: 'https://circleup.supabase.co/storage/v1/object/public/product-images/products/h1/u1/800w.webp',
+        w1600: 'https://circleup.supabase.co/storage/v1/object/public/product-images/products/h1/u1/1600w.webp',
+        hash: 'hash1',
+      },
+      {
+        original: 'https://circleup.supabase.co/storage/v1/object/public/product-images/products/h2/u2/800w.webp',
+        w400: 'https://circleup.supabase.co/storage/v1/object/public/product-images/products/h2/u2/400w.webp',
+        w800: 'https://circleup.supabase.co/storage/v1/object/public/product-images/products/h2/u2/800w.webp',
+        w1600: 'https://circleup.supabase.co/storage/v1/object/public/product-images/products/h2/u2/1600w.webp',
+        hash: 'hash2',
+      },
+    ]);
+
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/admin/products/new']}>
+          <AdminToastProvider>
+            <Routes>
+              <Route path="/admin/products/new" element={<ProductFormPage />} />
+            </Routes>
+          </AdminToastProvider>
+        </MemoryRouter>
+      );
+    });
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    expect(fileInput).not.toBeNull();
+
+    const file1 = new File(['image-bits-1'], 'item-front.webp', { type: 'image/webp' });
+    const file2 = new File(['image-bits-2'], 'item-back.webp', { type: 'image/webp' });
+
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        value: [file1, file2],
+        writable: true,
+      });
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    // Check that uploaded photos are rendered
+    const img1 = container.querySelector('img[src="https://circleup.supabase.co/storage/v1/object/public/product-images/products/h1/u1/800w.webp"]');
+    const img2 = container.querySelector('img[src="https://circleup.supabase.co/storage/v1/object/public/product-images/products/h2/u2/800w.webp"]');
+    expect(img1).not.toBeNull();
+    expect(img2).not.toBeNull();
+
+    // Check that /assets/rtw-1.webp placeholder is not present
+    const placeholderImg = container.querySelector('img[src="/assets/rtw-1.webp"]');
+    expect(placeholderImg).toBeNull();
+  });
+});

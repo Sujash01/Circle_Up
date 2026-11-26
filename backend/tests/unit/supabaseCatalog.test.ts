@@ -394,5 +394,74 @@ describe('Supabase Catalog Service - Unit Tests', () => {
       ).rejects.toThrow(BadRequestError);
       expect(mockRpc).toHaveBeenCalledWith('delete_product_if_unordered', { p_product_id: 'product-uuid' });
     });
+
+    it('getAdminProduct retrieves product with internal hidden status (e.g. DRAFT/ARCHIVED)', async () => {
+      const draftRow = {
+        id: '22222222-3333-4444-5555-666666666666',
+        serial_number: 'CU-DRAFT-01',
+        name: 'Draft Piece',
+        slug: 'draft-piece-cu-draft-01',
+        price: 150000,
+        stock: 1,
+        status: 'DRAFT',
+      };
+      const mockMaybeSingle = vi.fn().mockResolvedValue({ data: draftRow, error: null });
+      const mockEq = vi.fn().mockReturnValue({ maybeSingle: mockMaybeSingle });
+      const mockClient = {
+        from: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ eq: mockEq }) }),
+      } as any;
+
+      const result = await supabaseCatalogService.getAdminProduct('CU-DRAFT-01', mockClient);
+      expect(result.serialNumber).toBe('CU-DRAFT-01');
+      expect(result.status).toBe('DRAFT');
+    });
+
+    it('updateProduct resolves target product by slug and updates its attributes and serialNumber', async () => {
+      const existingRow = {
+        id: '33333333-4444-5555-6666-777777777777',
+        serial_number: 'CU-010',
+        name: 'Silk Top',
+        slug: 'silk-top-cu-010',
+        price: 200000,
+        stock: 2,
+        status: 'AVAILABLE',
+      };
+      const updatedRow = {
+        ...existingRow,
+        serial_number: 'CU-010-MOD',
+        price: 250000,
+        images: ['https://circleup.supabase.co/storage/v1/object/public/product-images/products/hash/uuid/800w.webp'],
+      };
+
+      const mockMaybeSingle = vi.fn().mockResolvedValueOnce({ data: existingRow, error: null })
+        .mockResolvedValueOnce({ data: updatedRow, error: null });
+      const mockEq = vi.fn().mockReturnValue({ maybeSingle: mockMaybeSingle, select: vi.fn().mockReturnValue({ maybeSingle: mockMaybeSingle }) });
+      const mockUpdate = vi.fn().mockReturnValue({ eq: mockEq });
+      const mockClient = {
+        from: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnValue({ eq: mockEq }),
+          update: mockUpdate,
+        }),
+      } as any;
+
+      const result = await supabaseCatalogService.updateProduct(
+        'silk-top-cu-010',
+        {
+          serialNumber: 'CU-010-MOD',
+          price: 250000,
+          images: ['https://circleup.supabase.co/storage/v1/object/public/product-images/products/hash/uuid/800w.webp'],
+        },
+        mockClient
+      );
+
+      expect(result.serialNumber).toBe('CU-010-MOD');
+      expect(result.price).toBe(250000);
+      expect(result.images).toEqual(['https://circleup.supabase.co/storage/v1/object/public/product-images/products/hash/uuid/800w.webp']);
+      expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({
+        serial_number: 'CU-010-MOD',
+        price: 250000,
+        images: ['https://circleup.supabase.co/storage/v1/object/public/product-images/products/hash/uuid/800w.webp'],
+      }));
+    });
   });
 });

@@ -447,7 +447,7 @@ export function ProductsPage() {
 
                           <button
                             type="button"
-                            onClick={() => navigate(`/admin/products/edit/${p.serialNumber}`)}
+                            onClick={() => navigate(`/admin/products/${p.serialNumber}/edit`)}
                             className="p-1.5 rounded-lg hover:bg-[#1e2a1c]/10 text-[#1e2a1c]/70 hover:text-[#1e2a1c] transition-colors"
                             title="Edit product"
                           >

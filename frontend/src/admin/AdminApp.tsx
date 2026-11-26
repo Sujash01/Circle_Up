@@ -48,11 +48,12 @@ function ProtectedAdminRoutes() {
         }
       >
         <Routes>
-          <Route index element={<Navigate to="overview" replace />} />
+          <Route index element={<Navigate to="/admin/overview" replace />} />
           <Route path="overview" element={<OverviewPage />} />
           <Route path="products" element={<ProductsPage />} />
           <Route path="products/new" element={<ProductFormPage />} />
           <Route path="products/:id/edit" element={<ProductFormPage />} />
+          <Route path="products/edit/:id" element={<ProductFormPage />} />
           <Route path="collections" element={<CollectionsPage />} />
           <Route path="orders" element={<OrdersPage />} />
           <Route path="customers" element={<CustomersPage />} />
@@ -62,7 +63,7 @@ function ProtectedAdminRoutes() {
           <Route path="activity" element={<ActivityLogPage />} />
           <Route path="inquiries" element={<InquiriesPage />} />
           <Route path="account" element={<AccountPage />} />
-          <Route path="*" element={<Navigate to="overview" replace />} />
+          <Route path="*" element={<Navigate to="/admin/overview" replace />} />
         </Routes>
       </Suspense>
     </AdminLayout>

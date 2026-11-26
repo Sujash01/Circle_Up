@@ -13,6 +13,7 @@ import {
   Save,
 } from 'lucide-react';
 import {
+  type Product,
   INVENTORY_CATEGORIES,
   INVENTORY_STATUSES,
   type InventoryStatusCode,
@@ -66,9 +67,7 @@ export function ProductFormPage() {
   const [sizeStocks, setSizeStocks] = useState<Record<string, number>>({ M: 1 });
 
   // Images with required alt text and cover flag
-  const [images, setImages] = useState<ImageItem[]>([
-    { url: '/assets/rtw-1.webp', altText: 'Front view flat lay of garment', isCover: true },
-  ]);
+  const [images, setImages] = useState<ImageItem[]>([]);
   const [persistedImageUrls, setPersistedImageUrls] = useState<string[]>([]);
   const [newUploadUrls, setNewUploadUrls] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -88,13 +87,35 @@ export function ProductFormPage() {
   // Load existing product if editing
   useEffect(() => {
     if (!id) return;
+    const productId = id;
     let mounted = true;
     async function loadProduct() {
       try {
         setIsLoading(true);
-        const res = await adminApi.getProducts({ limit: 100, includeArchived: true });
-        const found = res.data.find((p) => p.serialNumber === id || p.slug === id || p.id === id);
-        if (found && mounted) {
+        let found: Product | null = null;
+        try {
+          found = await adminApi.getProduct(productId);
+        } catch {
+          // Fallback to searching product list by serialNumber, slug, or ID
+          const res = await adminApi.getProducts({ limit: 100, includeArchived: true, includeDeleted: true });
+          found =
+            res.data.find(
+              (p) =>
+                p.serialNumber?.toLowerCase() === productId.toLowerCase() ||
+                p.slug?.toLowerCase() === productId.toLowerCase() ||
+                p.id?.toLowerCase() === productId.toLowerCase(),
+            ) || null;
+        }
+
+        if (!found) {
+          if (mounted) {
+            showToast(`Product "${productId}" could not be found.`, 'error');
+            navigate('/admin/products');
+          }
+          return;
+        }
+
+        if (mounted) {
           setName(found.name);
           setSlug(found.slug || '');
           setAutoSlug(false);
@@ -158,10 +179,16 @@ export function ProductFormPage() {
                 isCover: idx === 0,
               })),
             );
+          } else {
+            setPersistedImageUrls([]);
+            setImages([]);
           }
         }
       } catch (err: unknown) {
-        showToast(err instanceof Error ? err.message : 'Failed to load product.', 'error');
+        if (mounted) {
+          showToast(err instanceof Error ? err.message : 'Failed to load product.', 'error');
+          navigate('/admin/products');
+        }
       } finally {
         if (mounted) setIsLoading(false);
       }
@@ -170,7 +197,7 @@ export function ProductFormPage() {
     return () => {
       mounted = false;
     };
-  }, [id, showToast]);
+  }, [id, showToast, navigate]);
 
   // Warn on unsaved changes
   useEffect(() => {
@@ -192,18 +219,22 @@ export function ProductFormPage() {
       setIsUploading(true);
       const results = await adminApi.uploadMedia(Array.from(files));
       setNewUploadUrls((current) => [...current, ...results.map((result) => result.w800)]);
+      // Filter out any default placeholder if present
+      const currentRealImages = images.filter((img) => img.url !== '/assets/rtw-1.webp');
+      const hasCoverAlready = currentRealImages.some((img) => img.isCover);
       const newItems: ImageItem[] = results.map((r, i) => ({
         url: r.w800,
-        altText: `${name || 'Product'} photo`,
-        isCover: images.length === 0 && i === 0,
+        altText: `${name || 'Product'} photo ${currentRealImages.length + i + 1}`,
+        isCover: !hasCoverAlready && i === 0,
       }));
-      setImages((prev) => [...prev, ...newItems]);
+      setImages([...currentRealImages, ...newItems]);
       setIsDirty(true);
       showToast(`${results.length} image(s) processed and optimized.`, 'success');
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : 'Failed to upload images.', 'error');
     } finally {
       setIsUploading(false);
+      if (e.target) e.target.value = '';
     }
   };
 
@@ -372,7 +403,7 @@ export function ProductFormPage() {
     try {
       setIsSaving(true);
       if (isEditing && id) {
-        await adminApi.updateProduct(id, payload);
+        await adminApi.updateProduct(serialNumber || id, payload);
       } else {
         await adminApi.createProduct(payload);
       }
