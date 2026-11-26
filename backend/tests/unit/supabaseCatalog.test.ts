@@ -3,6 +3,8 @@ import {
   mapSupabaseRowToProductItem,
   supabaseCatalogService,
   PUBLIC_STOREFRONT_STATUSES,
+  generateUniqueSerialNumber,
+  generateUniqueSlug,
 } from '../../src/services/supabaseCatalog.service.js';
 import { NotFoundError, BadRequestError, ServiceUnavailableError } from '../../src/errors/AppError.js';
 
@@ -587,6 +589,152 @@ describe('Supabase Catalog Service - Unit Tests', () => {
         await expect(
           supabaseCatalogService.permanentDeleteProduct('CU-DEL-01', mockClient)
         ).rejects.toThrow('Cannot permanently delete product CU-DEL-01 because it exists in existing orders');
+      });
+    });
+
+    describe('generateUniqueSerialNumber & generateUniqueSlug & duplicateProduct', () => {
+      it('generates CU-001 when products table is empty', async () => {
+        const mockClient = {
+          from: vi.fn(() => ({
+            select: vi.fn().mockResolvedValue({ data: [], error: null }),
+          })),
+        } as any;
+
+        const serial = await generateUniqueSerialNumber(mockClient);
+        expect(serial).toBe('CU-001');
+      });
+
+      it('generates next non-colliding serial number even when intermediate items were deleted', async () => {
+        // 3 items in table: CU-001, CU-048, CU-049 (deleted items caused gap)
+        const mockClient = {
+          from: vi.fn(() => ({
+            select: vi.fn().mockResolvedValue({
+              data: [
+                { serial_number: 'CU-001' },
+                { serial_number: 'CU-048' },
+                { serial_number: 'CU-049' },
+              ],
+              error: null,
+            }),
+          })),
+        } as any;
+
+        const serial = await generateUniqueSerialNumber(mockClient);
+        expect(serial).toBe('CU-050');
+      });
+
+      it('preserves prefix like MB-J- and increments numeric portion', async () => {
+        const mockClient = {
+          from: vi.fn(() => ({
+            select: vi.fn().mockResolvedValue({
+              data: [
+                { serial_number: 'MB-J-001' },
+                { serial_number: 'MB-J-002' },
+              ],
+              error: null,
+            }),
+          })),
+        } as any;
+
+        const serial = await generateUniqueSerialNumber(mockClient, 'MB-J-');
+        expect(serial).toBe('MB-J-003');
+      });
+
+      it('generates unique slug without colliding with existing slugs', async () => {
+        const mockClient = {
+          from: vi.fn(() => ({
+            select: vi.fn().mockResolvedValue({
+              data: [
+                { slug: 'vintage-jacket' },
+                { slug: 'vintage-jacket-1' },
+              ],
+              error: null,
+            }),
+          })),
+        } as any;
+
+        const slug = await generateUniqueSlug(mockClient, 'Vintage Jacket');
+        expect(slug).toBe('vintage-jacket-2');
+      });
+
+      it('duplicates a product as DRAFT with unique serial, unique slug, and reset stock', async () => {
+        const sourceProduct = {
+          id: '11111111-2222-3333-4444-555555555555',
+          serial_number: 'CU-048',
+          name: 'Silk Embroidered Shirt',
+          slug: 'silk-embroidered-shirt-cu-048',
+          price: 280000,
+          original_price: 350000,
+          stock: 3,
+          status: 'PUBLISHED',
+          images: ['https://example.com/shirt.jpg'],
+          sizes: ['M'],
+          variants: [{ id: 'var-1', size: 'M', stock: 3 }],
+          category: 'womens-upperwear',
+          condition: 'Mint',
+          gender: 'Women',
+        };
+
+        let insertedRow: any = null;
+
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'products') {
+              return {
+                select: vi.fn((cols: string) => {
+                  if (cols === 'serial_number') {
+                    return Promise.resolve({
+                      data: [{ serial_number: 'CU-048' }],
+                      error: null,
+                    });
+                  }
+                  if (cols === 'slug') {
+                    return Promise.resolve({
+                      data: [{ slug: 'silk-embroidered-shirt-cu-048' }],
+                      error: null,
+                    });
+                  }
+                  return {
+                    eq: vi.fn(() => ({
+                      maybeSingle: vi.fn().mockResolvedValue({
+                        data: sourceProduct,
+                        error: null,
+                      }),
+                    })),
+                  };
+                }),
+                insert: vi.fn((row: any) => {
+                  insertedRow = row;
+                  return {
+                    select: vi.fn(() => ({
+                      single: vi.fn().mockResolvedValue({
+                        data: {
+                          ...row,
+                          id: '22222222-3333-4444-5555-666666666666',
+                          created_at: new Date().toISOString(),
+                        },
+                        error: null,
+                      }),
+                    })),
+                  };
+                }),
+              };
+            }
+            return {};
+          }),
+        } as any;
+
+        const duplicated = await supabaseCatalogService.duplicateProduct('CU-048', mockClient);
+
+        expect(duplicated.name).toBe('Silk Embroidered Shirt (Copy)');
+        expect(duplicated.serialNumber).toBe('CU-049');
+        expect(duplicated.slug).toBe('silk-embroidered-shirt-copy-cu-049');
+        expect(duplicated.status).toBe('DRAFT');
+        expect(duplicated.stock).toBe(1);
+        expect(duplicated.images).toEqual(['https://example.com/shirt.jpg']);
+        expect(insertedRow.status).toBe('DRAFT');
+        expect(insertedRow.stock).toBe(1);
+        expect(insertedRow.serial_number).toBe('CU-049');
       });
     });
   });

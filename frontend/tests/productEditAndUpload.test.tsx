@@ -472,4 +472,131 @@ describe('Product Edit & Image Upload Flow', () => {
     // Verify that old unreferenced image was removed via deleteMedia
     expect(deleteMediaSpy).toHaveBeenCalledWith(oldUrl);
   });
+
+  it('uploading images appends to existing gallery without replacing existing images, and omits cover/reordering controls', async () => {
+    const img1 = 'https://circleup.supabase.co/storage/v1/object/public/product-images/products/h1/u1/800w.webp';
+    const img2 = 'https://circleup.supabase.co/storage/v1/object/public/product-images/products/h2/u2/800w.webp';
+    const img3 = 'https://circleup.supabase.co/storage/v1/object/public/product-images/products/h3/u3/800w.webp';
+
+    const mockProduct = {
+      id: 'uuid-048',
+      serialNumber: 'CU-048',
+      name: 'Vintage Silk Shirt',
+      slug: 'vintage-silk-shirt-cu-048',
+      price: 240000,
+      stock: 1,
+      status: 'AVAILABLE',
+      category: 'womens-one-piece',
+      images: [img1, img2],
+    } as unknown as Product;
+
+    vi.spyOn(adminApi, 'getProduct').mockResolvedValue(mockProduct);
+    vi.spyOn(adminApi, 'uploadMedia').mockResolvedValue([
+      { original: img3, w400: img3, w800: img3, w1600: img3, hash: 'h3' },
+    ]);
+
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/admin/products/CU-048/edit']}>
+          <AdminToastProvider>
+            <Routes>
+              <Route path="/admin/products/:id/edit" element={<ProductFormPage />} />
+            </Routes>
+          </AdminToastProvider>
+        </MemoryRouter>
+      );
+    });
+
+    for (let i = 0; i < 20; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      if (container.querySelector(`img[src="${img1}"]`)) break;
+    }
+
+    // Both initial images are present
+    expect(container.querySelector(`img[src="${img1}"]`)).not.toBeNull();
+    expect(container.querySelector(`img[src="${img2}"]`)).not.toBeNull();
+
+    // Verify "Set as Cover" buttons and move arrows are NOT rendered
+    expect(container.textContent).not.toContain('Set as Cover');
+    expect(container.querySelector('button[title="Move left"]')).toBeNull();
+    expect(container.querySelector('button[title="Move right"]')).toBeNull();
+
+    // Upload third image
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const newFile = new File(['bits3'], 'third.webp', { type: 'image/webp' });
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        value: [newFile],
+        writable: true,
+      });
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    // ALL 3 images are now present in the gallery — none was replaced!
+    const allImgs = container.querySelectorAll('.grid img');
+    expect(allImgs.length).toBe(3);
+    expect(container.querySelector(`img[src="${img1}"]`)).not.toBeNull();
+    expect(container.querySelector(`img[src="${img2}"]`)).not.toBeNull();
+    expect(container.querySelector(`img[src="${img3}"]`)).not.toBeNull();
+  });
+
+  it('removing cover image automatically designates the first remaining image as cover', async () => {
+    const img1 = 'https://circleup.supabase.co/storage/v1/object/public/product-images/products/h1/u1/800w.webp';
+    const img2 = 'https://circleup.supabase.co/storage/v1/object/public/product-images/products/h2/u2/800w.webp';
+
+    const mockProduct = {
+      id: 'uuid-048',
+      serialNumber: 'CU-048',
+      name: 'Vintage Silk Shirt',
+      slug: 'vintage-silk-shirt-cu-048',
+      price: 240000,
+      stock: 1,
+      status: 'AVAILABLE',
+      category: 'womens-one-piece',
+      images: [img1, img2],
+    } as unknown as Product;
+
+    vi.spyOn(adminApi, 'getProduct').mockResolvedValue(mockProduct);
+
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/admin/products/CU-048/edit']}>
+          <AdminToastProvider>
+            <Routes>
+              <Route path="/admin/products/:id/edit" element={<ProductFormPage />} />
+            </Routes>
+          </AdminToastProvider>
+        </MemoryRouter>
+      );
+    });
+
+    for (let i = 0; i < 20; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      if (container.querySelector(`img[src="${img1}"]`)) break;
+    }
+
+    // First image has cover badge
+    const removeBtnsBefore = container.querySelectorAll('button[title="Remove image"]');
+    const cardsBefore = Array.from(removeBtnsBefore).map((btn) => btn.closest('.p-3'));
+    expect(cardsBefore[0]?.textContent).toContain('Cover');
+    expect(cardsBefore[1]?.textContent).not.toContain('Cover');
+
+    // Remove first image
+    const firstRemoveBtn = removeBtnsBefore[0] as HTMLButtonElement;
+    await act(async () => {
+      firstRemoveBtn.click();
+    });
+
+    // img1 is removed, img2 is now the first and displays Cover badge
+    const removeBtnsAfter = container.querySelectorAll('button[title="Remove image"]');
+    const cardsAfter = Array.from(removeBtnsAfter).map((btn) => btn.closest('.p-3'));
+    expect(cardsAfter.length).toBe(1);
+    expect(container.querySelector(`img[src="${img1}"]`)).toBeNull();
+    expect(container.querySelector(`img[src="${img2}"]`)).not.toBeNull();
+    expect(cardsAfter[0]?.textContent).toContain('Cover');
+  });
 });

@@ -8,7 +8,6 @@ import {
   X,
   Star,
   Ruler,
-  Check,
   Sparkles,
   Save,
 } from 'lucide-react';
@@ -219,16 +218,15 @@ export function ProductFormPage() {
       setIsUploading(true);
       const results = await adminApi.uploadMedia(Array.from(files));
       setNewUploadUrls((current) => [...current, ...results.map((result) => result.w800)]);
-      // Filter out any default placeholder or mock assets if present
-      const isPlaceholder = (url: string) => url.startsWith('/assets/') || url.includes('placeholder');
-      const currentRealImages = images.filter((img) => !isPlaceholder(img.url));
-      const hasCoverAlready = currentRealImages.some((img) => img.isCover);
-      const newItems: ImageItem[] = results.map((r, i) => ({
-        url: r.w800,
-        altText: `${name || 'Product'} photo ${currentRealImages.length + i + 1}`,
-        isCover: !hasCoverAlready && i === 0,
-      }));
-      setImages([...currentRealImages, ...newItems]);
+      setImages((prev) => {
+        const hasCoverAlready = prev.some((img) => img.isCover);
+        const newItems: ImageItem[] = results.map((r, i) => ({
+          url: r.w800,
+          altText: `${name || 'Product'} photo ${prev.length + i + 1}`,
+          isCover: !hasCoverAlready && i === 0,
+        }));
+        return [...prev, ...newItems];
+      });
       setIsDirty(true);
       showToast(`${results.length} image(s) processed and optimized.`, 'success');
     } catch (err: unknown) {
@@ -239,16 +237,6 @@ export function ProductFormPage() {
     }
   };
 
-  const handleSetCover = (index: number) => {
-    setImages((prev) =>
-      prev.map((img, i) => ({
-        ...img,
-        isCover: i === index,
-      })),
-    );
-    setIsDirty(true);
-  };
-
   const handleRemoveImage = (index: number) => {
     setImages((prev) => {
       const next = prev.filter((_, i) => i !== index);
@@ -256,22 +244,6 @@ export function ProductFormPage() {
         next[0].isCover = true;
       }
       return next;
-    });
-    setIsDirty(true);
-  };
-
-  const handleMoveImage = (index: number, direction: 'left' | 'right') => {
-    const target = direction === 'left' ? index - 1 : index + 1;
-    if (target < 0 || target >= images.length) return;
-    setImages((prev) => {
-      const copy = [...prev];
-      const temp = copy[index];
-      const targetItem = copy[target];
-      if (temp && targetItem) {
-        copy[index] = targetItem;
-        copy[target] = temp;
-      }
-      return copy;
     });
     setIsDirty(true);
   };
@@ -786,44 +758,6 @@ export function ProductFormPage() {
                       placeholder="e.g. Flat-lay photo of denim jacket"
                       className="w-full px-2.5 py-1.5 rounded-lg border border-[#1e2a1c]/20 bg-white text-xs"
                     />
-                  </div>
-
-                  {/* Action Controls */}
-                  <div className="flex items-center justify-between text-[0.68rem] pt-1">
-                    {!img.isCover ? (
-                      <button
-                        type="button"
-                        onClick={() => handleSetCover(idx)}
-                        className="text-[#8b5a3e] font-semibold hover:underline"
-                      >
-                        Set as Cover
-                      </button>
-                    ) : (
-                      <span className="text-emerald-800 font-bold flex items-center gap-0.5">
-                        <Check className="size-3" /> Cover Photo
-                      </span>
-                    )}
-
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        disabled={idx === 0}
-                        onClick={() => handleMoveImage(idx, 'left')}
-                        className="px-1.5 py-0.5 rounded bg-[#1e2a1c]/10 text-xs disabled:opacity-30"
-                        title="Move left"
-                      >
-                        ←
-                      </button>
-                      <button
-                        type="button"
-                        disabled={idx === images.length - 1}
-                        onClick={() => handleMoveImage(idx, 'right')}
-                        className="px-1.5 py-0.5 rounded bg-[#1e2a1c]/10 text-xs disabled:opacity-30"
-                        title="Move right"
-                      >
-                        →
-                      </button>
-                    </div>
                   </div>
                 </div>
               ))}

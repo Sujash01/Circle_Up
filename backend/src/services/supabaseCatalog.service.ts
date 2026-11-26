@@ -33,6 +33,84 @@ export const INTERNAL_HIDDEN_STATUSES = [
   'ARCHIVED',
 ];
 
+export async function generateUniqueSerialNumber(
+  client: SupabaseClient,
+  preferredPrefix = 'CU-'
+): Promise<string> {
+  const { data, error } = await client.from('products').select('serial_number');
+  if (error) {
+    throw new ServiceUnavailableError(`Failed to check existing serial numbers: ${error.message}`, 'DATABASE_ERROR');
+  }
+  const existingSerials = new Set(
+    (data || []).map((r) => String(r.serial_number || '').trim().toUpperCase())
+  );
+
+  const prefix = preferredPrefix.toUpperCase();
+  const escapedPrefix = prefix.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+  const regex = new RegExp(`^${escapedPrefix}(\\d+)$`, 'i');
+
+  let maxNum = 0;
+  for (const serial of existingSerials) {
+    const match = serial.match(regex);
+    if (match && match[1]) {
+      const n = parseInt(match[1], 10);
+      if (!isNaN(n) && n > maxNum) {
+        maxNum = n;
+      }
+    }
+  }
+
+  // Also check standard CU-(\\d+) pattern if custom prefix had no numeric matches
+  if (maxNum === 0 && prefix !== 'CU-') {
+    for (const serial of existingSerials) {
+      const match = serial.match(/^CU-(\d+)$/i);
+      if (match && match[1]) {
+        const n = parseInt(match[1], 10);
+        if (!isNaN(n) && n > maxNum) maxNum = n;
+      }
+    }
+  }
+
+  let candidateNum = Math.max(maxNum + 1, 1);
+  let candidate = `${prefix}${String(candidateNum).padStart(3, '0')}`;
+  while (existingSerials.has(candidate.toUpperCase())) {
+    candidateNum++;
+    candidate = `${prefix}${String(candidateNum).padStart(3, '0')}`;
+  }
+
+  return candidate;
+}
+
+export async function generateUniqueSlug(
+  client: SupabaseClient,
+  baseText: string
+): Promise<string> {
+  const sanitized = baseText
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'product';
+
+  const { data, error } = await client.from('products').select('slug');
+  if (error) {
+    throw new ServiceUnavailableError(`Failed to check existing product slugs: ${error.message}`, 'DATABASE_ERROR');
+  }
+  const existingSlugs = new Set(
+    (data || []).map((r) => String(r.slug || '').trim().toLowerCase())
+  );
+
+  if (!existingSlugs.has(sanitized)) {
+    return sanitized;
+  }
+
+  let counter = 1;
+  let candidate = `${sanitized}-${counter}`;
+  while (existingSlugs.has(candidate.toLowerCase())) {
+    counter++;
+    candidate = `${sanitized}-${counter}`;
+  }
+  return candidate;
+}
+
 function buildProductRow(
   data: Partial<ProductType>,
   serialNumber: string,
@@ -526,9 +604,7 @@ export const supabaseCatalogService = {
 
     let serialNumber = data.serialNumber?.trim().toUpperCase();
     if (!serialNumber) {
-      const { count, error: countError } = await client.from('products').select('*', { count: 'exact', head: true });
-      if (countError) throw new ServiceUnavailableError(`Failed to create product serial number: ${countError.message}`, 'DATABASE_ERROR');
-      serialNumber = `CU-${String((count || 0) + 1).padStart(3, '0')}`;
+      serialNumber = await generateUniqueSerialNumber(client);
     }
 
     const slug =
@@ -666,17 +742,63 @@ export const supabaseCatalogService = {
   },
 
   /**
-   * Duplicates an existing product with a fresh serial number, slug and DRAFT status.
+   * Duplicates an existing product with a fresh unique serial number, unique slug, and DRAFT status.
    */
   async duplicateProduct(id: string, clientOverride?: SupabaseClient): Promise<IProductItem> {
     const client = clientOverride || getSupabaseAdminClient();
-    const source = await this.getProductByIdentifier(id, client);
-    const { count, error } = await client.from('products').select('*', { count: 'exact', head: true });
-    if (error) throw new ServiceUnavailableError(`Failed to count products: ${error.message}`, 'DATABASE_ERROR');
-    const newSerial = `CU-${String((count || 0) + 1).padStart(3, '0')}`;
+    const source = await this.getAdminProduct(id, client);
+
+    let preferredPrefix = 'CU-';
+    const prefixMatch = source.serialNumber?.match(/^(.*[A-Za-z_-]+)(\d+)$/);
+    if (prefixMatch && prefixMatch[1]) {
+      preferredPrefix = prefixMatch[1];
+    }
+
+    const newSerial = await generateUniqueSerialNumber(client, preferredPrefix);
     const newName = `${source.name} (Copy)`;
-    const newSlug = `${source.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-copy-${newSerial.toLowerCase()}`;
-    return this.createProduct({ ...source, serialNumber: newSerial, name: newName, slug: newSlug, status: 'DRAFT', stock: 1 }, client);
+    const baseSlugText = `${source.name}-copy-${newSerial}`;
+    const newSlug = await generateUniqueSlug(client, baseSlugText);
+
+    const rowData: Partial<ProductType> = {
+      name: newName,
+      serialNumber: newSerial,
+      slug: newSlug,
+      description: source.description || '',
+      price: source.price,
+      originalPrice: source.originalPrice,
+      compareAtPrice: source.compareAtPrice,
+      stock: 1,
+      status: 'DRAFT',
+      category: source.category,
+      categoryLabel: source.categoryLabel,
+      categoryCode: source.categoryCode,
+      sizeCategory: source.sizeCategory,
+      subcategory: source.subcategory,
+      productType: source.productType,
+      condition: source.condition,
+      gender: source.gender,
+      images: Array.isArray(source.images) ? [...source.images] : [],
+      sizes: Array.isArray(source.sizes) ? [...source.sizes] : [],
+      variants: Array.isArray(source.variants)
+        ? source.variants.map((v, idx) => ({
+            ...v,
+            id: `${newSerial.toLowerCase()}-var-${idx}`,
+            stock: 1,
+          }))
+        : [],
+      measurements: source.measurements,
+      makerNote: source.makerNote,
+      tags: Array.isArray(source.tags) ? [...source.tags] : [],
+      featured: false,
+      isNewArrival: false,
+      chestPick: false,
+      badge: source.badge,
+      sku: newSerial,
+      seoTitle: source.seoTitle ? `${source.seoTitle} (Copy)` : undefined,
+      seoDescription: source.seoDescription,
+    };
+
+    return this.createProduct(rowData, client);
   },
 
   /**
