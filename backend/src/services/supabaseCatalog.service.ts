@@ -1,6 +1,16 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseAdminClient } from './supabase.service.js';
+import { logger } from '../config/logger.js';
 import { NotFoundError, ServiceUnavailableError, BadRequestError } from '../errors/AppError.js';
+
+function catalogDbError(
+  safeMessage: string,
+  error: { message?: string; code?: string } | null | undefined,
+  code: 'DATABASE_ERROR' | 'DATABASE_UNAVAILABLE' = 'DATABASE_ERROR',
+): ServiceUnavailableError {
+  logger.error({ code: error?.code, message: error?.message }, safeMessage);
+  return new ServiceUnavailableError(safeMessage, code);
+}
 import { buildPaginationMeta, parsePagination } from '../utils/pagination.js';
 import {
   extractCategoryCodeFromSerial,
@@ -39,7 +49,7 @@ export async function generateUniqueSerialNumber(
 ): Promise<string> {
   const { data, error } = await client.from('products').select('serial_number');
   if (error) {
-    throw new ServiceUnavailableError(`Failed to check existing serial numbers: ${error.message}`, 'DATABASE_ERROR');
+    throw catalogDbError('Failed to check existing serial numbers.', error, 'DATABASE_ERROR');
   }
   const existingSerials = new Set(
     (data || []).map((r) => String(r.serial_number || '').trim().toUpperCase())
@@ -92,7 +102,7 @@ export async function generateUniqueSlug(
 
   const { data, error } = await client.from('products').select('slug');
   if (error) {
-    throw new ServiceUnavailableError(`Failed to check existing product slugs: ${error.message}`, 'DATABASE_ERROR');
+    throw catalogDbError('Failed to check existing product slugs.', error, 'DATABASE_ERROR');
   }
   const existingSlugs = new Set(
     (data || []).map((r) => String(r.slug || '').trim().toLowerCase())
@@ -191,7 +201,7 @@ export function mapSupabaseRowToProductItem(row: Record<string, unknown>): IProd
           id: `${rawSerial || 'var'}-${idx}-${sz.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
           label: sz,
           size: sz,
-          stock: Math.max(1, Math.floor(stock / (sizes.length || 1))),
+          stock: stock === 0 ? 0 : Math.max(1, Math.floor(stock / (sizes.length || 1))),
         })),
     category: String(row.category || ''),
     categoryLabel: (row.category_label as string) || undefined,
@@ -200,6 +210,10 @@ export function mapSupabaseRowToProductItem(row: Record<string, unknown>): IProd
     condition: (row.condition as ProductType['condition']) || 'Gently Used',
     gender: (row.gender as ProductType['gender']) || 'Unisex',
     measurements: (row.measurements as string) || (row.measurements_data as Record<string, string>) || undefined,
+    measurementsData:
+      row.measurements_data && typeof row.measurements_data === 'object'
+        ? (row.measurements_data as Record<string, string>)
+        : undefined,
     makerNote: (row.maker_note as string) || undefined,
     tags,
     featured: Boolean(row.featured),
@@ -223,7 +237,7 @@ async function getAnyProductByIdentifier(
   if (!trimmed) throw new NotFoundError('Product identifier is required.', 'PRODUCT_NOT_FOUND');
   if (UUID_REGEX.test(trimmed)) {
     const { data, error } = await client.from('products').select('*').eq('id', trimmed).maybeSingle();
-    if (error) throw new ServiceUnavailableError(`Failed to retrieve product: ${error.message}`, 'DATABASE_UNAVAILABLE');
+    if (error) throw catalogDbError('Failed to retrieve product from catalog database.', error, 'DATABASE_UNAVAILABLE');
     if (data) return mapSupabaseRowToProductItem(data);
   }
   const { data: bySerial, error: serialError } = await client
@@ -342,10 +356,7 @@ export const supabaseCatalogService = {
     const { data, error, count } = await dbQuery;
 
     if (error) {
-      throw new ServiceUnavailableError(
-        `Failed to query product catalogue: ${error.message}`,
-        'DATABASE_UNAVAILABLE'
-      );
+      throw catalogDbError('Failed to query product catalogue.', error, 'DATABASE_UNAVAILABLE');
     }
 
     const products = (data || []).map(mapSupabaseRowToProductItem);
@@ -378,17 +389,17 @@ export const supabaseCatalogService = {
     let row: Record<string, unknown> | null = null;
     if (UUID_REGEX.test(trimmed)) {
       const { data, error } = await client.from('products').select('*').eq('id', trimmed).maybeSingle();
-      if (error) throw new ServiceUnavailableError(`Failed to retrieve product: ${error.message}`, 'DATABASE_UNAVAILABLE');
+      if (error) throw catalogDbError('Failed to retrieve product from catalog database.', error, 'DATABASE_UNAVAILABLE');
       row = data;
     }
     if (!row) {
       const { data, error } = await client.from('products').select('*').eq('serial_number', trimmed.toUpperCase()).maybeSingle();
-      if (error) throw new ServiceUnavailableError(`Failed to retrieve product: ${error.message}`, 'DATABASE_UNAVAILABLE');
+      if (error) throw catalogDbError('Failed to retrieve product from catalog database.', error, 'DATABASE_UNAVAILABLE');
       row = data;
     }
     if (!row) {
       const { data, error } = await client.from('products').select('*').eq('slug', trimmed.toLowerCase()).maybeSingle();
-      if (error) throw new ServiceUnavailableError(`Failed to retrieve product: ${error.message}`, 'DATABASE_UNAVAILABLE');
+      if (error) throw catalogDbError('Failed to retrieve product from catalog database.', error, 'DATABASE_UNAVAILABLE');
       row = data;
     }
     if (!row) throw new NotFoundError(`Product not found for identifier "${identifier}"`, 'PRODUCT_NOT_FOUND');
@@ -421,10 +432,7 @@ export const supabaseCatalogService = {
       .limit(limit);
 
     if (error) {
-      throw new ServiceUnavailableError(
-        `Failed to retrieve related products: ${error.message}`,
-        'DATABASE_UNAVAILABLE'
-      );
+      throw catalogDbError('Failed to retrieve related products.', error, 'DATABASE_UNAVAILABLE');
     }
 
     const items = (data || []).map(mapSupabaseRowToProductItem);
@@ -524,10 +532,7 @@ export const supabaseCatalogService = {
       .limit(limit);
 
     if (error) {
-      throw new ServiceUnavailableError(
-        `Failed to fetch collection row for category "${category}": ${error.message}`,
-        'DATABASE_UNAVAILABLE'
-      );
+      throw catalogDbError('Failed to fetch collection row.', error, 'DATABASE_UNAVAILABLE');
     }
 
     return (data || []).map(mapSupabaseRowToProductItem);
@@ -571,10 +576,7 @@ export const supabaseCatalogService = {
     const { data, error, count } = await dbQuery;
 
     if (error) {
-      throw new ServiceUnavailableError(
-        `Failed to retrieve admin products: ${error.message}`,
-        'DATABASE_UNAVAILABLE'
-      );
+      throw catalogDbError('Failed to retrieve admin products.', error, 'DATABASE_UNAVAILABLE');
     }
 
     const products = (data || []).map(mapSupabaseRowToProductItem);
@@ -625,7 +627,7 @@ export const supabaseCatalogService = {
       if (error.code === '23505') {
         throw new BadRequestError('Serial number or slug already in use.', 'DUPLICATE_PRODUCT');
       }
-      throw new ServiceUnavailableError(`Failed to create product: ${error.message}`, 'DATABASE_ERROR');
+      throw catalogDbError('Failed to create product in catalog database.', error, 'DATABASE_ERROR');
     }
 
     return mapSupabaseRowToProductItem(inserted);
@@ -649,7 +651,7 @@ export const supabaseCatalogService = {
       .upsert(rows, { onConflict: 'serial_number' })
       .select('id');
     if (error) {
-      throw new ServiceUnavailableError(`Failed to seed products: ${error.message}`, 'DATABASE_ERROR');
+      throw catalogDbError('Failed to seed products in catalog database.', error, 'DATABASE_ERROR');
     }
     if (!Array.isArray(data) || data.length !== rows.length) {
       throw new ServiceUnavailableError('Supabase did not confirm persistence of every seed product.', 'DATABASE_ERROR');
@@ -676,8 +678,6 @@ export const supabaseCatalogService = {
     if (updates.compareAtPrice !== undefined) rowUpdates.compare_at_price = updates.compareAtPrice != null ? normalizePriceToPaise(updates.compareAtPrice) : null;
     if (updates.stock !== undefined) {
       rowUpdates.stock = updates.stock;
-      if (updates.stock === 0) rowUpdates.status = 'SOLD_OUT';
-      else if (updates.status === undefined) rowUpdates.status = 'ACTIVE';
     }
     if (updates.images !== undefined) rowUpdates.images = updates.images;
     if (updates.sizes !== undefined) rowUpdates.sizes = updates.sizes;
@@ -717,6 +717,18 @@ export const supabaseCatalogService = {
     }
 
     const existing = await getAnyProductByIdentifier(trimmed, client);
+    if (updates.variants !== undefined && updates.stock === undefined) {
+      rowUpdates.stock = updates.variants.reduce((sum, v) => sum + Math.max(0, Number(v.stock ?? 0)), 0);
+    }
+    const effectiveStock = rowUpdates.stock !== undefined ? Number(rowUpdates.stock) : updates.stock;
+    if (effectiveStock !== undefined) {
+      rowUpdates.stock = effectiveStock;
+      if (effectiveStock === 0 && updates.status === undefined) {
+        rowUpdates.status = 'SOLD_OUT';
+      } else if (effectiveStock > 0 && updates.status === undefined && existing.status === 'SOLD_OUT') {
+        rowUpdates.status = 'ACTIVE';
+      }
+    }
     const { data: updated, error } = await client
       .from('products')
       .update(rowUpdates)
@@ -726,7 +738,7 @@ export const supabaseCatalogService = {
 
     if (error) {
       if (error.code === '23505') throw new BadRequestError('Serial number or slug already in use.', 'DUPLICATE_PRODUCT');
-      throw new ServiceUnavailableError(`Failed to update product: ${error.message}`, 'DATABASE_ERROR');
+      throw new ServiceUnavailableError('Failed to update product in catalog database.', 'DATABASE_ERROR');
     }
     if (!updated) throw new NotFoundError(`Product "${id}" not found.`, 'PRODUCT_NOT_FOUND');
     return mapSupabaseRowToProductItem(updated);
@@ -767,7 +779,7 @@ export const supabaseCatalogService = {
       price: source.price,
       originalPrice: source.originalPrice,
       compareAtPrice: source.compareAtPrice,
-      stock: 1,
+      stock: Array.isArray(source.variants) && source.variants.length > 0 ? source.variants.length : 1,
       status: 'DRAFT',
       category: source.category,
       categoryLabel: source.categoryLabel,
@@ -787,6 +799,7 @@ export const supabaseCatalogService = {
           }))
         : [],
       measurements: source.measurements,
+      measurementsData: source.measurementsData ? { ...source.measurementsData } : undefined,
       makerNote: source.makerNote,
       tags: Array.isArray(source.tags) ? [...source.tags] : [],
       featured: false,
@@ -837,12 +850,12 @@ export const supabaseCatalogService = {
     let modifiedCount = 0;
     if (uuids.length) {
       const { data, error } = await client.from('products').update(update).in('id', uuids).select('id');
-      if (error) throw new ServiceUnavailableError(`Failed to bulk update products: ${error.message}`, 'DATABASE_ERROR');
+      if (error) throw catalogDbError('Failed to bulk update products.', error, 'DATABASE_ERROR');
       modifiedCount += data?.length || 0;
     }
     if (serials.length) {
       const { data, error } = await client.from('products').update(update).in('serial_number', serials).select('id');
-      if (error) throw new ServiceUnavailableError(`Failed to bulk update products: ${error.message}`, 'DATABASE_ERROR');
+      if (error) throw catalogDbError('Failed to bulk update products.', error, 'DATABASE_ERROR');
       modifiedCount += data?.length || 0;
     }
     return { modifiedCount };
@@ -925,7 +938,7 @@ export const supabaseCatalogService = {
         return { message: `Product ${product.serialNumber} permanently removed.` };
       }
 
-      throw new ServiceUnavailableError(`Failed to delete product: ${error.message}`, 'DATABASE_ERROR');
+      throw catalogDbError('Failed to delete product from catalog database.', error, 'DATABASE_ERROR');
     }
     if (!Array.isArray(data) || data.length !== 1) {
       throw new ServiceUnavailableError('Supabase did not confirm product deletion.', 'DATABASE_ERROR');
@@ -941,7 +954,7 @@ export const supabaseCatalogService = {
     for (let offset = 0; ; offset += pageSize) {
       const { data, error } = await client.from('products').select('category')
         .in('status', ['ACTIVE', 'PUBLISHED']).range(offset, offset + pageSize - 1);
-      if (error) throw new ServiceUnavailableError(`Failed to fetch category counts: ${error.message}`, 'DATABASE_ERROR');
+      if (error) throw catalogDbError('Failed to fetch category counts.', error, 'DATABASE_ERROR');
       for (const row of data || []) {
         const cat = (row.category as string) || '';
         countMap.set(cat, (countMap.get(cat) || 0) + 1);
@@ -964,7 +977,7 @@ export const supabaseCatalogService = {
         .select('id, serial_number, name, description, slug, category, category_label, price, images, tags, subcategory')
         .in('status', ['ACTIVE', 'PUBLISHED'])
         .range(offset, offset + pageSize - 1);
-      if (error) throw new ServiceUnavailableError(`Failed to fetch products for search: ${error.message}`, 'DATABASE_ERROR');
+      if (error) throw catalogDbError('Failed to fetch products for search.', error, 'DATABASE_ERROR');
       rows.push(...(data || []) as Array<Record<string, unknown>>);
       if (!data || data.length < pageSize) break;
     }

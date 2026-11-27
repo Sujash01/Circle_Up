@@ -45,7 +45,7 @@ export interface InventoryCategoryMeta {
   name: string;
   department: 'Women' | 'Men' | 'Unisex' | 'Accessories' | 'Special';
   defaultCategorySlug: string;
-  sizeChartType?: 'women-blazer' | 'men-blazer' | 'top-bralette' | 'men-pants' | 'dress' | 'skirt';
+  sizeChartType?: 'women-blazer' | 'mens-blazer' | 'top-bralette' | 'mens-pants' | 'dress' | 'skirt';
   description?: string;
 }
 
@@ -71,7 +71,7 @@ export const INVENTORY_CATEGORIES: Record<string, InventoryCategoryMeta> = {
     name: "Men's Shirt",
     department: 'Men',
     defaultCategorySlug: 'mens-upperwear',
-    sizeChartType: 'men-blazer',
+    sizeChartType: 'mens-blazer',
     description: 'Vintage button-downs, resort shirts, and casual shirts.',
   },
   'MB-J': {
@@ -79,7 +79,7 @@ export const INVENTORY_CATEGORIES: Record<string, InventoryCategoryMeta> = {
     name: "Men's bottoms-Jeans",
     department: 'Men',
     defaultCategorySlug: 'mens-bottomwear',
-    sizeChartType: 'men-pants',
+    sizeChartType: 'mens-pants',
     description: "Men's vintage denim, carpenter cuts, and straight-leg jeans.",
   },
   DJ: {
@@ -226,7 +226,7 @@ export const INVENTORY_CATEGORIES: Record<string, InventoryCategoryMeta> = {
     name: "Men's bottoms-Office",
     department: 'Men',
     defaultCategorySlug: 'mens-bottomwear',
-    sizeChartType: 'men-pants',
+    sizeChartType: 'mens-pants',
     description: "Men's tailored formal slacks and pleated office trousers.",
   },
   'MB-L': {
@@ -234,7 +234,7 @@ export const INVENTORY_CATEGORIES: Record<string, InventoryCategoryMeta> = {
     name: "Men's bottoms-Lower",
     department: 'Men',
     defaultCategorySlug: 'mens-bottomwear',
-    sizeChartType: 'men-pants',
+    sizeChartType: 'mens-pants',
     description: "Men's casual joggers, trackpants, and relaxed lounge bottoms.",
   },
   'WB-L': {

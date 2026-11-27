@@ -18,7 +18,8 @@ import { AdminCardSkeleton } from '../components/AdminSkeleton';
 import { normalizeBusinessWhatsappNumber, siteSettingsUpdateSchema, type SiteSettings } from '@circleup/shared';
 
 export default function SiteSettingsPage() {
-  const { isOwner } = useAdminAuth();
+  const { isOwner, hasPermission } = useAdminAuth();
+  const canViewSettings = isOwner || hasPermission('settings:view');
   const { showToast } = useAdminToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -36,7 +37,7 @@ export default function SiteSettingsPage() {
   const [newPhrase, setNewPhrase] = useState('');
 
   const fetchSettings = useCallback(async () => {
-    if (!isOwner) return;
+    if (!canViewSettings) return;
     setLoading(true);
     setLoadError('');
     setSaveFeedback('');
@@ -124,12 +125,12 @@ export default function SiteSettingsPage() {
     }
   };
 
-  if (!isOwner) {
+  if (!canViewSettings) {
     return (
       <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-6 text-center text-xs text-destructive">
         <p className="font-bold">Access Restricted</p>
         <p className="mt-1">
-          Site settings can only be viewed and modified by an administrator with the Owner role.
+          Site settings require the settings:view permission or Owner role.
         </p>
       </div>
     );
@@ -154,15 +155,17 @@ export default function SiteSettingsPage() {
             <RefreshCw className="size-3.5" />
             Refresh
           </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving || loading || Boolean(loadError) || !savedSettings}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-bold text-primary-foreground shadow-xs hover:bg-forest-deep transition-colors disabled:opacity-50"
-          >
-            <Save className="size-4" />
-            {saving ? 'Saving...' : 'Save All Settings'}
-          </button>
+          {isOwner && (
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving || loading || Boolean(loadError) || !savedSettings}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-bold text-primary-foreground shadow-xs hover:bg-forest-deep transition-colors disabled:opacity-50"
+            >
+              <Save className="size-4" />
+              {saving ? 'Saving...' : 'Save All Settings'}
+            </button>
+          )}
         </div>
       </div>
 

@@ -70,13 +70,20 @@ export function CustomersPage() {
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
 
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
   const loadCustomers = useCallback(async () => {
     try {
       setIsLoading(true);
       setListError('');
       const res = await adminApi.getCustomers({
         page,
-        search: search.trim() || undefined,
+        search: debouncedSearch.trim() || undefined,
         tier: tierFilter !== 'all' ? tierFilter : undefined,
       });
       setCustomers(res.customers);
@@ -87,13 +94,10 @@ export function CustomersPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [page, search, tierFilter]);
+  }, [page, debouncedSearch, tierFilter]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      loadCustomers();
-    }, 250);
-    return () => clearTimeout(timer);
+    void loadCustomers();
   }, [loadCustomers]);
 
   const handleOpenDetail = async (id: string) => {
@@ -303,11 +307,31 @@ export function CustomersPage() {
       )}
 
       {/* Customer Detail Drawer / Modal */}
-      {!listError && totalPages > 1 && <div className="flex items-center gap-3 text-xs">
-        <button type="button" disabled={isLoading || page <= 1} onClick={() => setPage(page - 1)}>Previous</button>
-        <span>Page {page} of {totalPages}</span>
-        <button type="button" disabled={isLoading || page >= totalPages} onClick={() => setPage(page + 1)}>Next</button>
-      </div>}
+      {!listError && totalPages > 1 && (
+        <div className="flex items-center justify-between pt-2 text-xs text-[#1e2a1c]">
+          <span className="font-medium opacity-75">
+            Page {page} of {totalPages}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={isLoading || page <= 1}
+              onClick={() => setPage(page - 1)}
+              className="px-3 py-1.5 rounded-lg border border-[#1e2a1c]/20 bg-white font-semibold hover:bg-[#1e2a1c]/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              disabled={isLoading || page >= totalPages}
+              onClick={() => setPage(page + 1)}
+              className="px-3 py-1.5 rounded-lg border border-[#1e2a1c]/20 bg-white font-semibold hover:bg-[#1e2a1c]/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
       {selectedCustomerId && (
         <div
           role="dialog"

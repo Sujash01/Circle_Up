@@ -22,7 +22,7 @@ export function AdminSidebar() {
   const { user, isOwner, hasPermission, logout } = useAdminAuth();
 
   const allNavItems = [
-    { label: 'Overview', to: '/admin', icon: LayoutDashboard, exact: true, permission: 'overview:view' },
+    { label: 'Overview', to: '/admin/overview', icon: LayoutDashboard, exact: true, permission: 'overview:view' },
     { label: 'Products', to: '/admin/products', icon: Package, permission: 'products:view' },
     { label: 'Collections', to: '/admin/collections', icon: Layers, permission: 'products:view' },
     { label: 'Orders', to: '/admin/orders', icon: ShoppingBag, permission: 'orders:view' },

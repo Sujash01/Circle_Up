@@ -76,6 +76,16 @@ export const cartService = {
       };
     }
 
+    const otherVariantsQty = state.items
+      .filter((item) => item.productId === product.id && item.key !== key)
+      .reduce((sum, item) => sum + item.quantity, 0);
+    if (otherVariantsQty + requestedTotal > product.stock) {
+      return {
+        nextState: state,
+        error: `Only ${product.stock} total unit${product.stock > 1 ? 's' : ''} available for ${product.name}.`,
+      };
+    }
+
     const nextItems: CartItem[] = existing
       ? state.items.map((item) =>
           item.key === key ? { ...item, quantity: requestedTotal } : item,

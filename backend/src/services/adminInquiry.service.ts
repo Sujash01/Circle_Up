@@ -64,14 +64,14 @@ export const adminInquiryService = {
     };
     if (patch.status) updatePayload.status = patch.status;
     if (patch.notes !== undefined) updatePayload.notes = patch.notes;
-    if (patch.reply && patch.reply !== existing.reply) {
-      const sent = await emailService.sendInquiryReply(existing.email, existing.name, existing.subject, patch.reply);
-      if (!sent) throw new ServiceUnavailableError('Email delivery is unavailable. Please try again.', 'INQUIRY_REPLY_UNAVAILABLE');
+    const shouldSendReply = Boolean(patch.reply && patch.reply !== existing.reply);
+    if (shouldSendReply) {
       updatePayload.reply = patch.reply;
       updatePayload.replied_at = new Date().toISOString();
       updatePayload.status = 'RESOLVED';
     }
 
+    // Persist DB state before sending external email; compensate DB if email delivery fails
     const { data, error } = await getSupabaseAdminClient()
       .from('inquiries')
       .update(updatePayload)
@@ -80,6 +80,22 @@ export const adminInquiryService = {
       .single();
 
     if (error) throw new ServiceUnavailableError('Failed to update inquiry.', 'DATABASE_UNAVAILABLE');
+
+    if (shouldSendReply) {
+      const sent = await emailService.sendInquiryReply(existing.email, existing.name, existing.subject, patch.reply!);
+      if (!sent) {
+        await getSupabaseAdminClient()
+          .from('inquiries')
+          .update({
+            reply: existing.reply ?? null,
+            replied_at: existing.repliedAt ?? null,
+            status: existing.status,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', id);
+        throw new ServiceUnavailableError('Email delivery is unavailable. Please try again.', 'INQUIRY_REPLY_UNAVAILABLE');
+      }
+    }
 
     return mapInquiry(data);
   },

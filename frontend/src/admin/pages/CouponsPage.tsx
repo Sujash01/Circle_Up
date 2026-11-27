@@ -284,11 +284,12 @@ export default function CouponsPage() {
                     type="number"
                     required
                     min={1}
-                    value={editingCoupon.value || 10}
+                    max={editingCoupon.discountType === 'PERCENTAGE' ? 100 : undefined}
+                    value={editingCoupon.value ?? ''}
                     onChange={(e) =>
                       setEditingCoupon({
                         ...editingCoupon,
-                        value: Number(e.target.value),
+                        value: e.target.value === '' ? undefined : Number(e.target.value),
                       })
                     }
                     className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-cocoa focus:border-primary focus:outline-none font-mono"
@@ -303,11 +304,11 @@ export default function CouponsPage() {
                     type="number"
                     min={0}
                     placeholder="0"
-                    value={editingCoupon.minOrderAmount || 0}
+                    value={editingCoupon.minOrderAmount ?? ''}
                     onChange={(e) =>
                       setEditingCoupon({
                         ...editingCoupon,
-                        minOrderAmount: Number(e.target.value),
+                        minOrderAmount: e.target.value === '' ? undefined : Number(e.target.value),
                       })
                     }
                     className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-cocoa focus:border-primary focus:outline-none font-mono"

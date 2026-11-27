@@ -98,6 +98,10 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const fetchRequestRef = useRef(0);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [packingSlipOrder, setPackingSlipOrder] = useState<Order | null>(null);
   const [updatingStatus, setUpdatingStatus] = useState(false);
@@ -124,30 +128,45 @@ export default function OrdersPage() {
   const transitions = selectedOrder ? (ALLOWED_TRANSITIONS[selectedOrder.status] || [])
     .filter((status) => !['CANCELLED', 'RETURNED', 'REFUNDED'].includes(status)) : [];
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
   const fetchOrders = useCallback(async () => {
+    const requestId = ++fetchRequestRef.current;
     setLoading(true);
     try {
       const res = await adminApi.getOrders({
+        page,
         status: statusFilter === 'ALL' ? undefined : statusFilter,
-        search: search.trim() || undefined,
-        limit: 50,
+        search: debouncedSearch.trim() || undefined,
+        limit: 25,
       });
+      if (requestId !== fetchRequestRef.current) return;
       setOrders(res.data);
+      setTotalPages(res.meta?.totalPages || 1);
     } catch (err: unknown) {
+      if (requestId !== fetchRequestRef.current) return;
       const msg = err instanceof Error ? err.message : 'Failed to fetch orders';
       showToast('error', msg);
     } finally {
-      setLoading(false);
+      if (requestId === fetchRequestRef.current) {
+        setLoading(false);
+      }
     }
-  }, [statusFilter, search, showToast]);
+  }, [page, statusFilter, debouncedSearch, showToast]);
 
   useEffect(() => {
-    fetchOrders();
+    void fetchOrders();
   }, [fetchOrders]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    fetchOrders();
+    setPage(1);
+    setDebouncedSearch(search);
   };
 
   const handleStatusTransition = async (orderId: string, nextStatus: OrderStatus) => {
@@ -257,7 +276,10 @@ export default function OrdersPage() {
             type="text"
             placeholder="Search by Order #, customer name, email..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
             className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-xs text-cocoa focus:border-primary focus:outline-none"
           />
         </form>
@@ -267,7 +289,10 @@ export default function OrdersPage() {
           {['ALL', ...Object.keys(STATUS_CONFIG)].map((st) => (
             <button
               key={st}
-              onClick={() => setStatusFilter(st)}
+              onClick={() => {
+                setStatusFilter(st);
+                setPage(1);
+              }}
               className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap transition-colors ${
                 statusFilter === st
                   ? 'bg-primary text-primary-foreground'
@@ -362,6 +387,32 @@ export default function OrdersPage() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between pt-2 text-xs text-cocoa">
+          <span className="font-medium opacity-75">
+            Page {page} of {totalPages}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={loading || page <= 1}
+              onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+              className="px-3 py-1.5 rounded-lg border border-border bg-card font-semibold hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              disabled={loading || page >= totalPages}
+              onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+              className="px-3 py-1.5 rounded-lg border border-border bg-card font-semibold hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Next
+            </button>
+          </div>
         </div>
       )}
 

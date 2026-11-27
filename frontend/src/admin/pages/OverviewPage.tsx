@@ -24,46 +24,41 @@ export function OverviewPage() {
     totalOrdersCount: 0,
   });
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+
+  const loadOverview = async () => {
+    try {
+      setIsLoading(true);
+      setLoadError('');
+      // Load true database aggregates via /api/admin/overview (Resolves P1-6)
+      const overview = await adminApi.getOverview();
+      setMetrics(overview.metrics);
+      setOrders(overview.recentOrders || []);
+    } catch {
+      // Fallback gracefully to direct paginated lists if overview endpoint is unavailable
+      try {
+        const [prodData, orderData] = await Promise.all([
+          adminApi.getProducts({ limit: 48 }),
+          adminApi.getOrders({ limit: 10 }),
+        ]);
+        setOrders(orderData.data || []);
+        setMetrics({
+          liveProductsCount: (prodData.data || []).filter((p) => p.status === 'PUBLISHED' || p.status === 'ACTIVE').length,
+          lowStockCount: (prodData.data || []).filter((p) => p.stock > 0 && p.stock <= 2).length,
+          activeOrdersCount: (orderData.data || []).filter((o) => o.status === 'PENDING' || o.status === 'CONFIRMED').length,
+          totalRevenuePaise: (orderData.data || []).reduce((sum, o) => sum + (o.paymentStatus === 'PAID' && o.status !== 'CANCELLED' && o.status !== 'REFUNDED' ? o.totalAmount : 0), 0),
+          totalOrdersCount: orderData.meta?.total || orderData.data?.length || 0,
+        });
+      } catch (fallbackErr: unknown) {
+        setLoadError(fallbackErr instanceof Error ? fallbackErr.message : 'Unable to load dashboard overview.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    let mounted = true;
-    async function loadOverview() {
-      try {
-        setIsLoading(true);
-        // Load true database aggregates via /api/admin/overview (Resolves P1-6)
-        const overview = await adminApi.getOverview();
-        if (mounted) {
-          setMetrics(overview.metrics);
-          setOrders(overview.recentOrders || []);
-        }
-      } catch {
-        // Fallback gracefully to direct paginated lists if overview endpoint is unavailable
-        try {
-          const [prodData, orderData] = await Promise.all([
-            adminApi.getProducts({ limit: 48 }),
-            adminApi.getOrders({ limit: 10 }),
-          ]);
-          if (mounted) {
-            setOrders(orderData.data || []);
-            setMetrics({
-              liveProductsCount: (prodData.data || []).filter((p) => p.status === 'PUBLISHED' || p.status === 'ACTIVE').length,
-              lowStockCount: (prodData.data || []).filter((p) => p.stock > 0 && p.stock <= 2).length,
-              activeOrdersCount: (orderData.data || []).filter((o) => o.status === 'PENDING' || o.status === 'CONFIRMED').length,
-              totalRevenuePaise: (orderData.data || []).reduce((sum, o) => sum + (o.paymentStatus === 'PAID' && o.status !== 'CANCELLED' && o.status !== 'REFUNDED' ? o.totalAmount : 0), 0),
-              totalOrdersCount: orderData.meta?.total || orderData.data?.length || 0,
-            });
-          }
-        } catch {
-          // Keep empty defaults
-        }
-      } finally {
-        if (mounted) setIsLoading(false);
-      }
-    }
-    loadOverview();
-    return () => {
-      mounted = false;
-    };
+    void loadOverview();
   }, []);
 
   const publishedCount = metrics.liveProductsCount;
@@ -82,6 +77,21 @@ export function OverviewPage() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
+      {loadError && (
+        <div
+          role="alert"
+          className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-xs text-red-900 flex items-center justify-between gap-3"
+        >
+          <span>{loadError}</span>
+          <button
+            type="button"
+            onClick={() => void loadOverview()}
+            className="px-3 py-1 rounded-lg border border-red-300 bg-white font-semibold hover:bg-red-100 transition-colors shrink-0"
+          >
+            Retry
+          </button>
+        </div>
+      )}
       {/* Metrics Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Metric 1 */}

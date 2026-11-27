@@ -25,13 +25,14 @@ export function AdminBottomNav() {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const mainTabs = [
-    { label: 'Overview', to: '/admin', icon: LayoutDashboard, exact: true },
-    { label: 'Products', to: '/admin/products', icon: Package },
-    { label: 'Orders', to: '/admin/orders', icon: ShoppingBag },
-  ];
+    { label: 'Overview', to: '/admin/overview', icon: LayoutDashboard, exact: true, permission: 'overview:view' },
+    { label: 'Products', to: '/admin/products', icon: Package, permission: 'products:view' },
+    { label: 'Orders', to: '/admin/orders', icon: ShoppingBag, permission: 'orders:view' },
+  ].filter((tab) => isOwner || hasPermission(tab.permission));
 
   const moreItems = [
     { label: 'Collections & Tiles', to: '/admin/collections', icon: Layers, permission: 'products:view' },
+    { label: 'Customers', to: '/admin/customers', icon: Users, permission: 'customers:view' },
     { label: 'Rentals & Events', to: '/admin/rentals-events', icon: CalendarDays, permission: 'rentals_events:view' },
     { label: 'Coupons', to: '/admin/coupons', icon: Ticket, permission: 'coupons:view' },
     { label: 'Inquiries', to: '/admin/inquiries', icon: Mail, permission: 'inquiries:view' },

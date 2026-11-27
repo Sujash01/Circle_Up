@@ -2,12 +2,15 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Mail, Search, RefreshCw, MessageSquare, CheckCircle, Clock, XCircle, Send } from 'lucide-react';
 import { adminApi } from '../services/adminApi';
 import { useAdminToast } from '../context/AdminToastContext';
+import { useAdminAuth } from '../context/AdminAuthContext';
 import { AdminTableSkeleton } from '../components/AdminSkeleton';
 
 import type { AdminInquiry as Inquiry } from '@circleup/shared';
 
 export default function InquiriesPage() {
   const { showToast } = useAdminToast();
+  const { isOwner, hasPermission } = useAdminAuth();
+  const canManageInquiries = isOwner || hasPermission('inquiries:manage');
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<'ALL' | Inquiry['status']>('ALL');
@@ -15,6 +18,7 @@ export default function InquiriesPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedInquiry, setSelectedInquiry] = useState<Inquiry | null>(null);
   const [notesInput, setNotesInput] = useState('');
   const [replyInput, setReplyInput] = useState('');
@@ -25,6 +29,11 @@ export default function InquiriesPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
 
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
   const fetchInquiries = useCallback(async () => {
     const request = ++listRequest.current;
     setLoading(true);
@@ -33,7 +42,7 @@ export default function InquiriesPage() {
       const res = await adminApi.getInquiries({
         page,
         status: statusFilter !== 'ALL' ? statusFilter : undefined,
-        search: searchTerm.trim() || undefined,
+        search: debouncedSearch.trim() || undefined,
       });
       if (request !== listRequest.current) return;
       setInquiries(res.data);
@@ -43,7 +52,7 @@ export default function InquiriesPage() {
     } finally {
       if (request === listRequest.current) setLoading(false);
     }
-  }, [page, statusFilter, searchTerm]);
+  }, [page, statusFilter, debouncedSearch]);
 
   useEffect(() => {
     fetchInquiries();
@@ -237,9 +246,9 @@ export default function InquiriesPage() {
                         className="w-full text-xs bg-background border border-border rounded-lg px-2.5 py-1.5 text-cocoa focus:outline-none focus:ring-1 focus:ring-primary"
                       >
                         <option value="NEW">New</option>
-                        <option value="IN_PROGRESS">In Progress</option>
+                        <option value="IN_REVIEW">In Review</option>
                         <option value="RESOLVED">Resolved</option>
-                        <option value="CLOSED">Closed</option>
+                        <option value="ARCHIVED">Archived</option>
                       </select>
                     </div>
                   </div>
@@ -249,9 +258,10 @@ export default function InquiriesPage() {
                     <textarea
                       rows={2}
                       value={notesInput}
+                      disabled={!canManageInquiries}
                       onChange={(e) => setNotesInput(e.target.value)}
                       placeholder="Add private staff notes about this inquiry..."
-                      className="w-full text-xs bg-background border border-border rounded-lg p-2.5 text-cocoa focus:outline-none focus:ring-1 focus:ring-primary"
+                      className="w-full text-xs bg-background border border-border rounded-lg p-2.5 text-cocoa focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
                     />
                   </div>
 
@@ -267,9 +277,10 @@ export default function InquiriesPage() {
                     <textarea
                       rows={4}
                       value={replyInput}
+                      disabled={!canManageInquiries}
                       onChange={(e) => setReplyInput(e.target.value)}
                       placeholder={`Type your reply to ${selectedInquiry.email}...`}
-                      className="w-full text-xs bg-background border border-border rounded-lg p-2.5 text-cocoa focus:outline-none focus:ring-1 focus:ring-primary"
+                      className="w-full text-xs bg-background border border-border rounded-lg p-2.5 text-cocoa focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
                     />
                   </div>
 

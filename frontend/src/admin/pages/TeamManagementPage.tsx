@@ -57,8 +57,8 @@ const PERMISSION_GROUPS: { group: string; permissions: GranularAdminPermission[]
     permissions: ['inquiries:view', 'inquiries:manage'],
   },
   {
-    group: 'Site Settings & Audit',
-    permissions: ['settings:view', 'settings:manage', 'activity:view'],
+    group: 'Site Settings, Team & Audit',
+    permissions: ['settings:view', 'settings:manage', 'team:manage', 'activity:view'],
   },
 ];
 

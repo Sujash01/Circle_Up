@@ -117,7 +117,7 @@ export function ProductDetailPage() {
       id: `${product?.serialNumber || product?.id || 'var'}-${idx}-${cleanSizeLabel(sz).toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
       label: cleanSizeLabel(sz),
       size: cleanSizeLabel(sz),
-      stock: product?.stock ?? 1,
+      stock: product?.stock ?? 0,
     }));
   }, [product]);
 

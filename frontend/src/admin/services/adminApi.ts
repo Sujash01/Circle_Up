@@ -1,6 +1,5 @@
 import axios, { type AxiosInstance } from 'axios';
 import { normalizeApiError } from '@/services/apiClient';
-import { productService } from '@/services/productService';
 import { clearStorefrontCache } from '@/services/storefrontApi';
 import type {
   AdminUser,
@@ -110,7 +109,14 @@ export interface AdminProductFormValues {
     | string;
   images: string[];
   sizes: string[];
-  variants?: Array<{ id: string; label: string; size: string; stock: number }>;
+  variants?: Array<{
+    id: string;
+    label: string;
+    size: string;
+    stock: number;
+    priceOverride?: number;
+    measurements?: Record<string, string>;
+  }>;
 }
 
 export interface OverviewMetricsData {
@@ -240,7 +246,7 @@ export const adminApi = {
   async createProduct(data: AdminProductFormValues) {
     try {
       const res = await adminClient.post<{ data: Product }>('/products', data);
-      void productService.initLiveSync();
+      clearStorefrontCache();
       return res.data.data;
     } catch (err) {
       throw normalizeApiError(err);
@@ -251,7 +257,6 @@ export const adminApi = {
     try {
       const res = await adminClient.put<{ data: Product }>(`/products/${id}`, data);
       clearStorefrontCache();
-      void productService.initLiveSync();
       return res.data.data;
     } catch (err) {
       throw normalizeApiError(err);
@@ -261,7 +266,7 @@ export const adminApi = {
   async duplicateProduct(id: string) {
     try {
       const res = await adminClient.post<{ data: Product }>(`/products/${id}/duplicate`);
-      void productService.initLiveSync();
+      clearStorefrontCache();
       return res.data.data;
     } catch (err) {
       throw normalizeApiError(err);
@@ -272,7 +277,6 @@ export const adminApi = {
     try {
       const res = await adminClient.post('/products/bulk', { action, ids, payload });
       clearStorefrontCache();
-      void productService.initLiveSync();
       return res.data;
     } catch (err) {
       throw normalizeApiError(err);
@@ -283,7 +287,6 @@ export const adminApi = {
     try {
       const res = await adminClient.delete(`/products/${id}`);
       clearStorefrontCache();
-      void productService.initLiveSync();
       return res.data;
     } catch (err) {
       throw normalizeApiError(err);
@@ -294,7 +297,6 @@ export const adminApi = {
     try {
       const res = await adminClient.post(`/products/${id}/restore`);
       clearStorefrontCache();
-      void productService.initLiveSync();
       return res.data;
     } catch (err) {
       throw normalizeApiError(err);
@@ -305,7 +307,6 @@ export const adminApi = {
     try {
       const res = await adminClient.delete(`/products/${id}/permanent`);
       clearStorefrontCache();
-      void productService.initLiveSync();
       return res.data;
     } catch (err) {
       throw normalizeApiError(err);

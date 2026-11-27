@@ -48,26 +48,20 @@ const DEFAULT_TILES: CategoryTile[] = [
 export default function CollectionsPage() {
   const { showToast } = useAdminToast();
   const [loading, setLoading] = useState(true);
+  const [productsLoaded, setProductsLoaded] = useState(false);
   const [savingTiles, setSavingTiles] = useState(false);
   const [tiles, setTiles] = useState<CategoryTile[]>(DEFAULT_TILES);
   const [products, setProducts] = useState<Product[]>([]);
   const [chestPicks, setChestPicks] = useState<Product[]>([]);
   const [activeTab, setActiveTab] = useState<'tiles' | 'chest' | 'rails'>('tiles');
 
-  const fetchData = useCallback(async () => {
+  const fetchSettingsOnly = useCallback(async () => {
     setLoading(true);
     try {
-      const [settings, prodsRes] = await Promise.all([
-        adminApi.getSettings(),
-        adminApi.getProducts({ limit: 100 }),
-      ]);
-
+      const settings = await adminApi.getSettings();
       if (settings?.categoryTiles && settings.categoryTiles.length === 4) {
         setTiles(settings.categoryTiles as CategoryTile[]);
       }
-      const allProds = prodsRes.data || [];
-      setProducts(allProds);
-      setChestPicks(allProds.filter((p) => p.chestPick));
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to load collections data';
       showToast('error', msg);
@@ -76,9 +70,28 @@ export default function CollectionsPage() {
     }
   }, [showToast]);
 
+  const fetchProductsForCollections = useCallback(async () => {
+    try {
+      const prodsRes = await adminApi.getProducts({ limit: 100 });
+      const allProds = prodsRes.data || [];
+      setProducts(allProds);
+      setChestPicks(allProds.filter((p) => p.chestPick));
+      setProductsLoaded(true);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to load products for collections';
+      showToast('error', msg);
+    }
+  }, [showToast]);
+
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    void fetchSettingsOnly();
+  }, [fetchSettingsOnly]);
+
+  useEffect(() => {
+    if ((activeTab === 'chest' || activeTab === 'rails') && !productsLoaded) {
+      void fetchProductsForCollections();
+    }
+  }, [activeTab, productsLoaded, fetchProductsForCollections]);
 
   const handleTileChange = (index: number, field: keyof CategoryTile, val: string) => {
     setTiles((prev) => {
@@ -156,7 +169,12 @@ export default function CollectionsPage() {
           </p>
         </div>
         <button
-          onClick={fetchData}
+          onClick={() => {
+            void fetchSettingsOnly();
+            if (activeTab !== 'tiles' || productsLoaded) {
+              void fetchProductsForCollections();
+            }
+          }}
           className="self-start sm:self-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card text-xs font-semibold text-cocoa hover:text-primary transition-colors"
         >
           <RefreshCw className="size-3.5" />

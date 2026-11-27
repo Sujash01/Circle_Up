@@ -132,18 +132,20 @@ function managedImagePaths(imageUrl: string): { collection: MediaCollection; dig
 async function assertImageUnreferenced(imageUrls: string[]): Promise<void> {
   const client = getSupabaseServiceClient();
   try {
-    for (const url of imageUrls) {
-      const results = await Promise.all([
-        client.from('products').select('id').contains('images', [url]).limit(1),
-        client.from('events').select('id').eq('image_url', url).limit(1),
-        client.from('rental_catalog_items').select('id').eq('image_url', url).limit(1),
-        client.from('order_items').select('id').eq('image_url', url).limit(1),
-      ]);
-      if (results.some(({ error }) => error)) throw unavailable('Unable to verify media references before deletion.');
-      if (results.some(({ data }) => Array.isArray(data) && data.length > 0)) {
-        throw new ConflictError('This image is still referenced by a product, event, rental, or order.', 'IMAGE_IN_USE');
-      }
-    }
+    await Promise.all(
+      imageUrls.map(async (url) => {
+        const results = await Promise.all([
+          client.from('products').select('id').contains('images', [url]).limit(1),
+          client.from('events').select('id').eq('image_url', url).limit(1),
+          client.from('rental_catalog_items').select('id').eq('image_url', url).limit(1),
+          client.from('order_items').select('id').eq('image_url', url).limit(1),
+        ]);
+        if (results.some(({ error }) => error)) throw unavailable('Unable to verify media references before deletion.');
+        if (results.some(({ data }) => Array.isArray(data) && data.length > 0)) {
+          throw new ConflictError('This image is still referenced by a product, event, rental, or order.', 'IMAGE_IN_USE');
+        }
+      }),
+    );
   } catch (error) {
     if (error instanceof ConflictError || error instanceof ServiceUnavailableError) throw error;
     throw unavailable('Unable to verify media references before deletion.');
@@ -168,27 +170,29 @@ export const storageService = {
     const storedPaths: string[] = [];
 
     try {
-      for (const [index, path] of paths.entries()) {
-        let uploadResult = await bucket.upload(path, variants[index]!, {
-          contentType: 'image/webp',
-          cacheControl: '31536000',
-          upsert: false,
-        });
-
-        if (uploadResult.error && (uploadResult.error.message?.toLowerCase().includes('not found') || (uploadResult.error as { statusCode?: number }).statusCode === 404)) {
-          bucketEnsured = false;
-          await ensureBucket(client);
-          uploadResult = await bucket.upload(path, variants[index]!, {
+      await Promise.all(
+        paths.map(async (path, index) => {
+          let uploadResult = await bucket.upload(path, variants[index]!, {
             contentType: 'image/webp',
             cacheControl: '31536000',
             upsert: false,
           });
-        }
 
-        const { data, error } = uploadResult;
-        if (error || !data) throw unavailable(error?.message || 'Supabase Storage did not confirm image upload.');
-        storedPaths.push(path);
-      }
+          if (uploadResult.error && (uploadResult.error.message?.toLowerCase().includes('not found') || (uploadResult.error as { statusCode?: number }).statusCode === 404)) {
+            bucketEnsured = false;
+            await ensureBucket(client);
+            uploadResult = await bucket.upload(path, variants[index]!, {
+              contentType: 'image/webp',
+              cacheControl: '31536000',
+              upsert: false,
+            });
+          }
+
+          const { data, error } = uploadResult;
+          if (error || !data) throw unavailable(error?.message || 'Supabase Storage did not confirm image upload.');
+          storedPaths.push(path);
+        }),
+      );
     } catch (error) {
       if (storedPaths.length) {
         try { await bucket.remove(storedPaths); } catch { /* Preserve the upload error; a later storage sweep can clean up. */ }

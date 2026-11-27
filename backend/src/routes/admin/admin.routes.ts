@@ -20,7 +20,7 @@ export const adminRouter = Router();
 // Configure multer for memory storage (files kept in buffer for real MIME verification & Sharp processing)
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 8 * 1024 * 1024 }, // 8MB limit
+  limits: { fileSize: 8 * 1024 * 1024, files: 10 }, // 8MB per file, max 10 files per request
 });
 
 // Admin routes must never be cached by CDN or browser
@@ -35,6 +35,7 @@ adminRouter.post('/auth/logout', requireAdminAuth(), verifyAdminCsrf, adminAuthC
 adminRouter.get('/auth/me', requireAdminAuth(), adminAuthController.me);
 adminRouter.post(
   '/auth/change-password',
+  adminAuthRateLimiter,
   requireAdminAuth(),
   verifyAdminCsrf,
   adminAuthController.changePassword,

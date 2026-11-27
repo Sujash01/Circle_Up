@@ -11,12 +11,26 @@ export const productImageSchema = z.object({
 });
 export type ProductImage = z.infer<typeof productImageSchema>;
 
+export const productMeasurementsSchema = z.object({
+  bust: z.string().optional(),
+  waist: z.string().optional(),
+  shoulder: z.string().optional(),
+  sleeve: z.string().optional(),
+  chest: z.string().optional(),
+  length: z.string().optional(),
+  underbust: z.string().optional(),
+  hip: z.string().optional(),
+  inseam: z.string().optional(),
+}).passthrough();
+export type ProductMeasurements = z.infer<typeof productMeasurementsSchema>;
+
 export const productVariantSchema = z.object({
   id: z.string(),
   label: z.string(),
   size: z.string(),
   stock: z.number().int().nonnegative().default(1),
   priceOverride: moneyPaiseSchema.optional(),
+  measurements: productMeasurementsSchema.optional(),
 });
 export type ProductVariant = z.infer<typeof productVariantSchema>;
 
@@ -49,19 +63,6 @@ export const productConditionSchema = z.enum([
 ]);
 export const productGenderSchema = z.enum(['Women', 'Men', 'Unisex']);
 
-export const productMeasurementsSchema = z.object({
-  bust: z.string().optional(),
-  waist: z.string().optional(),
-  shoulder: z.string().optional(),
-  sleeve: z.string().optional(),
-  chest: z.string().optional(),
-  length: z.string().optional(),
-  underbust: z.string().optional(),
-  hip: z.string().optional(),
-  inseam: z.string().optional(),
-}).passthrough();
-export type ProductMeasurements = z.infer<typeof productMeasurementsSchema>;
-
 export const productSchema = z.object({
   id: z.string().optional(),
   _id: z.string().optional(),
@@ -86,6 +87,7 @@ export const productSchema = z.object({
   condition: productConditionSchema.default('Gently Used'),
   gender: productGenderSchema.default('Unisex'),
   measurements: z.union([z.string(), productMeasurementsSchema]).optional(),
+  measurementsData: z.record(z.string()).optional(),
   makerNote: z.string().optional(),
   tags: z.array(z.string()).default([]),
   featured: z.boolean().default(false),

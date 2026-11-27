@@ -4,12 +4,17 @@ import { ShieldCheck, User } from 'lucide-react';
 
 const ROUTE_TITLES: Record<string, string> = {
   '/admin': 'Dashboard Overview',
+  '/admin/overview': 'Dashboard Overview',
   '/admin/products': 'Product Catalog',
   '/admin/products/new': 'Add New Product',
   '/admin/collections': 'Homepage Tiles & Collections',
   '/admin/orders': 'Customer Orders',
+  '/admin/customers': 'Customers CRM',
+  '/admin/inquiries': 'Customer Inquiries',
+  '/admin/rentals': 'Rentals & Events Editor',
   '/admin/rentals-events': 'Rentals & Events Editor',
   '/admin/coupons': 'Promo Coupons',
+  '/admin/team': 'Team Accounts',
   '/admin/settings': 'Site Settings',
   '/admin/activity': 'Audit Activity Log',
   '/admin/account': 'Account & Security',

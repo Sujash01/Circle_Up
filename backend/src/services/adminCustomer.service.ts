@@ -291,6 +291,137 @@ export const adminCustomerService = {
 
   async getCustomerById(id: string) {
     if (!id || id.length > 128) throw new BadRequestError('Invalid customer ID.', 'INVALID_CUSTOMER_ID');
+    const client = getSupabaseServiceClient();
+
+    // Fast path: single indexed SQL RPC resolving both registered & guest_<md5> customers
+    try {
+      const rpcResult = await (client as unknown as {
+        rpc: (fn: string, args: Record<string, unknown>) => Promise<{
+          data?: {
+            customer?: CustomerRow | null;
+            orders?: OrderRow[];
+            guest?: { email: string; name: string; phone: string } | null;
+          } | null;
+          error?: unknown;
+        }>;
+      }).rpc('admin_get_crm_customer_by_id', { p_id: id });
+
+      if (!rpcResult?.error && rpcResult?.data) {
+        const { customer: row, orders = [], guest } = rpcResult.data;
+        if (!row && !guest && orders.length === 0) {
+          throw new NotFoundError('Customer not found.', 'CUSTOMER_NOT_FOUND');
+        }
+        const summary: OrderSummary = { count: 0, spend: 0, rows: orders };
+        for (const order of orders) {
+          const isPaid = order.payment_status === 'PAID';
+          const isCancelledOrRefunded =
+            order.status === 'CANCELLED' ||
+            order.status === 'REFUNDED' ||
+            order.payment_status === 'REFUNDED';
+          if (order.status !== 'CANCELLED') summary.count += 1;
+          if (isPaid && !isCancelledOrRefunded) summary.spend += Number(order.total_amount || 0);
+          if (!summary.firstOrderAt || order.created_at < summary.firstOrderAt) summary.firstOrderAt = order.created_at;
+          if (!summary.lastOrderAt || order.created_at >= summary.lastOrderAt) {
+            summary.lastOrderAt = order.created_at;
+            summary.latestOrder = order;
+          }
+        }
+        const customerData = mapCustomer(row || undefined, summary, guest || undefined);
+        const orderRows = [...orders]
+          .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id))
+          .map(mapOrder);
+        return {
+          customer: customerData.customer,
+          orders: orderRows,
+          sustainabilityImpact: customerData.sustainabilityImpact,
+          savedAddresses: customerData.savedAddresses,
+          marketingPreferences: customerData.marketingPreferences,
+        };
+      }
+    } catch (error) {
+      if (error instanceof NotFoundError) throw error;
+      // Fall through to direct table queries when RPC is unavailable (or in unit test mocks)
+    }
+
+    // Direct indexed lookup for non-guest IDs (avoids full-table scan)
+    if (!id.startsWith('guest_')) {
+      const userIdLookup = id.startsWith('auth_') ? id.slice('auth_'.length) : id;
+      let row: CustomerRow | null = null;
+      try {
+        if (!id.startsWith('auth_')) {
+          const byId = await client
+            .from('customers')
+            .select('id,user_id,full_name,email,phone,tier,saved_addresses,staff_notes,marketing_opt_in_email,marketing_opt_in_whatsapp,garments_saved,co2_avoided_grams,water_saved_liters,created_at')
+            .eq('id', id)
+            .maybeSingle() as unknown as { data: CustomerRow | null; error: unknown | null };
+          if (byId.error) throw UNAVAILABLE();
+          row = byId.data;
+        }
+        if (!row) {
+          const byUserId = await client
+            .from('customers')
+            .select('id,user_id,full_name,email,phone,tier,saved_addresses,staff_notes,marketing_opt_in_email,marketing_opt_in_whatsapp,garments_saved,co2_avoided_grams,water_saved_liters,created_at')
+            .eq('user_id', userIdLookup)
+            .maybeSingle() as unknown as { data: CustomerRow | null; error: unknown | null };
+          if (byUserId.error) throw UNAVAILABLE();
+          row = byUserId.data;
+        }
+      } catch (err) {
+        if (err instanceof ServiceUnavailableError) throw err;
+        throw UNAVAILABLE();
+      }
+
+      if (row) {
+        let fetchedOrders: OrderRow[] = [];
+        try {
+          const matchCustomerId = row.user_id || row.id;
+          const result = await client
+            .from('orders')
+            .select('id,order_number,customer_id,customer_name,customer_email,customer_phone,total_amount,subtotal,discount_amount,shipping_amount,status,payment_status,payment_method,shipping_address,created_at,updated_at,order_items(serial_number,name,price,quantity,size,image_url)')
+            .eq('customer_id', matchCustomerId)
+            .order('created_at', { ascending: false }) as unknown as { data: OrderRow[] | null; error: unknown | null };
+          if (result.error) throw UNAVAILABLE();
+          const normalizedRowEmail = normalizeEmail(row.email);
+          fetchedOrders = (result.data || []).filter((order) =>
+            order.customer_id === row!.id ||
+            (row!.user_id && order.customer_id === row!.user_id) ||
+            (!order.customer_id && normalizeEmail(order.customer_email) === normalizedRowEmail)
+          );
+        } catch (err) {
+          if (err instanceof ServiceUnavailableError) throw err;
+          throw UNAVAILABLE();
+        }
+
+        const summary: OrderSummary = { count: 0, spend: 0, rows: fetchedOrders };
+        for (const order of fetchedOrders) {
+          const isPaid = order.payment_status === 'PAID';
+          const isCancelledOrRefunded =
+            order.status === 'CANCELLED' ||
+            order.status === 'REFUNDED' ||
+            order.payment_status === 'REFUNDED';
+          if (order.status !== 'CANCELLED') summary.count += 1;
+          if (isPaid && !isCancelledOrRefunded) summary.spend += Number(order.total_amount || 0);
+          if (!summary.firstOrderAt || order.created_at < summary.firstOrderAt) summary.firstOrderAt = order.created_at;
+          if (!summary.lastOrderAt || order.created_at >= summary.lastOrderAt) {
+            summary.lastOrderAt = order.created_at;
+            summary.latestOrder = order;
+          }
+        }
+        const customerData = mapCustomer(row, summary);
+        const orderRows = [...fetchedOrders]
+          .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id))
+          .map(mapOrder);
+        return {
+          customer: customerData.customer,
+          orders: orderRows,
+          sustainabilityImpact: customerData.sustainabilityImpact,
+          savedAddresses: customerData.savedAddresses,
+          marketingPreferences: customerData.marketingPreferences,
+        };
+      }
+    }
+
+    // Legacy fallback (for guest_<md5> hashes when RPC is not yet deployed or in unit-test mocks)
     const { customers, summaries } = await loadData();
     const normalizedLookup = normalizeEmail(id);
     const row = customers.find((customer) => customer.id === id || customer.user_id === id || normalizeEmail(customer.email) === normalizedLookup);
@@ -316,7 +447,6 @@ export const adminCustomerService = {
       customerData = mapCustomer(undefined, summary, fallback);
     }
 
-    const client = getSupabaseServiceClient();
     const rows: OrderRow[] = [];
     try {
       for (let offset = 0; offset < summary.rows.length; offset += 100) {

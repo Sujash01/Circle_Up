@@ -61,9 +61,13 @@ export function ProductFormPage() {
   const [chestPick, setChestPick] = useState(false);
   const [status, setStatus] = useState<string>('AVAILABLE');
 
-  // Sizes & Per-size stock
+  // Sizes & Per-size stock / variant metadata
   const [selectedSizes, setSelectedSizes] = useState<string[]>(['M']);
   const [sizeStocks, setSizeStocks] = useState<Record<string, number>>({ M: 1 });
+  const [variantIds, setVariantIds] = useState<Record<string, string>>({});
+  const [variantPrices, setVariantPrices] = useState<Record<string, number | undefined>>({});
+  const [variantMeasurements, setVariantMeasurements] = useState<Record<string, Record<string, string>>>({});
+  const [customSizeInput, setCustomSizeInput] = useState('');
 
   // Images with required alt text and cover flag
   const [images, setImages] = useState<ImageItem[]>([]);
@@ -138,10 +142,16 @@ export function ProductFormPage() {
           if (code && INVENTORY_CATEGORIES[code]) {
             setCategoryCode(code);
           }
-          const sizeCat =
+          const rawSizeCat =
             (found as { sizeCategory?: string }).sizeCategory ||
             resolveSizeChartForCategory(code || found.category || '')?.id ||
             'top-bralette';
+          const sizeCat =
+            rawSizeCat === 'men-blazer'
+              ? 'mens-blazer'
+              : rawSizeCat === 'men-pants'
+                ? 'mens-pants'
+                : rawSizeCat;
           setSizeCategory(sizeCat);
 
           const rawMeasData = (found as { measurementsData?: Record<string, string> }).measurementsData;
@@ -160,11 +170,35 @@ export function ProductFormPage() {
             }
           }
 
-          if (found.sizes && found.sizes.length > 0) {
+          if (Array.isArray(found.variants) && found.variants.length > 0) {
+            const sizesList: string[] = [];
+            const stocks: Record<string, number> = {};
+            const ids: Record<string, string> = {};
+            const prices: Record<string, number | undefined> = {};
+            const meas: Record<string, Record<string, string>> = {};
+            found.variants.forEach((v) => {
+              const sz = v.size || v.label || 'One Size';
+              if (!sizesList.includes(sz)) sizesList.push(sz);
+              stocks[sz] = Math.max(0, Number(v.stock ?? 0));
+              if (v.id) ids[sz] = v.id;
+              if (v.priceOverride !== undefined) prices[sz] = v.priceOverride;
+              if (v.measurements && typeof v.measurements === 'object') {
+                meas[sz] = Object.fromEntries(
+                  Object.entries(v.measurements).map(([k, val]) => [k, String(val ?? '')]),
+                );
+              }
+            });
+            setSelectedSizes(sizesList);
+            setSizeStocks(stocks);
+            setVariantIds(ids);
+            setVariantPrices(prices);
+            setVariantMeasurements(meas);
+          } else if (found.sizes && found.sizes.length > 0) {
             setSelectedSizes(found.sizes);
             const stocks: Record<string, number> = {};
+            const total = Math.max(0, Number(found.stock ?? 0));
             found.sizes.forEach((s: string) => {
-              stocks[s] = Math.max(1, Math.floor((found.stock ?? 1) / found.sizes.length));
+              stocks[s] = total === 0 ? 0 : Math.max(1, Math.floor(total / found.sizes.length));
             });
             setSizeStocks(stocks);
           }
@@ -248,26 +282,6 @@ export function ProductFormPage() {
     setIsDirty(true);
   };
 
-  const handleSetCover = (index: number) => {
-    setImages((prev) => prev.map((img, i) => ({ ...img, isCover: i === index })));
-    setIsDirty(true);
-  };
-
-  const handleMoveImage = (index: number, direction: -1 | 1) => {
-    setImages((prev) => {
-      const targetIndex = index + direction;
-      if (targetIndex < 0 || targetIndex >= prev.length) return prev;
-      const next = [...prev];
-      const currentImage = next[index];
-      const targetImage = next[targetIndex];
-      if (!currentImage || !targetImage) return prev;
-      next[index] = targetImage;
-      next[targetIndex] = currentImage;
-      return next;
-    });
-    setIsDirty(true);
-  };
-
   const handleCategoryCodeChange = (newCode: string) => {
     setCategoryCode(newCode);
     const meta = INVENTORY_CATEGORIES[newCode];
@@ -292,12 +306,33 @@ export function ProductFormPage() {
     setSelectedSizes((prev) => {
       const exists = prev.includes(sizeKey);
       const next = exists ? prev.filter((s) => s !== sizeKey) : [...prev, sizeKey];
-      if (!exists && !sizeStocks[sizeKey]) {
-        setSizeStocks((s) => ({ ...s, [sizeKey]: 1 }));
+      const nextStocks = { ...sizeStocks };
+      if (!exists && nextStocks[sizeKey] === undefined) {
+        nextStocks[sizeKey] = 1;
+        setSizeStocks(nextStocks);
+      }
+      if (next.length > 0) {
+        const summed = next.reduce((sum, s) => sum + Math.max(0, nextStocks[s] ?? 0), 0);
+        setStock(String(summed));
       }
       return next;
     });
     setIsDirty(true);
+  };
+
+  const handleAddCustomSize = () => {
+    const label = customSizeInput.trim();
+    if (!label) return;
+    if (!selectedSizes.includes(label)) {
+      const next = [...selectedSizes, label];
+      const nextStocks = { ...sizeStocks, [label]: sizeStocks[label] ?? 1 };
+      setSelectedSizes(next);
+      setSizeStocks(nextStocks);
+      const summed = next.reduce((sum, s) => sum + Math.max(0, nextStocks[s] ?? 0), 0);
+      setStock(String(summed));
+      setIsDirty(true);
+    }
+    setCustomSizeInput('');
   };
 
   const handleSubmit = async (e: FormEvent) => {
@@ -358,6 +393,11 @@ export function ProductFormPage() {
       .map(([k, v]) => `${k}: ${v.trim().endsWith('"') ? v.trim() : `${v.trim()}"`}`)
       .join(' · ');
 
+    const parsedManualStock = Number(stock);
+    const totalVariantStock = selectedSizes.length > 0
+      ? selectedSizes.reduce((sum, s) => sum + Math.max(0, Number(sizeStocks[s] ?? 0)), 0)
+      : Math.max(0, Number.isFinite(parsedManualStock) ? parsedManualStock : 0);
+
     const payload: AdminProductFormValues = {
       name: name.trim(),
       slug: slug.trim(),
@@ -370,7 +410,7 @@ export function ProductFormPage() {
       price: priceInPaise,
       originalPrice: originalPriceInPaise,
       compareAtPrice: compareAtPriceInPaise,
-      stock: Number(stock) || 1,
+      stock: totalVariantStock,
       category,
       subcategory: subcategory.trim(),
       condition,
@@ -385,12 +425,20 @@ export function ProductFormPage() {
       status,
       images: sortedImages,
       sizes: selectedSizes,
-      variants: selectedSizes.map((s, idx) => ({
-        id: `${(serialNumber || 'cu').toLowerCase()}-${s.toLowerCase()}-${idx}`,
-        label: `Size ${s}`,
-        size: s,
-        stock: sizeStocks[s] || 1,
-      })),
+      variants: selectedSizes.map((s, idx) => {
+        const perSizeMeas = variantMeasurements[s];
+        const cleanPerSizeMeas = perSizeMeas
+          ? Object.fromEntries(Object.entries(perSizeMeas).filter(([, v]) => Boolean(v && v.trim())))
+          : undefined;
+        return {
+          id: variantIds[s] || `${(serialNumber || 'cu').toLowerCase()}-${s.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${idx}`,
+          label: `Size ${s}`,
+          size: s,
+          stock: Math.max(0, Number(sizeStocks[s] ?? 0)),
+          ...(variantPrices[s] !== undefined ? { priceOverride: variantPrices[s] } : {}),
+          ...(cleanPerSizeMeas && Object.keys(cleanPerSizeMeas).length > 0 ? { measurements: cleanPerSizeMeas } : {}),
+        };
+      }),
     };
 
     try {
@@ -428,7 +476,11 @@ export function ProductFormPage() {
     );
   }
 
-  const ALL_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'Free Size'];
+  const STANDARD_SIZES = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'Free Size'];
+  const NUMERIC_SIZES = ['28', '30', '32', '34', '36', '38'];
+  const PRESET_SIZES = [...STANDARD_SIZES, ...NUMERIC_SIZES];
+  const CUSTOM_SELECTED_SIZES = selectedSizes.filter((s) => !PRESET_SIZES.includes(s));
+  const ALL_SIZES = [...PRESET_SIZES, ...CUSTOM_SELECTED_SIZES];
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-12 animate-in fade-in duration-300">
@@ -636,20 +688,85 @@ export function ProductFormPage() {
               })}
             </div>
 
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <input
+                type="text"
+                value={customSizeInput}
+                onChange={(e) => setCustomSizeInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddCustomSize();
+                  }
+                }}
+                placeholder="Custom size (e.g. UK 6, S-M, 40)"
+                className="px-3 py-1.5 rounded-xl border border-[#1e2a1c]/20 bg-white text-xs focus:outline-none focus:ring-1 focus:ring-[#1e2a1c]"
+              />
+              <button
+                type="button"
+                onClick={handleAddCustomSize}
+                className="px-3 py-1.5 rounded-xl bg-[#8b5a3e] text-[#f8f4e2] text-xs font-semibold hover:bg-[#8b5a3e]/90 transition-colors"
+              >
+                Add Size
+              </button>
+            </div>
+
             {selectedSizes.length > 0 && (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
                 {selectedSizes.map((sz) => (
-                  <div key={sz} className="p-3 rounded-xl border border-[#1e2a1c]/10 bg-[#1e2a1c]/5 text-xs">
-                    <span className="font-bold text-[#8b5a3e] block mb-1">Size {sz}</span>
-                    <input
-                      type="number"
-                      min="0"
-                      value={sizeStocks[sz] ?? 1}
-                      onChange={(e) =>
-                        setSizeStocks((prev) => ({ ...prev, [sz]: Number(e.target.value) || 0 }))
-                      }
-                      className="w-full px-2 py-1 rounded-lg border border-[#1e2a1c]/20 bg-white text-xs font-semibold"
-                    />
+                  <div key={sz} className="p-3 rounded-xl border border-[#1e2a1c]/10 bg-[#1e2a1c]/5 text-xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-[#8b5a3e]">Size {sz}</span>
+                      <button
+                        type="button"
+                        onClick={() => toggleSize(sz)}
+                        className="text-[0.65rem] text-red-700 hover:underline font-semibold"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <div>
+                      <label className="block text-[0.65rem] font-semibold text-[#1e2a1c]/70 mb-0.5">Stock</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={sizeStocks[sz] ?? 0}
+                        onChange={(e) => {
+                          const val = Math.max(0, Number(e.target.value) || 0);
+                          const nextStocks = { ...sizeStocks, [sz]: val };
+                          setSizeStocks(nextStocks);
+                          const summed = selectedSizes.reduce((sum, s) => sum + Math.max(0, nextStocks[s] ?? 0), 0);
+                          setStock(String(summed));
+                          setIsDirty(true);
+                        }}
+                        className="w-full px-2 py-1 rounded-lg border border-[#1e2a1c]/20 bg-white text-xs font-semibold"
+                      />
+                    </div>
+                    {SIZE_CHARTS[sizeCategory] && (
+                      <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-[#1e2a1c]/10">
+                        {SIZE_CHARTS[sizeCategory].dimensions.map((dim) => (
+                          <div key={dim}>
+                            <label className="block text-[0.6rem] uppercase font-bold text-[#1e2a1c]/60">
+                              {dim}
+                            </label>
+                            <input
+                              type="text"
+                              value={variantMeasurements[sz]?.[dim] || ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setVariantMeasurements((prev) => ({
+                                  ...prev,
+                                  [sz]: { ...(prev[sz] || {}), [dim]: val },
+                                }));
+                                setIsDirty(true);
+                              }}
+                              placeholder={measurementsData[dim] || 'in'}
+                              className="w-full px-1.5 py-0.5 rounded border border-[#1e2a1c]/15 bg-white text-[0.68rem] font-mono"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -836,9 +953,11 @@ export function ProductFormPage() {
                 onChange={(e) => setCondition(e.target.value)}
                 className="w-full px-3 py-2 rounded-xl border border-[#1e2a1c]/20 bg-white text-xs font-semibold focus:outline-none"
               >
+                <option value="New With Tags">New With Tags</option>
                 <option value="Mint">Mint (Like New)</option>
                 <option value="Gently Used">Gently Used</option>
-                <option value="Vintage Worn">Vintage Worn (Character)</option>
+                <option value="Vintage Wear">Vintage Wear (Character)</option>
+                <option value="Artisan Made">Artisan Made</option>
               </select>
             </div>
 
@@ -945,7 +1064,10 @@ export function ProductFormPage() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => navigate('/admin/products')}
+              onClick={() => {
+                if (isDirty && !window.confirm('You have unsaved changes. Leave anyway?')) return;
+                navigate('/admin/products');
+              }}
               className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold"
             >
               Cancel

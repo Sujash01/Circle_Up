@@ -19,7 +19,8 @@ interface AuditItem {
 }
 
 export default function ActivityLogPage() {
-  const { isOwner } = useAdminAuth();
+  const { isOwner, hasPermission } = useAdminAuth();
+  const canViewActivity = isOwner || hasPermission('activity:view');
   const { showToast } = useAdminToast();
   const [logs, setLogs] = useState<AuditItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,18 +40,18 @@ export default function ActivityLogPage() {
   }, [showToast]);
 
   useEffect(() => {
-    if (isOwner) {
+    if (canViewActivity) {
       fetchLogs();
     }
-  }, [isOwner, fetchLogs]);
+  }, [canViewActivity, fetchLogs]);
 
-  if (!isOwner) {
+  if (!canViewActivity) {
     return (
       <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-6 text-center text-xs text-destructive">
         <ShieldAlert className="size-8 mx-auto mb-2 text-destructive" />
         <p className="font-bold">Access Restricted</p>
         <p className="mt-1">
-          The security activity audit log is restricted exclusively to administrators with the Owner role.
+          The security activity audit log requires the activity:view permission or Owner role.
         </p>
       </div>
     );

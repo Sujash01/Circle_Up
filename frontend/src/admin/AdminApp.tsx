@@ -21,8 +21,27 @@ const AccountPage = lazy(() => import('./pages/AccountPage'));
 const InquiriesPage = lazy(() => import('./pages/InquiriesPage'));
 const TeamManagementPage = lazy(() => import('./pages/TeamManagementPage'));
 
+function RequirePermission({
+  permission,
+  ownerOnly = false,
+  children,
+}: {
+  permission?: string;
+  ownerOnly?: boolean;
+  children: React.ReactElement;
+}) {
+  const { isOwner, hasPermission } = useAdminAuth();
+  if (ownerOnly && !isOwner) {
+    return <Navigate to="/admin/overview" replace />;
+  }
+  if (permission && !isOwner && !hasPermission(permission)) {
+    return <Navigate to="/admin/account" replace />;
+  }
+  return children;
+}
+
 function ProtectedAdminRoutes() {
-  const { user, isOwner, loading } = useAdminAuth();
+  const { user, loading } = useAdminAuth();
 
   if (loading) {
     return (
@@ -50,20 +69,21 @@ function ProtectedAdminRoutes() {
       >
         <Routes>
           <Route index element={<Navigate to="/admin/overview" replace />} />
-          <Route path="overview" element={<OverviewPage />} />
-          <Route path="products" element={<ProductsPage />} />
-          <Route path="products/new" element={<ProductFormPage />} />
-          <Route path="products/:id/edit" element={<ProductFormPage />} />
-          <Route path="products/edit/:id" element={<ProductFormPage />} />
-          <Route path="collections" element={<CollectionsPage />} />
-          <Route path="orders" element={<OrdersPage />} />
-          <Route path="customers" element={<CustomersPage />} />
-          <Route path="rentals" element={<RentalsEventsPage />} />
-          <Route path="coupons" element={<CouponsPage />} />
-          <Route path="settings" element={<SiteSettingsPage />} />
-          <Route path="activity" element={<ActivityLogPage />} />
-          <Route path="team" element={isOwner ? <TeamManagementPage /> : <Navigate to="/admin/overview" replace />} />
-          <Route path="inquiries" element={<InquiriesPage />} />
+          <Route path="overview" element={<RequirePermission permission="overview:view"><OverviewPage /></RequirePermission>} />
+          <Route path="products" element={<RequirePermission permission="products:view"><ProductsPage /></RequirePermission>} />
+          <Route path="products/new" element={<RequirePermission permission="products:create"><ProductFormPage /></RequirePermission>} />
+          <Route path="products/:id/edit" element={<RequirePermission permission="products:edit"><ProductFormPage /></RequirePermission>} />
+          <Route path="products/edit/:id" element={<RequirePermission permission="products:edit"><ProductFormPage /></RequirePermission>} />
+          <Route path="collections" element={<RequirePermission permission="products:view"><CollectionsPage /></RequirePermission>} />
+          <Route path="orders" element={<RequirePermission permission="orders:view"><OrdersPage /></RequirePermission>} />
+          <Route path="customers" element={<RequirePermission permission="customers:view"><CustomersPage /></RequirePermission>} />
+          <Route path="rentals" element={<RequirePermission permission="rentals_events:view"><RentalsEventsPage /></RequirePermission>} />
+          <Route path="rentals-events" element={<RequirePermission permission="rentals_events:view"><RentalsEventsPage /></RequirePermission>} />
+          <Route path="coupons" element={<RequirePermission permission="coupons:view"><CouponsPage /></RequirePermission>} />
+          <Route path="settings" element={<RequirePermission permission="settings:view"><SiteSettingsPage /></RequirePermission>} />
+          <Route path="activity" element={<RequirePermission permission="activity:view"><ActivityLogPage /></RequirePermission>} />
+          <Route path="team" element={<RequirePermission ownerOnly><TeamManagementPage /></RequirePermission>} />
+          <Route path="inquiries" element={<RequirePermission permission="inquiries:view"><InquiriesPage /></RequirePermission>} />
           <Route path="account" element={<AccountPage />} />
           <Route path="*" element={<Navigate to="/admin/overview" replace />} />
         </Routes>
