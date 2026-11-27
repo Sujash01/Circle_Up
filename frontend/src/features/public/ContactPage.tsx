@@ -81,15 +81,42 @@ export function ContactPage() {
             <h2 className="font-display text-xl text-cocoa">Store Details</h2>
             <p className="mt-2 text-foreground/80 leading-relaxed">
               CircleUp Curated Pre-Loved &amp; Thrift Storefront
-              <br />
-              Instagram: @CircleUp
-              <br />
-              {whatsappUrl ? (
-                <a href={whatsappUrl} target="_blank" rel="noopener noreferrer" className="underline">
-                  WhatsApp enquiry line: +{whatsappNumber}
-                </a>
-              ) : 'WhatsApp enquiries are currently unavailable.'}
             </p>
+
+            <div className="mt-4 space-y-3">
+              {/* Phone */}
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 text-primary" aria-hidden>📞</span>
+                <a href="tel:+916280746336" className="underline hover:text-primary transition-colors">
+                  +91 62807 46336
+                </a>
+              </div>
+
+              {/* WhatsApp */}
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5" aria-hidden>💬</span>
+                {whatsappUrl ? (
+                  <a href={whatsappUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-primary transition-colors">
+                    WhatsApp enquiry line
+                  </a>
+                ) : (
+                  <span className="text-foreground/60">WhatsApp enquiries are currently unavailable.</span>
+                )}
+              </div>
+
+              {/* Instagram */}
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5" aria-hidden>📸</span>
+                <a
+                  href="https://www.instagram.com/circleup.23/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-primary transition-colors"
+                >
+                  @circleup.23
+                </a>
+              </div>
+            </div>
           </div>
 
           {history.length > 0 && (
