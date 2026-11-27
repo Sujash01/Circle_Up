@@ -48,6 +48,7 @@ describe('Batch 3: Backend Product Catalog Variants, Status & Duplication', () =
     expect(mapped.variants).toHaveLength(1);
     expect(mapped.variants?.[0].stock).toBe(0);
     expect(mapped.measurementsData).toEqual({ Chest: '38"', Length: '28"' });
+    expect(mapped.measurements).toBeUndefined();
   });
 
   it('updateProduct preserves DRAFT/ARCHIVED status when stock > 0 and syncs stock from variants', async () => {

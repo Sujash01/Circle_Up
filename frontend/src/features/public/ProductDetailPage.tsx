@@ -36,6 +36,8 @@ export function ProductDetailPage() {
   const catalogVersion = useCatalogVersion();
   const [asyncProduct, setAsyncProduct] = useState<Product | null>(null);
   const [isFetchingProduct, setIsFetchingProduct] = useState(false);
+  const [fetchError, setFetchError] = useState(false);
+  const [fetchAttempt, setFetchAttempt] = useState(0);
 
   const memoryProduct = useMemo(() => {
     void catalogVersion;
@@ -47,11 +49,15 @@ export function ProductDetailPage() {
 
   useEffect(() => {
     if (!slug) return;
-    if (memoryProduct) return;
+    if (memoryProduct) {
+      setFetchError(false);
+      return;
+    }
 
     let active = true;
     const ac = new AbortController();
     setIsFetchingProduct(true);
+    setFetchError(false);
     storefrontApi
       .getProductBySlug(slug, ac.signal)
       .then((p) => {
@@ -59,8 +65,14 @@ export function ProductDetailPage() {
           setAsyncProduct(mapRawProductToStorefront(p as unknown as Record<string, unknown>));
         }
       })
-      .catch(() => {
-        // Keep null if not found
+      .catch((err: unknown) => {
+        if (!active || ac.signal.aborted) return;
+        const status = (err as { response?: { status?: number }; status?: number })?.response?.status
+          ?? (err as { status?: number })?.status;
+        if (status !== 404) {
+          console.error('Failed to load product details:', err);
+          setFetchError(true);
+        }
       })
       .finally(() => {
         if (active) setIsFetchingProduct(false);
@@ -70,7 +82,7 @@ export function ProductDetailPage() {
       active = false;
       ac.abort();
     };
-  }, [slug, memoryProduct]);
+  }, [slug, memoryProduct, fetchAttempt]);
 
   const [activeImageIdx, setActiveImageIdx] = useState(0);
   const [selectedVariantId, setSelectedVariantId] = useState<string>('');
@@ -93,13 +105,48 @@ export function ProductDetailPage() {
 
   const extractedMeasurements = useMemo(() => {
     if (typeof product?.measurements === 'string' && product.measurements.trim().length > 0) {
-      return product.measurements;
+      return product.measurements.trim();
+    }
+    if (product?.measurements && typeof product.measurements === 'object') {
+      const formatted = Object.entries(product.measurements as Record<string, unknown>)
+        .filter(([, val]) => typeof val === 'string' && val.trim().length > 0)
+        .map(([key, val]) => `${key}: ${String(val).trim()}`)
+        .join(' · ');
+      if (formatted) return formatted;
+    }
+    if (product?.measurementsData && typeof product.measurementsData === 'object') {
+      const formatted = Object.entries(product.measurementsData)
+        .filter(([, val]) => typeof val === 'string' && val.trim().length > 0)
+        .map(([key, val]) => `${key}: ${val.trim()}`)
+        .join(' · ');
+      if (formatted) return formatted;
     }
     if (product?.sizes && product.sizes.length > 0) {
       for (const sz of product.sizes) {
         const extracted = extractMeasurementsFromSizeString(sz);
         if (extracted) return extracted;
       }
+    }
+    return undefined;
+  }, [product]);
+
+  const displayMeasurements = useMemo(() => {
+    if (typeof product?.measurements === 'string' && product.measurements.trim().length > 0) {
+      return product.measurements.trim();
+    }
+    if (product?.measurements && typeof product.measurements === 'object') {
+      const formatted = Object.entries(product.measurements as Record<string, unknown>)
+        .filter(([, val]) => typeof val === 'string' && val.trim().length > 0)
+        .map(([key, val]) => `${key}: ${String(val).trim()}`)
+        .join(' · ');
+      if (formatted) return formatted;
+    }
+    if (product?.measurementsData && typeof product.measurementsData === 'object') {
+      const formatted = Object.entries(product.measurementsData)
+        .filter(([, val]) => typeof val === 'string' && val.trim().length > 0)
+        .map(([key, val]) => `${key}: ${val.trim()}`)
+        .join(' · ');
+      if (formatted) return formatted;
     }
     return undefined;
   }, [product]);
@@ -193,6 +240,35 @@ export function ProductDetailPage() {
               <div className="h-6 w-1/4 bg-foreground/10 rounded-xl" />
               <div className="h-24 w-full bg-foreground/10 rounded-2xl" />
             </div>
+          </div>
+        </div>
+      );
+    }
+    if (fetchError) {
+      return (
+        <div
+          role="alert"
+          className="max-w-lg mx-auto my-12 rounded-2xl border-2 border-foreground/20 bg-card p-8 text-center space-y-4 shadow-sm"
+        >
+          <p className="text-xs font-bold uppercase tracking-widest text-terracotta">CircleUp</p>
+          <h1 className="font-display text-2xl text-forest-deep">Something went wrong</h1>
+          <p className="text-sm text-foreground/75">
+            We couldn&apos;t load this piece right now. Please try again.
+          </p>
+          <div className="pt-2 flex justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => setFetchAttempt((n) => n + 1)}
+              className="rounded-full bg-forest-deep px-5 py-2 text-xs font-bold text-white hover:bg-forest transition-colors"
+            >
+              Try Again
+            </button>
+            <Link
+              to="/"
+              className="rounded-full border border-forest/30 px-5 py-2 text-xs font-bold text-forest hover:bg-forest/5 transition-colors"
+            >
+              Go Home
+            </Link>
           </div>
         </div>
       );
@@ -395,10 +471,10 @@ export function ProductDetailPage() {
                 : 'Sold Out'}
             </dd>
 
-            {product.measurements && (
+            {displayMeasurements && (
               <>
                 <dt className="uppercase tracking-wider text-terracotta">Measurements</dt>
-                <dd className="font-medium text-cocoa">{product.measurements}</dd>
+                <dd className="font-medium text-cocoa">{displayMeasurements}</dd>
               </>
             )}
 

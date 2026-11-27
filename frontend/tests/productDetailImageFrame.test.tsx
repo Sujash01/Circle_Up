@@ -86,6 +86,7 @@ describe('ProductDetailPage Image Presentation', () => {
           </Routes>
         </MemoryRouter>,
       );
+      await Promise.resolve();
     });
 
     const mainImg = container.querySelector('img[alt="Crimson Evening Gown view 1"]') as HTMLImageElement | null;
@@ -108,6 +109,76 @@ describe('ProductDetailPage Image Presentation', () => {
     expect(switchedImg).not.toBeNull();
     expect(switchedImg?.getAttribute('src')).toBe('https://cdn.example.com/gown-square.webp');
 
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it('does not crash with React Error #31 when product.measurements is an object ({} or key/value map)', async () => {
+    const objectMeasProduct: Product = {
+      ...mockProduct,
+      measurements: {} as unknown as string,
+      measurementsData: { Bust: '34"', Waist: '28"' },
+    };
+
+    const { productService } = await import('../src/services/productService');
+    const spy = vi.spyOn(productService, 'getProductBySlug').mockReturnValue(objectMeasProduct);
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/product/crimson-evening-gown']}>
+          <Routes>
+            <Route path="/product/:slug" element={<ProductDetailPage />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Bust: 34" · Waist: 28"');
+
+    spy.mockRestore();
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it('shows a friendly retryable error state when product fetch fails instead of falsely showing not found', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { productService } = await import('../src/services/productService');
+    const { storefrontApi } = await import('../src/services/storefrontApi');
+    const spy = vi.spyOn(productService, 'getProductBySlug').mockReturnValue(undefined);
+    vi.mocked(storefrontApi.getProductBySlug).mockRejectedValueOnce(new Error('Network error 500'));
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/product/crimson-evening-gown']}>
+          <Routes>
+            <Route path="/product/:slug" element={<ProductDetailPage />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("We couldn't load this piece right now. Please try again.");
+    expect(container.textContent).toContain('Try Again');
+    expect(container.textContent).toContain('Go Home');
+    expect(container.textContent).not.toContain('Network error 500');
+    expect(consoleSpy).toHaveBeenCalled();
+
+    spy.mockRestore();
+    consoleSpy.mockRestore();
     act(() => {
       root.unmount();
     });

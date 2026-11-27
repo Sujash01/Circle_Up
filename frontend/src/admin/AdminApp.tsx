@@ -4,6 +4,7 @@ import { AdminAuthProvider, useAdminAuth } from './context/AdminAuthContext';
 import { AdminToastProvider } from './context/AdminToastContext';
 import { AdminLayout } from './components/AdminLayout';
 import { AdminCardSkeleton } from './components/AdminSkeleton';
+import { ErrorBoundary } from '@/shared/components/guards/ErrorBoundary';
 
 // Lazy-loaded pages within admin
 const AdminLoginPage = lazy(() => import('./pages/AdminLoginPage'));
@@ -94,22 +95,24 @@ function ProtectedAdminRoutes() {
 
 export default function AdminApp() {
   return (
-    <AdminToastProvider>
-      <AdminAuthProvider>
-        <Suspense
-          fallback={
-            <div className="min-h-screen flex items-center justify-center bg-background">
-              <span className="font-display text-sm font-bold text-cocoa">Loading CircleUp Admin...</span>
-            </div>
-          }
-        >
-          <Routes>
-            <Route path="login" element={<AdminLoginPage />} />
-            <Route path="*" element={<ProtectedAdminRoutes />} />
-          </Routes>
-        </Suspense>
-      </AdminAuthProvider>
-    </AdminToastProvider>
+    <ErrorBoundary>
+      <AdminToastProvider>
+        <AdminAuthProvider>
+          <Suspense
+            fallback={
+              <div className="min-h-screen flex items-center justify-center bg-background">
+                <span className="font-display text-sm font-bold text-cocoa">Loading CircleUp Admin...</span>
+              </div>
+            }
+          >
+            <Routes>
+              <Route path="login" element={<AdminLoginPage />} />
+              <Route path="*" element={<ProtectedAdminRoutes />} />
+            </Routes>
+          </Suspense>
+        </AdminAuthProvider>
+      </AdminToastProvider>
+    </ErrorBoundary>
   );
 }
 

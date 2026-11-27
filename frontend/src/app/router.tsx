@@ -66,27 +66,37 @@ function RootScrollWrapper() {
   );
 }
 
-function RouteErrorBoundary() {
+export function RouteErrorBoundary() {
   const error = useRouteError();
-  const message = isRouteErrorResponse(error)
-    ? `${error.status} ${error.statusText}`
-    : error instanceof Error
-      ? error.message
-      : 'An unexpected application error occurred.';
+  const isNotFound = isRouteErrorResponse(error) && error.status === 404;
+
+  useEffect(() => {
+    if (error && !isNotFound) {
+      console.error('Route error boundary caught:', error);
+    }
+  }, [error, isNotFound]);
+
+  const title = isNotFound ? 'Page not found' : 'Something took a wrong turn';
+  const message = isNotFound
+    ? "We couldn't find that page. It may have moved or been archived."
+    : 'Something went wrong. Please try again.';
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 bg-[#f8f4e2] text-[#272727]">
+    <div
+      role="alert"
+      className="min-h-screen flex items-center justify-center p-6 bg-[#f8f4e2] text-[#272727]"
+    >
       <div className="max-w-md w-full bg-card p-8 rounded-2xl border-2 border-foreground/20 text-center space-y-4 shadow-md">
         <p className="text-xs font-bold uppercase tracking-widest text-terracotta">CircleUp</p>
-        <h1 className="font-display text-2xl sm:text-3xl text-forest-deep">Something took a wrong turn</h1>
-        <p className="text-sm text-foreground/70">{message}</p>
+        <h1 className="font-display text-2xl sm:text-3xl text-forest-deep">{title}</h1>
+        <p className="text-sm text-foreground/75">{message}</p>
         <div className="pt-2 flex justify-center gap-3">
           <button
             type="button"
             onClick={() => window.location.reload()}
             className="rounded-full bg-forest-deep px-5 py-2 text-xs font-bold text-white hover:bg-forest transition-colors"
           >
-            Reload
+            Try Again
           </button>
           <Link
             to="/"

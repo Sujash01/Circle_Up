@@ -172,12 +172,32 @@ export function mapRawProductToStorefront(row: Record<string, unknown>): Product
   const origPrice = row.original_price ?? row.originalPrice;
   const compPrice = row.compare_at_price ?? row.compareAtPrice;
 
+  const rawMeasurementsData =
+    row.measurements_data && typeof row.measurements_data === 'object' && !Array.isArray(row.measurements_data)
+      ? (row.measurements_data as Record<string, string>)
+      : row.measurementsData && typeof row.measurementsData === 'object' && !Array.isArray(row.measurementsData)
+        ? (row.measurementsData as Record<string, string>)
+        : undefined;
+  const cleanMeasurementsData =
+    rawMeasurementsData && Object.keys(rawMeasurementsData).length > 0 ? rawMeasurementsData : undefined;
+  const formattedObjectMeasurements =
+    row.measurements && typeof row.measurements === 'object' && !Array.isArray(row.measurements)
+      ? Object.entries(row.measurements as Record<string, unknown>)
+          .filter(([, val]) => typeof val === 'string' && val.trim().length > 0)
+          .map(([key, val]) => `${key}: ${String(val).trim()}`)
+          .join(' · ')
+      : '';
+  const cleanMeasurementsText =
+    typeof row.measurements === 'string' && row.measurements.trim().length > 0
+      ? row.measurements.trim()
+      : formattedObjectMeasurements || undefined;
+
   return {
     id: (row.id as string) || (row.serial_number as string) || (row.serialNumber as string) || 'cu-unknown',
     serialNumber: rawSerial,
     categoryCode: catCode,
     sizeCategory: (row.size_category as string) || (row.sizeCategory as string) || undefined,
-    measurementsData: (row.measurements_data as Record<string, string>) || (row.measurementsData as Record<string, string>) || undefined,
+    measurementsData: cleanMeasurementsData,
     name: (row.name as string) || 'Untitled Piece',
     slug: (row.slug as string) || normalizeToken((row.name as string) || 'untitled-piece'),
     description: (row.description as string) || '',
@@ -196,7 +216,7 @@ export function mapRawProductToStorefront(row: Record<string, unknown>): Product
     productType: (row.product_type as Product['productType']) || (row.productType as Product['productType']) || 'Pre-Loved',
     condition: (row.condition as ProductCondition) || 'Gently Used',
     gender: (row.gender as GenderTag) || 'Unisex',
-    measurements: (row.measurements as string) || undefined,
+    measurements: cleanMeasurementsText,
     makerNote: (row.maker_note as string) || (row.makerNote as string) || undefined,
     tags,
     featured: Boolean(row.featured),

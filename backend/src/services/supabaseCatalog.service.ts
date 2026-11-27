@@ -209,7 +209,10 @@ export function mapSupabaseRowToProductItem(row: Record<string, unknown>): IProd
     productType: (row.product_type as ProductType['productType']) || 'Pre-Loved',
     condition: (row.condition as ProductType['condition']) || 'Gently Used',
     gender: (row.gender as ProductType['gender']) || 'Unisex',
-    measurements: (row.measurements as string) || (row.measurements_data as Record<string, string>) || undefined,
+    measurements:
+      typeof row.measurements === 'string' && row.measurements.trim().length > 0
+        ? row.measurements
+        : undefined,
     measurementsData:
       row.measurements_data && typeof row.measurements_data === 'object'
         ? (row.measurements_data as Record<string, string>)
