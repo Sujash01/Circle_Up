@@ -76,7 +76,10 @@ export function AdminSidebar() {
       {/* Nav List */}
       <nav className="flex-1 p-3 space-y-1" aria-label="Admin Sections">
         {navItems.map((item) => {
-          const isActive = item.exact ? pathname === item.to : pathname === item.to || pathname.startsWith(`${item.to}/`);
+          const isRentalsAlias = item.to === '/admin/rentals-events' && pathname === '/admin/rentals';
+          const isActive = item.exact
+            ? pathname === item.to
+            : pathname === item.to || pathname.startsWith(`${item.to}/`) || isRentalsAlias;
           const Icon = item.icon;
           return (
             <Link

@@ -5,7 +5,6 @@ import { Link, useParams } from 'react-router-dom';
 import { EmptyState } from '@/components/storefront/EmptyState';
 import { ProductCard } from '@/components/storefront/ProductCard';
 import { SizeGuideModal } from '@/components/storefront/SizeGuideModal';
-import { Blob } from '@/components/ui/Blob';
 import { useStore } from '@/context/StoreContext';
 import { cn } from '@/lib/utils';
 import { formatPrice } from '@circleup/shared';
@@ -269,17 +268,15 @@ export function ProductDetailPage() {
       <section className="grid gap-10 lg:grid-cols-[1.08fr_0.92fr] items-start">
         {/* Image gallery */}
         <div className="space-y-4">
-          <Blob
-            src={product.images[activeImageIdx] ?? product.images[0]}
-            alt={`${product.name} view ${activeImageIdx + 1}`}
-            width={1000}
-            height={1150}
-            loading="eager"
-            shape="wavy-oval"
-            outline
-            className="aspect-[4/4.6] w-full"
-            imageClassName="object-top"
-          />
+          <div className="relative aspect-[4/5] w-full overflow-hidden rounded-2xl border border-foreground/15 bg-tile flex items-center justify-center p-2 sm:p-3 shadow-xs">
+            <img
+              src={product.images[activeImageIdx] ?? product.images[0]}
+              alt={`${product.name} view ${activeImageIdx + 1}`}
+              loading="eager"
+              decoding="async"
+              className="h-full w-full object-contain"
+            />
+          </div>
 
           {product.images.length > 1 && (
             <div className="flex gap-3 overflow-x-auto pb-1">
@@ -290,13 +287,19 @@ export function ProductDetailPage() {
                   onClick={() => setActiveImageIdx(idx)}
                   aria-label={`View image ${idx + 1}`}
                   className={cn(
-                    'w-20 shrink-0 overflow-hidden border-2 transition-opacity shape-arch',
+                    'w-20 aspect-[4/5] shrink-0 overflow-hidden rounded-xl border bg-tile p-1 transition-all',
                     activeImageIdx === idx
-                      ? 'border-primary opacity-100'
-                      : 'border-transparent opacity-65 hover:opacity-100',
+                      ? 'border-2 border-primary opacity-100 shadow-xs'
+                      : 'border-foreground/15 opacity-70 hover:opacity-100',
                   )}
                 >
-                  <img src={imgSrc} alt="" width={100} height={125} loading="lazy" decoding="async" className="aspect-[4/5] w-full object-cover object-top" />
+                  <img
+                    src={imgSrc}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    className="h-full w-full object-contain"
+                  />
                 </button>
               ))}
             </div>

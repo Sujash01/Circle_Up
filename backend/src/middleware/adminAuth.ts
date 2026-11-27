@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import crypto from 'node:crypto';
+import { hasPermission } from '@circleup/shared';
 import { adminAuthService, type AdminSessionData } from '../services/adminAuth.service.js';
 import { ForbiddenError, UnauthorizedError } from '../errors/AppError.js';
 
@@ -34,7 +35,7 @@ export function requireAdminAuth(allowedRoleOrPermission?: 'owner' | 'staff' | s
           // both owner and staff are allowed
         } else if (Array.isArray(allowedRoleOrPermission)) {
           if (session.role !== 'owner') {
-            const hasAny = allowedRoleOrPermission.some((p) => session.permissions?.includes(p));
+            const hasAny = allowedRoleOrPermission.some((p) => hasPermission(session, p));
             if (!hasAny) {
               return next(new ForbiddenError(`Permission denied: requires one of [${allowedRoleOrPermission.join(', ')}] permissions.`, 'FORBIDDEN_PERMISSION'));
             }
@@ -42,7 +43,7 @@ export function requireAdminAuth(allowedRoleOrPermission?: 'owner' | 'staff' | s
         } else {
           // Single permission string
           if (session.role !== 'owner') {
-            const hasPerm = session.permissions?.includes(allowedRoleOrPermission);
+            const hasPerm = hasPermission(session, allowedRoleOrPermission);
             if (!hasPerm) {
               return next(new ForbiddenError(`Permission denied: missing "${allowedRoleOrPermission}" permission.`, 'FORBIDDEN_PERMISSION'));
             }

@@ -80,7 +80,8 @@ export function AdminBottomNav() {
             <div className="grid grid-cols-2 gap-2">
               {moreItems.map((item) => {
                 const Icon = item.icon;
-                const isActive = pathname === item.to || pathname.startsWith(`${item.to}/`);
+                const isRentalsAlias = item.to === '/admin/rentals-events' && pathname === '/admin/rentals';
+                const isActive = pathname === item.to || pathname.startsWith(`${item.to}/`) || isRentalsAlias;
                 return (
                   <Link
                     key={item.to}

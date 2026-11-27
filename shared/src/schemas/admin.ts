@@ -63,7 +63,22 @@ export function hasPermission(
 ): boolean {
   if (!user) return false;
   if (user.role === 'owner') return true;
-  return Array.isArray(user.permissions) && user.permissions.includes(permission);
+  if (!Array.isArray(user.permissions)) return false;
+  if (user.permissions.includes(permission)) return true;
+
+  if (permission.endsWith(':view')) {
+    const managePerm = `${permission.slice(0, -5)}:manage`;
+    if (user.permissions.includes(managePerm)) return true;
+  }
+
+  if (
+    permission === 'rentals_events:view' &&
+    (user.permissions.includes('rentals:view') || user.permissions.includes('rentals:manage'))
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 export const adminUserSchema = z.object({

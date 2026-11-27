@@ -44,7 +44,14 @@ export function OverviewPage() {
         setOrders(orderData.data || []);
         setMetrics({
           liveProductsCount: (prodData.data || []).filter((p) => p.status === 'PUBLISHED' || p.status === 'ACTIVE').length,
-          lowStockCount: (prodData.data || []).filter((p) => p.stock > 0 && p.stock <= 2).length,
+          lowStockCount: (prodData.data || []).filter(
+            (p) =>
+              p.stock > 0 &&
+              p.stock <= 2 &&
+              p.status !== 'ARCHIVED' &&
+              p.status !== 'DRAFT' &&
+              (p.productType === 'Fresh Find' || p.condition === 'New With Tags'),
+          ).length,
           activeOrdersCount: (orderData.data || []).filter((o) => o.status === 'PENDING' || o.status === 'CONFIRMED').length,
           totalRevenuePaise: (orderData.data || []).reduce((sum, o) => sum + (o.paymentStatus === 'PAID' && o.status !== 'CANCELLED' && o.status !== 'REFUNDED' ? o.totalAmount : 0), 0),
           totalOrdersCount: orderData.meta?.total || orderData.data?.length || 0,

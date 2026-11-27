@@ -9,6 +9,13 @@ export interface OverviewMetrics {
   totalOrdersCount: number;
 }
 
+function isNewInventoryProduct(product: {
+  product_type?: string | null;
+  condition?: string | null;
+}): boolean {
+  return product.product_type === 'Fresh Find' || product.condition === 'New With Tags';
+}
+
 export const adminOverviewService = {
   async getMetrics(): Promise<OverviewMetrics> {
     if (!isSupabaseConfigured()) {
@@ -22,9 +29,28 @@ export const adminOverviewService = {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const rpcRes = await (client as any).rpc('admin_get_overview_metrics');
       if (!rpcRes?.error && rpcRes?.data && typeof rpcRes.data === 'object') {
+        let lowStockCount = Number(rpcRes.data.lowStockCount || 0);
+        try {
+          const lowStockRes = await client
+            .from('products')
+            .select('status, stock, product_type, condition')
+            .gt('stock', 0)
+            .lte('stock', 2);
+          if (!lowStockRes.error && Array.isArray(lowStockRes.data)) {
+            lowStockCount = lowStockRes.data.filter(
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (p: any) =>
+                p.status !== 'ARCHIVED' &&
+                p.status !== 'DRAFT' &&
+                isNewInventoryProduct(p),
+            ).length;
+          }
+        } catch {
+          // Preserve RPC count if secondary filter query fails
+        }
         return {
           liveProductsCount: Number(rpcRes.data.liveProductsCount || 0),
-          lowStockCount: Number(rpcRes.data.lowStockCount || 0),
+          lowStockCount,
           activeOrdersCount: Number(rpcRes.data.activeOrdersCount || 0),
           totalRevenuePaise: Number(rpcRes.data.totalRevenuePaise || 0),
           totalOrdersCount: Number(rpcRes.data.totalOrdersCount || 0),
@@ -37,7 +63,7 @@ export const adminOverviewService = {
     // 2. Query true database aggregates across all products and orders
     try {
       const [prodRes, orderRes] = await Promise.all([
-        client.from('products').select('status, stock'),
+        client.from('products').select('status, stock, product_type, condition'),
         client.from('orders').select('status, payment_status, total_amount'),
       ]);
 
@@ -55,7 +81,12 @@ export const adminOverviewService = {
 
       const lowStockCount = products.filter(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (p: any) => p.stock > 0 && p.stock <= 2 && p.status !== 'ARCHIVED' && p.status !== 'DRAFT',
+        (p: any) =>
+          p.stock > 0 &&
+          p.stock <= 2 &&
+          p.status !== 'ARCHIVED' &&
+          p.status !== 'DRAFT' &&
+          isNewInventoryProduct(p),
       ).length;
 
       const activeOrdersCount = orders.filter(
