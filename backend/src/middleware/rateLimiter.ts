@@ -19,7 +19,10 @@ export class DistributedRateLimitStore implements Store {
   private windowMs = 60000;
   private memory = new Map<string, MemoryRecord>();
 
-  constructor(private readonly requireSharedStore = false) {}
+  constructor(
+    private readonly requireSharedStore = false,
+    private readonly useDatabase = true,
+  ) {}
 
   init(options: Options): void {
     this.windowMs = options.windowMs;
@@ -27,8 +30,8 @@ export class DistributedRateLimitStore implements Store {
 
   async increment(key: string): Promise<ClientRateLimitInfo> {
     const requiresDatabase = this.requireSharedStore && env.NODE_ENV === 'production';
-    // 1. Try Supabase Postgres distributed storage if configured
-    if (isSupabaseConfigured()) {
+    // 1. Try Supabase Postgres distributed storage if configured and database store is enabled
+    if (this.useDatabase && isSupabaseConfigured()) {
       try {
         const client = getSupabaseAdminClient();
         const { data, error } = await client.rpc(requiresDatabase ? 'stage4b_increment_order_reauth_limit' : 'increment_rate_limit', {
@@ -104,7 +107,7 @@ export class DistributedRateLimitStore implements Store {
   }
 
   async decrement(key: string): Promise<void> {
-    if (isSupabaseConfigured()) {
+    if (this.useDatabase && isSupabaseConfigured()) {
       try {
         const client = getSupabaseAdminClient();
         await client
@@ -124,7 +127,7 @@ export class DistributedRateLimitStore implements Store {
   }
 
   async resetKey(key: string): Promise<void> {
-    if (isSupabaseConfigured()) {
+    if (this.useDatabase && isSupabaseConfigured()) {
       try {
         const client = getSupabaseAdminClient();
         await client.rpc('reset_rate_limit', { p_key: key });
@@ -136,7 +139,7 @@ export class DistributedRateLimitStore implements Store {
   }
 
   async resetAll(): Promise<void> {
-    if (isSupabaseConfigured()) {
+    if (this.useDatabase && isSupabaseConfigured()) {
       try {
         const client = getSupabaseAdminClient();
         await client.from('rate_limit_entries').delete().neq('key', '');
@@ -157,13 +160,14 @@ export function createRateLimiter(
   message: string,
   keyGenerator?: (req: Request) => string,
   requireSharedStore = false,
+  useDatabase = true,
 ) {
   return rateLimit({
     windowMs,
     max,
     standardHeaders: true,
     legacyHeaders: false,
-    store: new DistributedRateLimitStore(requireSharedStore),
+    store: new DistributedRateLimitStore(requireSharedStore, useDatabase),
     keyGenerator: keyGenerator || ((req: Request) => req.ip || req.socket.remoteAddress || 'unknown'),
     handler(_req, _res, next) {
       next(new TooManyRequestsError(message));
@@ -199,6 +203,9 @@ export const globalRateLimiter = createRateLimiter(
   FIFTEEN_MINUTES_MS,
   300,
   'Too many API requests, please try again shortly',
+  undefined,
+  false,
+  false, // In-memory rate limiting for general API reads: zero database latency
 );
 
 export const customerAuthRateLimiter = createRateLimiter(

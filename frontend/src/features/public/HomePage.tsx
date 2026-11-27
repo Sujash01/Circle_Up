@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Product } from '@/types/storefront';
 import { Heart } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { clearStorefrontCache, storefrontApi, type HomepagePayload } from '@/services/storefrontApi';
+import { storefrontApi, type HomepagePayload } from '@/services/storefrontApi';
 
 import bag1 from '@/assets/bag-1.webp';
 import bag3 from '@/assets/bag-3.webp';
@@ -651,18 +651,23 @@ export function HomePage() {
   const [homepageData, setHomepageData] = useState<HomepagePayload | null>(null);
 
   useEffect(() => {
+    let active = true;
     const ac = new AbortController();
-    clearStorefrontCache();
     storefrontApi
       .getHomepage(ac.signal)
-      .then((data) => setHomepageData(data))
+      .then((data) => {
+        if (active) setHomepageData(data);
+      })
       .catch((err) => {
         if (err.name !== 'CanceledError' && err.name !== 'AbortError') {
           // Graceful fallback to static data
         }
       });
-    return () => ac.abort();
-  }, [catalogVersion]);
+    return () => {
+      active = false;
+      ac.abort();
+    };
+  }, []);
 
   const liveChestPicks: ChestProduct[] = useMemo(() => {
     const picked = allProducts.filter((p) => Boolean(p.chestPick));

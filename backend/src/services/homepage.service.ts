@@ -3,8 +3,28 @@ import { settingsRepository } from '../repositories/settings.repository.js';
 import { formatPrice } from '@circleup/shared';
 import { getConfiguredWhatsappNumber } from '../repositories/settings.repository.js';
 
+let cachedHomepagePayload: unknown = null;
+let homepageCacheExpiresAt = 0;
+
+export function invalidateHomepageCache(): void {
+  cachedHomepagePayload = null;
+  homepageCacheExpiresAt = 0;
+}
+
 export const homepageService = {
   async getHomepagePayload() {
+    const now = Date.now();
+    if (process.env.NODE_ENV !== 'test' && cachedHomepagePayload && now < homepageCacheExpiresAt) {
+      return cachedHomepagePayload as ReturnType<typeof this.buildPayload>;
+    }
+
+    const payload = await this.buildPayload();
+    cachedHomepagePayload = payload;
+    homepageCacheExpiresAt = now + 60_000; // 60s memory cache
+    return payload;
+  },
+
+  async buildPayload() {
     const [chestProducts, readyToWearProducts, handbagProducts, settings] = await Promise.all([
       productRepository.findChestPicks(),
       productRepository.findCollectionRow('womens-one-piece', 4),

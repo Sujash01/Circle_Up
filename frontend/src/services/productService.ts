@@ -143,18 +143,18 @@ function notifyListeners() {
 }
 
 /**
- * Maps a Supabase `products` table row into the frontend `Product` domain model.
+ * Maps a Supabase `products` table row or API response into the frontend `Product` domain model.
  */
-function mapSupabaseRowToProduct(row: Record<string, unknown>): Product {
+export function mapRawProductToStorefront(row: Record<string, unknown>): Product {
   const stock = Number(row.stock ?? 1);
   const images = Array.isArray(row.images) ? (row.images as string[]) : [];
   const sizes = Array.isArray(row.sizes) ? (row.sizes as string[]) : [];
   const tags = Array.isArray(row.tags) ? (row.tags as string[]) : [];
 
-  const rawSerial = (row.serial_number as string) || undefined;
+  const rawSerial = (row.serial_number as string) || (row.serialNumber as string) || undefined;
   const displaySerial = formatDisplaySerial(rawSerial, row.id as string);
   const rawStatus = (row.status as string) || (stock > 0 ? 'AVAILABLE' : 'SOLD');
-  const catCode = (row.category_code as string) || (rawSerial ? extractCategoryCodeFromSerial(rawSerial) : undefined);
+  const catCode = (row.category_code as string) || (row.categoryCode as string) || (rawSerial ? extractCategoryCodeFromSerial(rawSerial) : undefined);
 
   const resolvedVariants: Product['variants'] =
     Array.isArray(row.variants) && row.variants.length > 0
@@ -169,41 +169,46 @@ function mapSupabaseRowToProduct(row: Record<string, unknown>): Product {
           };
         });
 
+  const origPrice = row.original_price ?? row.originalPrice;
+  const compPrice = row.compare_at_price ?? row.compareAtPrice;
+
   return {
-    id: (row.id as string) || (row.serial_number as string) || 'cu-unknown',
+    id: (row.id as string) || (row.serial_number as string) || (row.serialNumber as string) || 'cu-unknown',
     serialNumber: rawSerial,
     categoryCode: catCode,
-    sizeCategory: (row.size_category as string) || undefined,
-    measurementsData: (row.measurements_data as Record<string, string>) || undefined,
+    sizeCategory: (row.size_category as string) || (row.sizeCategory as string) || undefined,
+    measurementsData: (row.measurements_data as Record<string, string>) || (row.measurementsData as Record<string, string>) || undefined,
     name: (row.name as string) || 'Untitled Piece',
     slug: (row.slug as string) || normalizeToken((row.name as string) || 'untitled-piece'),
     description: (row.description as string) || '',
     price: normalizePriceToPaise(row.price),
-    originalPrice: row.original_price != null
-      ? normalizePriceToPaise(row.original_price)
+    originalPrice: origPrice != null
+      ? normalizePriceToPaise(origPrice)
       : undefined,
-    compareAtPrice: row.compare_at_price != null ? normalizePriceToPaise(row.compare_at_price) : undefined,
+    compareAtPrice: compPrice != null ? normalizePriceToPaise(compPrice) : undefined,
     stock,
     images,
     sizes: sizes.length > 0 ? sizes : ['One Size'],
     variants: resolvedVariants,
-    category: normalizeCategorySlug(row.category as string, rawSerial),
-    categoryLabel: (row.category_label as string) || (row.category as string) || 'Curated Piece',
+    category: normalizeCategorySlug((row.category as string) || '', rawSerial),
+    categoryLabel: (row.category_label as string) || (row.categoryLabel as string) || (row.category as string) || 'Curated Piece',
     subcategory: (row.subcategory as string) || '',
-    productType: (row.product_type as Product['productType']) || 'Pre-Loved',
+    productType: (row.product_type as Product['productType']) || (row.productType as Product['productType']) || 'Pre-Loved',
     condition: (row.condition as ProductCondition) || 'Gently Used',
     gender: (row.gender as GenderTag) || 'Unisex',
     measurements: (row.measurements as string) || undefined,
-    makerNote: (row.maker_note as string) || undefined,
+    makerNote: (row.maker_note as string) || (row.makerNote as string) || undefined,
     tags,
     featured: Boolean(row.featured),
-    chestPick: Boolean(row.chest_pick),
-    isNewArrival: Boolean(row.is_new_arrival),
+    chestPick: Boolean(row.chest_pick ?? row.chestPick),
+    isNewArrival: Boolean(row.is_new_arrival ?? row.isNewArrival),
     availability: stock > 0 ? (stock <= 2 ? 'Low Stock' : 'In Stock') : 'Sold Out',
     status: rawStatus,
-    createdAt: (row.created_at as string) || new Date().toISOString(),
+    createdAt: (row.created_at as string) || (row.createdAt as string) || new Date().toISOString(),
   };
 }
+
+const mapSupabaseRowToProduct = mapRawProductToStorefront;
 
 /**
  * React hook that subscribes components to live product catalog updates (e.g. Supabase sync).
@@ -249,12 +254,18 @@ export const productService = {
    */
   async initLiveSync(): Promise<void> {
     try {
-      // 1. Try Supabase direct query if configured
+      // 1. Try Supabase direct query if configured (with resilient 3.5s timeout)
       if (isSupabaseConfigured()) {
-        const { data, error } = await supabase
-          .from('products')
-          .select('*')
-          .order('created_at', { ascending: false });
+        const timeoutPromise = new Promise<{ data: null; error: Error }>((resolve) =>
+          setTimeout(() => resolve({ data: null, error: new Error('Supabase live sync timeout') }), 3500),
+        );
+        const { data, error } = await Promise.race([
+          supabase
+            .from('products')
+            .select('*')
+            .order('created_at', { ascending: false }),
+          timeoutPromise,
+        ]);
 
         if (!error && Array.isArray(data)) {
           // Exclude internal/back-of-house statuses: MISSING, NEED_ATTENTION, DRAFT, ARCHIVED
@@ -271,7 +282,9 @@ export const productService = {
 
       // 2. Fallback to REST API /products endpoint
       const response = await apiClient
-        .get<{ success: true; data: Array<Record<string, unknown>> }>('/products?limit=100')
+        .get<{ success: true; data: Array<Record<string, unknown>> }>('/products?limit=100', {
+          timeout: 4000,
+        })
         .catch(() => null);
 
       if (response?.data?.success && Array.isArray(response.data.data)) {
@@ -471,9 +484,9 @@ if (typeof window !== 'undefined' && import.meta.env.MODE !== 'test') {
   if ('requestIdleCallback' in window) {
     (window as unknown as { requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => void }).requestIdleCallback(
       () => void productService.initLiveSync(),
-      { timeout: 3000 },
+      { timeout: 1000 },
     );
   } else {
-    setTimeout(() => void productService.initLiveSync(), 600);
+    setTimeout(() => void productService.initLiveSync(), 150);
   }
 }

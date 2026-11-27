@@ -4,6 +4,7 @@ import { adminApi } from '../services/adminApi';
 import { useAdminAuth } from '../context/AdminAuthContext';
 import { useAdminToast } from '../context/AdminToastContext';
 import { AdminTableSkeleton } from '../components/AdminSkeleton';
+import { cn } from '@/lib/utils';
 import {
   formatPrice,
   type Product,
@@ -33,15 +34,26 @@ export function ProductsPage() {
 
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<Product | null>(null);
 
-  const loadProducts = useCallback(async () => {
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 150);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const loadProducts = useCallback(async (isInitial = false) => {
     try {
-      setIsLoading(true);
+      if (isInitial) {
+        setIsLoading(true);
+      } else {
+        setIsRefreshing(true);
+      }
       const res = await adminApi.getProducts({
         limit: 100,
         includeArchived: true,
@@ -52,11 +64,12 @@ export function ProductsPage() {
       showToast(err instanceof Error ? err.message : 'Failed to load products.', 'error');
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
   }, [showToast]);
 
   useEffect(() => {
-    loadProducts();
+    loadProducts(true);
   }, [loadProducts]);
 
   const filteredProducts = useMemo(() => {
@@ -78,8 +91,8 @@ export function ProductsPage() {
       if (categoryFilter !== 'ALL' && p.category !== categoryFilter) {
         return false;
       }
-      if (search.trim()) {
-        const q = search.trim().toLowerCase();
+      if (debouncedSearch.trim()) {
+        const q = debouncedSearch.trim().toLowerCase();
         const matches =
           p.name.toLowerCase().includes(q) ||
           p.serialNumber.toLowerCase().includes(q) ||
@@ -89,7 +102,7 @@ export function ProductsPage() {
       }
       return true;
     });
-  }, [products, search, statusFilter, categoryFilter]);
+  }, [products, debouncedSearch, statusFilter, categoryFilter]);
 
   const toggleSelectAll = () => {
     if (selectedIds.length === filteredProducts.length) {
@@ -233,11 +246,12 @@ export function ProductsPage() {
 
           <button
             type="button"
-            onClick={loadProducts}
-            className="p-1.5 rounded-xl border border-[#1e2a1c]/15 bg-white/80 hover:bg-white text-[#1e2a1c] transition-colors"
+            onClick={() => loadProducts(false)}
+            disabled={isRefreshing}
+            className="p-1.5 rounded-xl border border-[#1e2a1c]/15 bg-white/80 hover:bg-white text-[#1e2a1c] transition-colors disabled:opacity-50"
             title="Refresh Catalog"
           >
-            <RefreshCw className="size-3.5" />
+            <RefreshCw className={cn("size-3.5", isRefreshing && "animate-spin text-primary")} />
           </button>
         </div>
       </div>
@@ -282,7 +296,7 @@ export function ProductsPage() {
       )}
 
       {/* Products Table */}
-      {isLoading ? (
+      {isLoading && products.length === 0 ? (
         <AdminTableSkeleton rows={6} cols={6} />
       ) : filteredProducts.length === 0 ? (
         <div className="p-12 text-center rounded-3xl border border-dashed border-[#1e2a1c]/20 bg-white/50 space-y-3">
@@ -300,7 +314,10 @@ export function ProductsPage() {
           </button>
         </div>
       ) : (
-        <div className="rounded-3xl border border-[#1e2a1c]/10 bg-white/80 shadow-xs overflow-hidden">
+        <div className={cn(
+          "rounded-3xl border border-[#1e2a1c]/10 bg-white/80 shadow-xs overflow-hidden transition-opacity duration-200",
+          isRefreshing && "opacity-60 pointer-events-none"
+        )}>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>

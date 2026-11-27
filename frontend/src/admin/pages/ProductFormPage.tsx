@@ -760,35 +760,6 @@ export function ProductFormPage() {
                     </button>
                   </div>
 
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <button
-                      type="button"
-                      onClick={() => handleSetCover(idx)}
-                      disabled={img.isCover}
-                      className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${img.isCover ? 'bg-[#1e2a1c] text-[#f8f4e2] cursor-default' : 'bg-[#1e2a1c]/10 text-[#1e2a1c] hover:bg-[#1e2a1c]/20'}`}
-                    >
-                      {img.isCover ? 'Cover Image' : 'Choose Cover'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleMoveImage(idx, -1)}
-                      disabled={idx === 0}
-                      aria-label={`Move image ${idx + 1} left`}
-                      className="px-2.5 py-1.5 rounded-lg bg-[#1e2a1c]/10 text-[#1e2a1c] text-xs font-semibold hover:bg-[#1e2a1c]/20 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      ← Move Left
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleMoveImage(idx, 1)}
-                      disabled={idx === images.length - 1}
-                      aria-label={`Move image ${idx + 1} right`}
-                      className="px-2.5 py-1.5 rounded-lg bg-[#1e2a1c]/10 text-[#1e2a1c] text-xs font-semibold hover:bg-[#1e2a1c]/20 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      Move Right →
-                    </button>
-                  </div>
-
                   {/* Required Alt Text */}
                   <div>
                     <label className="block text-[0.65rem] font-bold uppercase tracking-wider text-[#8b5a3e] mb-0.5">

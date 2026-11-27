@@ -10,7 +10,7 @@ import { useStore } from '@/context/StoreContext';
 import { cn } from '@/lib/utils';
 import { formatPrice } from '@circleup/shared';
 import { cartService } from '@/services/cartService';
-import { productService, useCatalogVersion } from '@/services/productService';
+import { mapRawProductToStorefront, productService, useCatalogVersion } from '@/services/productService';
 import { storefrontApi } from '@/services/storefrontApi';
 import { useStorefrontSettings } from '@/services/storefrontSettingsService';
 import {
@@ -35,17 +35,43 @@ export function ProductDetailPage() {
   const { whatsappNumber } = useStorefrontSettings();
   const { slug = '' } = useParams();
   const catalogVersion = useCatalogVersion();
-  const product: Product | undefined = useMemo(() => {
+  const [asyncProduct, setAsyncProduct] = useState<Product | null>(null);
+  const [isFetchingProduct, setIsFetchingProduct] = useState(false);
+
+  const memoryProduct = useMemo(() => {
     void catalogVersion;
     return productService.getProductBySlug(slug);
   }, [slug, catalogVersion]);
+
+  const product: Product | undefined = memoryProduct || (asyncProduct ?? undefined);
   const { addToCart, isWishlisted, toggleWishlist } = useStore();
 
   useEffect(() => {
-    if (slug) {
-      void storefrontApi.prefetchProduct(slug);
-    }
-  }, [slug]);
+    if (!slug) return;
+    if (memoryProduct) return;
+
+    let active = true;
+    const ac = new AbortController();
+    setIsFetchingProduct(true);
+    storefrontApi
+      .getProductBySlug(slug, ac.signal)
+      .then((p) => {
+        if (active && p) {
+          setAsyncProduct(mapRawProductToStorefront(p as unknown as Record<string, unknown>));
+        }
+      })
+      .catch(() => {
+        // Keep null if not found
+      })
+      .finally(() => {
+        if (active) setIsFetchingProduct(false);
+      });
+
+    return () => {
+      active = false;
+      ac.abort();
+    };
+  }, [slug, memoryProduct]);
 
   const [activeImageIdx, setActiveImageIdx] = useState(0);
   const [selectedVariantId, setSelectedVariantId] = useState<string>('');
@@ -157,6 +183,21 @@ export function ProductDetailPage() {
   }, [product, isPurchasable]);
 
   if (!product) {
+    if (isFetchingProduct) {
+      return (
+        <div className="max-w-7xl mx-auto px-4 py-12 animate-pulse space-y-8">
+          <div className="h-6 w-32 bg-foreground/10 rounded-full" />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="aspect-[4/5] bg-foreground/10 rounded-3xl" />
+            <div className="space-y-4">
+              <div className="h-8 w-3/4 bg-foreground/10 rounded-xl" />
+              <div className="h-6 w-1/4 bg-foreground/10 rounded-xl" />
+              <div className="h-24 w-full bg-foreground/10 rounded-2xl" />
+            </div>
+          </div>
+        </div>
+      );
+    }
     return (
       <EmptyState
         title="This piece could not be found"

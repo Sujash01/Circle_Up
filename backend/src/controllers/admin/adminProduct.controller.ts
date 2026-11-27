@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { adminProductService } from '../../services/adminProduct.service.js';
 import { auditService } from '../../services/audit.service.js';
 import { sendCreated, sendSuccess } from '../../utils/apiResponse.js';
+import { invalidateHomepageCache } from '../../services/homepage.service.js';
 import type { ProductListQuery } from '@circleup/shared';
 
 export const adminProductController = {
@@ -54,6 +55,7 @@ export const adminProductController = {
         diff: req.body,
         req,
       });
+      invalidateHomepageCache();
       return sendCreated(res, product, 'Product created successfully.');
     } catch (error) {
       next(error);
@@ -72,6 +74,7 @@ export const adminProductController = {
         diff: req.body,
         req,
       });
+      invalidateHomepageCache();
       return sendSuccess(res, product, { message: 'Product updated successfully.' });
     } catch (error) {
       next(error);
@@ -89,6 +92,7 @@ export const adminProductController = {
         entityId: (duplicated as { id?: string }).id || id,
         req,
       });
+      invalidateHomepageCache();
       return sendCreated(res, duplicated, 'Product duplicated as draft.');
     } catch (error) {
       next(error);
@@ -107,6 +111,7 @@ export const adminProductController = {
         diff: { ids, payload },
         req,
       });
+      invalidateHomepageCache();
       return sendSuccess(res, result);
     } catch (error) {
       next(error);
@@ -124,6 +129,7 @@ export const adminProductController = {
         entityId: id,
         req,
       });
+      invalidateHomepageCache();
       return sendSuccess(res, result);
     } catch (error) {
       next(error);
@@ -141,6 +147,7 @@ export const adminProductController = {
         entityId: id,
         req,
       });
+      invalidateHomepageCache();
       return sendSuccess(res, result);
     } catch (error) {
       next(error);
@@ -158,6 +165,7 @@ export const adminProductController = {
         entityId: id,
         req,
       });
+      invalidateHomepageCache();
       return sendSuccess(res, result);
     } catch (error) {
       next(error);

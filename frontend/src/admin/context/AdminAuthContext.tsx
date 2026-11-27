@@ -24,7 +24,10 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
   const checkSession = async () => {
     try {
       setIsLoading(true);
-      const data = await adminApi.getMe();
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Admin session check timeout')), 5000),
+      );
+      const data = await Promise.race([adminApi.getMe(), timeoutPromise]);
       setUser(data.user);
     } catch {
       setUser(null);

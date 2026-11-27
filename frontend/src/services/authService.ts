@@ -132,9 +132,12 @@ class AuthService {
       return () => {};
     }
 
-    // 1. Initial active session check
-    supabase.auth
-      .getSession()
+    // 1. Initial active session check with resilient 3.5s timeout
+    const sessionTimeout = new Promise<{ data: { session: null }; error: null }>((resolve) =>
+      setTimeout(() => resolve({ data: { session: null }, error: null }), 3500)
+    );
+
+    Promise.race([supabase.auth.getSession(), sessionTimeout])
       .then(async ({ data: { session }, error }) => {
         if (!error && session?.user) {
           await this.syncSessionWithRedux(session);
@@ -178,11 +181,17 @@ class AuthService {
     let profileData: { full_name?: string | null; avatar_url?: string | null } | null = null;
 
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('full_name, avatar_url')
-        .eq('id', session.user.id)
-        .maybeSingle();
+      const profileTimeout = new Promise<{ data: null; error: Error }>((resolve) =>
+        setTimeout(() => resolve({ data: null, error: new Error('Profile fetch timeout') }), 2500),
+      );
+      const { data, error } = await Promise.race([
+        supabase
+          .from('profiles')
+          .select('full_name, avatar_url')
+          .eq('id', session.user.id)
+          .maybeSingle(),
+        profileTimeout,
+      ]);
 
       if (!error && data) {
         profileData = data;

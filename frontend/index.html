@@ -62,8 +62,22 @@
       crossorigin
     />
   </head>
-  <body>
-    <div id="root"></div>
+  <body style="margin: 0; background-color: #f8f4e2; color: #1e2a1c;">
+    <div id="root">
+      <div style="min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: #f8f4e2; color: #1e2a1c; font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif; text-align: center; padding: 2rem;">
+        <div style="width: 56px; height: 56px; border-radius: 50%; background: #1e2a1c; display: flex; align-items: center; justify-content: center; margin-bottom: 1.25rem; box-shadow: 0 4px 14px rgba(30,42,28,0.15);">
+          <span style="font-family: serif; font-size: 1.75rem; font-weight: bold; color: #f8f4e2; line-height: 1;">C</span>
+        </div>
+        <p style="font-size: 0.85rem; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: #8b5a3e; margin: 0 0 0.5rem 0;">CircleUp</p>
+        <p style="font-size: 0.75rem; color: rgba(30,42,28,0.65); margin: 0;">Fashion that lasts...</p>
+      </div>
+    </div>
+    <noscript>
+      <div style="min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #f8f4e2; color: #1e2a1c; padding: 2rem; font-family: sans-serif; text-align: center;">
+        <h1 style="font-size: 1.5rem; margin-bottom: 0.5rem;">JavaScript Required</h1>
+        <p style="font-size: 0.9rem; color: #666; max-width: 400px;">Please enable JavaScript to explore curated thrift and vintage finds on CircleUp.</p>
+      </div>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
