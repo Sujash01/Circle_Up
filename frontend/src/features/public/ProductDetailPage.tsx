@@ -1,4 +1,4 @@
-import { Heart, Minus, Plus, Ruler } from 'lucide-react';
+import { Heart, Minus, Plus, Ruler, ZoomIn, ZoomOut } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { Product, ProductVariant } from '@/types/storefront';
 import { Link, useParams } from 'react-router-dom';
@@ -85,6 +85,7 @@ export function ProductDetailPage() {
   }, [slug, memoryProduct, fetchAttempt]);
 
   const [activeImageIdx, setActiveImageIdx] = useState(0);
+  const [isGalleryZoomed, setIsGalleryZoomed] = useState(false);
   const [selectedVariantId, setSelectedVariantId] = useState<string>('');
   const [quantity, setQuantity] = useState(1);
   const [validationError, setValidationError] = useState<string>('');
@@ -362,12 +363,27 @@ export function ProductDetailPage() {
                     loading="eager"
                     decoding="async"
                     className={cn(
-                      'block h-full w-full',
+                      'block h-full w-full transition-transform duration-300 ease-out',
                       isThriftedTreasure
-                        ? 'aspect-square rounded-2xl object-cover object-center'
+                        ? cn(
+                            'aspect-square rounded-2xl object-cover',
+                            isGalleryZoomed ? 'scale-125 object-[50%_62%]' : 'object-center',
+                          )
                         : 'rounded-xl object-contain',
                     )}
                   />
+                  {isThriftedTreasure && (
+                    <button
+                      type="button"
+                      onClick={() => setIsGalleryZoomed((z) => !z)}
+                      aria-label={isGalleryZoomed ? 'Reset image zoom' : 'Zoom in on product'}
+                      aria-pressed={isGalleryZoomed}
+                      className="absolute bottom-3 right-3 inline-flex items-center gap-1 rounded-full border border-foreground/15 bg-card/90 px-2.5 py-1.5 text-[0.7rem] font-semibold text-cocoa shadow-xs backdrop-blur-xs transition hover:bg-card"
+                    >
+                      {isGalleryZoomed ? <ZoomOut className="size-3.5" /> : <ZoomIn className="size-3.5" />}
+                      <span>{isGalleryZoomed ? '1×' : 'Zoom'}</span>
+                    </button>
+                  )}
                 </div>
 
                 {product.images.length > 1 && (

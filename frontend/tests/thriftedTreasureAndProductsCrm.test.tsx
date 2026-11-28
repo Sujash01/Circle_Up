@@ -137,6 +137,13 @@ describe('Thrifted Treasure image presentation & CRM ProductsPage regression', (
     expect(thumbImg?.parentElement?.className).toContain('aspect-square');
     expect(thumbImg?.parentElement?.className).not.toContain('p-1');
 
+    const zoomBtn = host.querySelector('button[aria-label="Zoom in on product"]') as HTMLButtonElement | null;
+    expect(zoomBtn).not.toBeNull();
+    await act(async () => {
+      zoomBtn?.click();
+    });
+    expect(mainImg?.className).toContain('scale-125');
+
     const relatedImg = host.querySelector('img[alt="Retro Film Camera"]') as HTMLImageElement | null;
     expect(relatedImg).not.toBeNull();
     expect(relatedImg?.className).toContain('aspect-square');
