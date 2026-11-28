@@ -89,13 +89,20 @@ describe('Thrifted Treasure image presentation & CRM ProductsPage regression', (
     expect(html).not.toContain('p-1.5');
   });
 
-  it('renders Thrifted Treasure ProductDetailPage with 1:1 square edge-to-edge object-cover viewport', async () => {
+  it('renders Thrifted Treasure ProductDetailPage and related recommendation cards with 1:1 square object-cover viewports', async () => {
     const treasure = sampleProduct({
       id: 'tt-detail-1',
       slug: 'vintage-brass-radio',
       images: ['https://example.com/radio-1.jpg', 'https://example.com/radio-2.jpg'],
     });
-    productService.setProducts([treasure]);
+    const relatedTreasure = sampleProduct({
+      id: 'tt-detail-2',
+      serialNumber: 'TT-002',
+      name: 'Retro Film Camera',
+      slug: 'retro-film-camera',
+      images: ['https://example.com/camera.jpg'],
+    });
+    productService.setProducts([treasure, relatedTreasure]);
 
     const host = document.createElement('div');
     const root = createRoot(host);
@@ -129,6 +136,13 @@ describe('Thrifted Treasure image presentation & CRM ProductsPage regression', (
     expect(thumbImg?.className).toContain('object-cover');
     expect(thumbImg?.parentElement?.className).toContain('aspect-square');
     expect(thumbImg?.parentElement?.className).not.toContain('p-1');
+
+    const relatedImg = host.querySelector('img[alt="Retro Film Camera"]') as HTMLImageElement | null;
+    expect(relatedImg).not.toBeNull();
+    expect(relatedImg?.className).toContain('aspect-square');
+    expect(relatedImg?.className).toContain('object-cover');
+    expect(relatedImg?.parentElement?.className).toContain('product-image-frame--rect');
+    expect(relatedImg?.parentElement?.className).not.toContain('shape-arch');
 
     root.unmount();
   });

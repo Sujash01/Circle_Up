@@ -683,7 +683,12 @@ export function ProductDetailPage() {
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-5">
             {related.map((item) => (
-              <ProductCard key={item.id} product={item} />
+              <ProductCard
+                key={item.id}
+                product={item}
+                aspectClass={item.category === 'thrifted-treasure' ? 'aspect-square' : 'aspect-[4/5]'}
+                imageShape={item.category === 'thrifted-treasure' ? 'rect' : 'arch'}
+              />
             ))}
           </div>
         </section>
