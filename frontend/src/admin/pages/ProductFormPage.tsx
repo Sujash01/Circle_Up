@@ -135,15 +135,21 @@ export function ProductFormPage() {
         try {
           found = await adminApi.getProduct(productId);
         } catch {
-          // Fallback to searching product list by serialNumber, slug, or ID
-          const res = await adminApi.getProducts({ limit: 100, includeArchived: true, includeDeleted: true });
-          found =
-            res.data.find(
-              (p) =>
-                p.serialNumber?.toLowerCase() === productId.toLowerCase() ||
-                p.slug?.toLowerCase() === productId.toLowerCase() ||
-                p.id?.toLowerCase() === productId.toLowerCase(),
-            ) || null;
+          // Fallback to searching paginated product list by serialNumber, slug, or ID
+          let page = 1;
+          let hasNext = true;
+          while (!found && hasNext && page <= 10) {
+            const res = await adminApi.getProducts({ page, limit: 100, includeArchived: true, includeDeleted: true });
+            found =
+              res.data.find(
+                (p) =>
+                  p.serialNumber?.toLowerCase() === productId.toLowerCase() ||
+                  p.slug?.toLowerCase() === productId.toLowerCase() ||
+                  p.id?.toLowerCase() === productId.toLowerCase(),
+              ) || null;
+            hasNext = Boolean(res.meta?.hasNext);
+            page += 1;
+          }
         }
 
         if (!found) {

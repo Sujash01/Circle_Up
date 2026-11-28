@@ -35,6 +35,7 @@ export function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -49,19 +50,31 @@ export function ProductsPage() {
 
   const loadProducts = useCallback(async (isInitial = false) => {
     try {
+      setLoadError(null);
       if (isInitial) {
         setIsLoading(true);
       } else {
         setIsRefreshing(true);
       }
-      const res = await adminApi.getProducts({
-        limit: 100,
-        includeArchived: true,
-        includeDeleted: true,
-      });
-      setProducts(res.data);
+      const allProducts: Product[] = [];
+      let page = 1;
+      let hasNext = true;
+      while (hasNext && page <= 10) {
+        const res = await adminApi.getProducts({
+          page,
+          limit: 100,
+          includeArchived: true,
+          includeDeleted: true,
+        });
+        allProducts.push(...res.data);
+        hasNext = Boolean(res.meta?.hasNext);
+        page += 1;
+      }
+      setProducts(allProducts);
     } catch (err: unknown) {
-      showToast(err instanceof Error ? err.message : 'Failed to load products.', 'error');
+      const msg = err instanceof Error ? err.message : 'Failed to load products.';
+      setLoadError(msg);
+      showToast(msg, 'error');
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -298,6 +311,31 @@ export function ProductsPage() {
       {/* Products Table */}
       {isLoading && products.length === 0 ? (
         <AdminTableSkeleton rows={6} cols={6} />
+      ) : loadError && products.length === 0 ? (
+        <div role="alert" className="p-12 text-center rounded-3xl border border-dashed border-red-300 bg-red-50/60 space-y-3">
+          <p className="text-sm font-semibold text-red-900">Unable to load thrift products.</p>
+          <p className="text-xs text-red-800/80">{loadError}</p>
+          <button
+            type="button"
+            onClick={() => loadProducts(true)}
+            className="px-4 py-2 rounded-xl bg-[#1e2a1c] text-xs font-bold text-[#f8f4e2] hover:bg-[#1e2a1c]/90"
+          >
+            Retry Loading Catalog
+          </button>
+        </div>
+      ) : products.length === 0 ? (
+        <div className="p-12 text-center rounded-3xl border border-dashed border-[#1e2a1c]/20 bg-white/50 space-y-3">
+          <p className="text-sm font-semibold text-[#1e2a1c]">No thrift products in your catalog yet.</p>
+          {hasPermission('products:create') && (
+            <Link
+              to="/admin/products/new"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1e2a1c] text-xs font-bold text-[#f8f4e2] hover:bg-[#1e2a1c]/90"
+            >
+              <Plus className="size-3.5" />
+              Add Thrift Piece
+            </Link>
+          )}
+        </div>
       ) : filteredProducts.length === 0 ? (
         <div className="p-12 text-center rounded-3xl border border-dashed border-[#1e2a1c]/20 bg-white/50 space-y-3">
           <p className="text-sm font-semibold text-[#1e2a1c]">No thrift products match your filter.</p>
@@ -467,7 +505,7 @@ export function ProductsPage() {
                           {hasPermission('products:edit') && (
                             <button
                               type="button"
-                              onClick={() => navigate(`/admin/products/${p.serialNumber}/edit`)}
+                              onClick={() => navigate(`/admin/products/${encodeURIComponent(p.serialNumber || p.id || '')}/edit`)}
                               className="p-1.5 rounded-lg hover:bg-[#1e2a1c]/10 text-[#1e2a1c]/70 hover:text-[#1e2a1c] transition-colors"
                               title="Edit product"
                             >

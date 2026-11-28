@@ -57,27 +57,25 @@ export function ProductCard({
         to={`/product/${product.slug}`}
         className={cn(
           'product-image-frame relative block overflow-hidden bg-tile focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary',
-          imageShape === 'rect' && 'product-image-frame--rect p-1.5',
+          imageShape === 'rect' && cn('product-image-frame--rect w-full', aspectClass),
         )}
       >
         {imageShape === 'rect' ? (
-          <div className={cn('w-full overflow-hidden rounded-xl bg-tile', aspectClass)}>
-            {product.images[0] ? (
-              <img
-                src={product.images[0]}
-                alt={product.name}
-                width={800}
-                height={1000}
-                loading="lazy"
-                decoding="async"
-                className="product-tile-image h-full w-full rounded-xl object-cover object-center transition-transform duration-700 ease-out group-hover:scale-[1.03]"
-                onLoad={(event) => event.currentTarget.classList.add('is-loaded')}
-                onError={(event) => event.currentTarget.classList.add('is-loaded')}
-              />
-            ) : (
-              <span aria-hidden="true" className="block h-full w-full rounded-xl bg-tile" />
-            )}
-          </div>
+          product.images[0] ? (
+            <img
+              src={product.images[0]}
+              alt={product.name}
+              width={800}
+              height={800}
+              loading="lazy"
+              decoding="async"
+              className="product-tile-image block h-full w-full rounded-xl object-cover object-center transition-transform duration-700 ease-out group-hover:scale-[1.03]"
+              onLoad={(event) => event.currentTarget.classList.add('is-loaded')}
+              onError={(event) => event.currentTarget.classList.add('is-loaded')}
+            />
+          ) : (
+            <span aria-hidden="true" className="block h-full w-full bg-tile" />
+          )
         ) : (
           <Blob
             src={product.images[0]}
