@@ -1161,6 +1161,7 @@ export function ProductFormPage() {
                 <option value="womens-bottomwear">Women&apos;s Bottomwear</option>
                 <option value="mens-upperwear">Men&apos;s Upperwear (Unisex)</option>
                 <option value="mens-bottomwear">Men&apos;s Bottomwear (Unisex)</option>
+                <option value="footwear">Footwear</option>
                 <option value="accessories">Accessories</option>
                 <option value="rentals">Rentals</option>
                 <option value="thrifted-treasure">Thrifted Treasure</option>
@@ -1217,9 +1218,11 @@ export function ProductFormPage() {
                 className="w-full px-3 py-2 rounded-xl border border-[#1e2a1c]/20 bg-white text-xs font-semibold focus:outline-none"
               >
                 <option value="New With Tags">New With Tags</option>
+                <option value="New Without Tags">New Without Tags</option>
                 <option value="Mint">Mint (Like New)</option>
                 <option value="Gently Used">Gently Used</option>
                 <option value="Vintage Wear">Vintage Wear (Character)</option>
+                <option value="Minor Defects">Minor Defects (Minor Imperfections)</option>
                 <option value="Artisan Made">Artisan Made</option>
               </select>
             </div>

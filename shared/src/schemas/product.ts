@@ -56,9 +56,11 @@ export const productTypeSchema = z.enum([
 ]);
 export const productConditionSchema = z.enum([
   'New With Tags',
+  'New Without Tags',
   'Mint',
   'Gently Used',
   'Vintage Wear',
+  'Minor Defects',
   'Artisan Made',
 ]);
 export const productGenderSchema = z.enum(['Women', 'Men', 'Unisex']);

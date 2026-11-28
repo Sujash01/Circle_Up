@@ -221,7 +221,7 @@ export function ProductDetailPage() {
         priceCurrency: 'INR',
         availability: isPurchasable ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
         url: `https://circleuponline.com/product/${product.slug}`,
-        itemCondition: product.condition === 'New With Tags' || product.productType === 'Fresh Find'
+        itemCondition: product.condition === 'New With Tags' || product.condition === 'New Without Tags' || product.productType === 'Fresh Find'
           ? 'https://schema.org/NewCondition'
           : 'https://schema.org/UsedCondition',
       },
@@ -462,7 +462,12 @@ export function ProductDetailPage() {
             </dd>
 
             <dt className="uppercase tracking-wider text-terracotta">Condition</dt>
-            <dd className="font-medium text-cocoa">{product.condition}</dd>
+            <dd className="font-medium text-cocoa">
+              {product.condition}
+              {product.condition === 'Minor Defects' && (
+                <span className="ml-1.5 text-xs font-normal text-foreground/70">(Minor imperfections)</span>
+              )}
+            </dd>
 
             <dt className="uppercase tracking-wider text-terracotta">Stock / Pieces</dt>
             <dd className="font-medium text-cocoa">

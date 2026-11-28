@@ -17,9 +17,11 @@ export type ProductCategorySlug =
 
 export type ProductCondition =
   | 'New With Tags'
+  | 'New Without Tags'
   | 'Mint'
   | 'Gently Used'
   | 'Vintage Wear'
+  | 'Minor Defects'
   | 'Artisan Made';
 
 export type GenderTag = 'Women' | 'Men' | 'Unisex';

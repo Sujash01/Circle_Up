@@ -13,7 +13,7 @@ export interface IProductItem {
   categoryLabel?: string;
   subcategory?: string;
   productType?: 'Pre-Loved' | 'Fresh Find' | 'Handcrafted' | 'Rental';
-  condition?: 'New With Tags' | 'Mint' | 'Gently Used' | 'Vintage Wear' | 'Artisan Made';
+  condition?: 'New With Tags' | 'New Without Tags' | 'Mint' | 'Gently Used' | 'Vintage Wear' | 'Minor Defects' | 'Artisan Made';
   gender?: 'Women' | 'Men' | 'Unisex';
   measurements?: string;
   makerNote?: string;

@@ -267,6 +267,13 @@ export const INVENTORY_CATEGORIES: Record<string, InventoryCategoryMeta> = {
     defaultCategorySlug: 'jewellery',
     description: 'Display and showcase artisanal counter accessories.',
   },
+  FW: {
+    code: 'FW',
+    name: 'Footwear',
+    department: 'Accessories',
+    defaultCategorySlug: 'footwear',
+    description: 'Loafers, court trainers, boots, heels, and vintage shoes.',
+  },
   SB: {
     code: 'SB',
     name: 'Saree & blouse',

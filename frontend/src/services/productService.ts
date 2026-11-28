@@ -445,6 +445,7 @@ export const productService = {
           product.productType === 'Fresh Find' ||
           product.productType === 'Handcrafted' ||
           product.condition === 'New With Tags' ||
+          product.condition === 'New Without Tags' ||
           product.condition === 'Mint' ||
           product.condition === 'Artisan Made' ||
           product.isNewArrival;
@@ -457,6 +458,7 @@ export const productService = {
           product.productType === 'Pre-Loved' ||
           product.condition === 'Gently Used' ||
           product.condition === 'Vintage Wear' ||
+          product.condition === 'Minor Defects' ||
           product.category === 'thrifted-treasure' ||
           product.tags.some((t) =>
             ['vintage', 'pre-loved', 'thrift', 'thrifted', 'treasure', 'one-of-a-kind'].includes(t.toLowerCase()),

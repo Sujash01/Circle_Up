@@ -9,6 +9,7 @@ const DEFAULT_CATEGORIES = [
   { slug: 'mens-upperwear', name: "Men's Upperwear (Unisex)", subcategories: ['Varsity', 'Sweatshirts', 'Shirts'] },
   { slug: 'mens-bottomwear', name: "Men's Bottomwear (Unisex)", subcategories: ['Cargo', 'Pants', 'Denim'] },
   { slug: 'accessories', name: 'Accessories', subcategories: ['Handbags', 'Slings', 'Scarves', 'Belts'] },
+  { slug: 'footwear', name: 'Footwear', subcategories: ['Loafers', 'Trainers', 'Boots', 'Heels'] },
   { slug: 'rentals', name: 'Rentals', subcategories: ['Occasion Co-ords', 'Statement Blazers'] },
   {
     slug: 'thrifted-treasure',
