@@ -1,8 +1,21 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { EmptyState } from '@/components/storefront/EmptyState';
 import { ProductCard } from '@/components/storefront/ProductCard';
 import { cn } from '@/lib/utils';
+import { INVENTORY_CATEGORIES, extractCategoryCodeFromSerial } from '@circleup/shared';
 import { productService, useCatalogVersion, type ProductSortOption } from '@/services/productService';
+
+const NON_CLOTHING_TREASURE_SUBCATEGORIES = new Set([
+  'books',
+  'toys',
+  'electronics & radio',
+  'collectibles',
+  'home & living',
+  'one-off finds',
+  'other',
+  'retro toys & trinkets',
+  'retro keepsakes',
+]);
 
 export function ThriftedTreasurePage() {
   const catalogVersion = useCatalogVersion();
@@ -10,21 +23,31 @@ export function ThriftedTreasurePage() {
   const [sort, setSort] = useState<ProductSortOption>('newest');
   const [selectedSubcategory, setSelectedSubcategory] = useState<string>('all');
 
-  // Show dedicated Thrifted Treasure items plus small one-of-a-kind tagged finds
+  useEffect(() => {
+    if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    }
+  }, []);
+
+  // Show only non-clothing Thrifted Treasure items (exclude tagged apparel from clothing rails)
   const allTreasures = useMemo(() => {
     void catalogVersion;
     const base = productService.queryProducts({
       category: 'thrifted-treasure',
       sort,
     });
-    const smallFinds = productService
-      .getAllProducts()
-      .filter(
-        (p) =>
-          p.category !== 'thrifted-treasure' &&
-          (p.tags.includes('treasure') || p.tags.includes('one-of-a-kind')),
-      );
-    return [...base, ...smallFinds];
+    return base.filter((p) => {
+      const subLower = (p.subcategory || '').trim().toLowerCase();
+      if (NON_CLOTHING_TREASURE_SUBCATEGORIES.has(subLower)) {
+        return true;
+      }
+      const code = p.categoryCode || extractCategoryCodeFromSerial(p.serialNumber || '');
+      const codeMeta = code ? INVENTORY_CATEGORIES[code] : undefined;
+      if (codeMeta && codeMeta.department !== 'Special' && codeMeta.defaultCategorySlug !== 'thrifted-treasure') {
+        return false;
+      }
+      return true;
+    });
   }, [sort, catalogVersion]);
 
   const subcategories = useMemo(() => {
@@ -115,7 +138,7 @@ export function ThriftedTreasurePage() {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 sm:gap-x-6 gap-y-8 sm:gap-y-12">
           {treasures.map((product) => (
-            <ProductCard key={product.id} product={product} />
+            <ProductCard key={product.id} product={product} imageShape="rect" />
           ))}
         </div>
       )}

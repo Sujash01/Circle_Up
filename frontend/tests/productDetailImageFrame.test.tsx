@@ -92,6 +92,7 @@ describe('ProductDetailPage Image Presentation', () => {
     const mainImg = container.querySelector('img[alt="Crimson Evening Gown view 1"]') as HTMLImageElement | null;
     expect(mainImg).not.toBeNull();
     expect(mainImg?.className).toContain('object-contain');
+    expect(mainImg?.className).toContain('rounded-xl');
     expect(mainImg?.parentElement?.className).toContain('aspect-[4/5]');
     expect(mainImg?.parentElement?.className).toContain('rounded-2xl');
     expect(container.innerHTML).not.toContain('wavy-oval');

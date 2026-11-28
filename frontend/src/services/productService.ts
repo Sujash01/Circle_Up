@@ -3,6 +3,7 @@ import { CATEGORIES, CATEGORY_MAP } from '@/data/categories';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { apiClient } from '@/services/apiClient';
 import {
+  INVENTORY_CATEGORIES,
   extractCategoryCodeFromSerial,
   normalizePriceToPaise,
   cleanSizeLabel,
@@ -41,7 +42,15 @@ function normalizeToken(value: string): string {
  * Normalizes raw category text (from CSV, spreadsheet, or legacy DB) into canonical ProductCategorySlug.
  */
 export function normalizeCategorySlug(rawCategory?: string, rawSerial?: string): ProductCategorySlug {
-  if (!rawCategory) return 'thrifted-treasure';
+  const normalizedSerial = rawSerial ? rawSerial.trim().toUpperCase() : '';
+  const serialForCode = normalizedSerial.startsWith('CU-') ? normalizedSerial.slice(3) : normalizedSerial;
+  const codeFromSerial = serialForCode ? extractCategoryCodeFromSerial(serialForCode) : undefined;
+  if (!rawCategory) {
+    if (codeFromSerial && INVENTORY_CATEGORIES[codeFromSerial]?.defaultCategorySlug) {
+      return INVENTORY_CATEGORIES[codeFromSerial].defaultCategorySlug as ProductCategorySlug;
+    }
+    return 'womens-upperwear';
+  }
   const c = String(rawCategory).trim().toLowerCase();
 
   // If already a valid canonical slug, preserve it
@@ -111,23 +120,41 @@ export function normalizeCategorySlug(rawCategory?: string, rawSerial?: string):
   if (c.includes('rental')) {
     return 'womens-one-piece';
   }
-  if (c.includes('treasure') || c.includes('find')) {
+  if (
+    c.includes('treasure') ||
+    c.includes('book') ||
+    c.includes('toy') ||
+    c.includes('radio') ||
+    c.includes('electron') ||
+    c.includes('collectible') ||
+    c.includes('home')
+  ) {
     return 'thrifted-treasure';
+  }
+  if (
+    c.includes('shirt') ||
+    c.includes('tee') ||
+    c.includes('hoodie') ||
+    c.includes('sweatshirt') ||
+    c.includes('jacket') ||
+    c.includes('blazer') ||
+    c.includes('sweater') ||
+    c.includes('top') ||
+    c.includes('apparel') ||
+    c.includes('clothing')
+  ) {
+    return 'mens-upperwear';
+  }
+  if (c.includes('pant') || c.includes('jean') || c.includes('trouser') || c.includes('skirt') || c.includes('short')) {
+    return 'womens-bottomwear';
   }
 
   // Fallback to inventory serial code prefix if available
-  if (rawSerial) {
-    const code = extractCategoryCodeFromSerial(rawSerial);
-    if (code) {
-      if (['WB-J', 'WB-L', 'WB-O', 'CWZ', 'TCE', 'OWJ'].includes(code)) return 'womens-upperwear';
-      if (['MB-J', 'MB-L', 'MB-O', 'MS', 'SH', 'DJ', 'LJ', 'SZ'].includes(code)) return 'mens-upperwear';
-      if (['SET', 'SC', 'FS', 'DB'].includes(code)) return 'womens-one-piece';
-      if (['JW'].includes(code)) return 'jewellery';
-      if (['BB', 'SB'].includes(code)) return 'accessories';
-    }
+  if (codeFromSerial && INVENTORY_CATEGORIES[codeFromSerial]?.defaultCategorySlug) {
+    return INVENTORY_CATEGORIES[codeFromSerial].defaultCategorySlug as ProductCategorySlug;
   }
 
-  return 'thrifted-treasure';
+  return 'womens-upperwear';
 }
 
 // Tracks whether a live database connection is active
@@ -241,6 +268,18 @@ export function useCatalogVersion(): number {
   return version;
 }
 
+const HIDDEN_STOREFRONT_STATUSES = new Set([
+  'DRAFT',
+  'ARCHIVED',
+  'MISSING',
+  'NEED_ATTENTION',
+]);
+
+function isPublicStorefrontProduct(product: Product): boolean {
+  const normalized = String(product.status || '').trim().toUpperCase();
+  return !HIDDEN_STOREFRONT_STATUSES.has(normalized);
+}
+
 export const productService = {
   subscribe(callback: () => void): () => void {
     listeners.add(callback);
@@ -336,35 +375,37 @@ export const productService = {
   },
 
   getAllProducts(): Product[] {
-    return productCache;
+    return productCache.filter(isPublicStorefrontProduct);
   },
 
   getProductBySlug(slug: string): Product | undefined {
     const slugLower = slug.toLowerCase();
     return productCache.find(
       (item) =>
-        item.slug.toLowerCase() === slugLower ||
-        item.serialNumber?.toLowerCase() === slugLower ||
-        item.id.toLowerCase() === slugLower,
+        isPublicStorefrontProduct(item) &&
+        (item.slug.toLowerCase() === slugLower ||
+          item.serialNumber?.toLowerCase() === slugLower ||
+          item.id.toLowerCase() === slugLower),
     );
   },
 
   getProductById(id: string): Product | undefined {
     return productCache.find(
       (item) =>
-        item.id === id ||
-        item.serialNumber?.toUpperCase() === id.toUpperCase(),
+        isPublicStorefrontProduct(item) &&
+        (item.id === id || item.serialNumber?.toUpperCase() === id.toUpperCase()),
     );
   },
 
   getRelatedProducts(product: Product, limit = 4): Product[] {
-    const sameCategory = productCache.filter(
+    const visible = productCache.filter(isPublicStorefrontProduct);
+    const sameCategory = visible.filter(
       (item) => item.id !== product.id && item.category === product.category,
     );
     if (sameCategory.length >= limit) {
       return sameCategory.slice(0, limit);
     }
-    const others = productCache.filter(
+    const others = visible.filter(
       (item) => item.id !== product.id && item.category !== product.category,
     );
     return [...sameCategory, ...others].slice(0, limit);
@@ -390,6 +431,9 @@ export const productService = {
     const subToken = subcategory !== 'all' ? normalizeToken(subcategory) : '';
 
     const filtered = productCache.filter((product) => {
+      if (!isPublicStorefrontProduct(product)) {
+        return false;
+      }
       if (category !== 'all' && product.category !== category) {
         return false;
       }

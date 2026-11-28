@@ -350,7 +350,7 @@ export function ProductDetailPage() {
               alt={`${product.name} view ${activeImageIdx + 1}`}
               loading="eager"
               decoding="async"
-              className="h-full w-full object-contain"
+              className="h-full w-full rounded-xl object-contain"
             />
           </div>
 
@@ -374,7 +374,7 @@ export function ProductDetailPage() {
                     alt=""
                     loading="lazy"
                     decoding="async"
-                    className="h-full w-full object-contain"
+                    className="h-full w-full rounded-lg object-contain"
                   />
                 </button>
               ))}

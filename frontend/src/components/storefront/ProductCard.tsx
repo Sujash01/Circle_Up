@@ -17,6 +17,7 @@ interface ProductCardProps {
   product: Product;
   aspectClass?: string;
   showSubcategory?: boolean;
+  imageShape?: 'arch' | 'rect';
 }
 
 /**
@@ -26,6 +27,7 @@ export function ProductCard({
   product,
   aspectClass = 'aspect-[4/5]',
   showSubcategory = true,
+  imageShape = 'arch',
 }: ProductCardProps) {
   const { isWishlisted, toggleWishlist } = useStore();
   const saved = isWishlisted(product.id);
@@ -53,21 +55,44 @@ export function ProductCard({
     >
       <Link
         to={`/product/${product.slug}`}
-        className="product-image-frame relative block overflow-hidden bg-tile focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+        className={cn(
+          'product-image-frame relative block overflow-hidden bg-tile focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary',
+          imageShape === 'rect' && 'product-image-frame--rect p-1.5',
+        )}
       >
-        <Blob
-          src={product.images[0]}
-          alt={product.name}
-          width={800}
-          height={1000}
-          shape="arch"
-          className={cn('w-full', aspectClass)}
-          imageClassName={cn(
-            'product-tile-image object-cover object-top transition-transform duration-700 ease-out group-hover:scale-[1.03]',
-          )}
-          onLoad={(event) => event.currentTarget.classList.add('is-loaded')}
-          onError={(event) => event.currentTarget.classList.add('is-loaded')}
-        />
+        {imageShape === 'rect' ? (
+          <div className={cn('w-full overflow-hidden rounded-xl bg-tile', aspectClass)}>
+            {product.images[0] ? (
+              <img
+                src={product.images[0]}
+                alt={product.name}
+                width={800}
+                height={1000}
+                loading="lazy"
+                decoding="async"
+                className="product-tile-image h-full w-full rounded-xl object-cover object-center transition-transform duration-700 ease-out group-hover:scale-[1.03]"
+                onLoad={(event) => event.currentTarget.classList.add('is-loaded')}
+                onError={(event) => event.currentTarget.classList.add('is-loaded')}
+              />
+            ) : (
+              <span aria-hidden="true" className="block h-full w-full rounded-xl bg-tile" />
+            )}
+          </div>
+        ) : (
+          <Blob
+            src={product.images[0]}
+            alt={product.name}
+            width={800}
+            height={1000}
+            shape="arch"
+            className={cn('w-full', aspectClass)}
+            imageClassName={cn(
+              'product-tile-image object-cover object-top transition-transform duration-700 ease-out group-hover:scale-[1.03]',
+            )}
+            onLoad={(event) => event.currentTarget.classList.add('is-loaded')}
+            onError={(event) => event.currentTarget.classList.add('is-loaded')}
+          />
+        )}
 
         {statusMeta && statusMeta.code !== 'AVAILABLE' && (
           <span

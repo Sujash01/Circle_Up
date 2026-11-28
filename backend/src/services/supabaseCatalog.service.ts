@@ -280,7 +280,8 @@ export const supabaseCatalogService = {
 
     let dbQuery = client
       .from('products')
-      .select('*', { count: 'exact' });
+      .select('*', { count: 'exact' })
+      .is('deleted_at', null);
 
     // 1. Storefront visibility gate: exclude internal back-of-house statuses
     if (inStockOnly) {

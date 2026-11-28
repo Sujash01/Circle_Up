@@ -1464,7 +1464,8 @@ button.organic-control:focus-visible {
   z-index: 1;
   width: 100%;
   min-height: 70vh;
-  padding: clamp(28px, 4vw, 56px) clamp(24px, 4vw, 64px)
+  scroll-margin-top: 108px;
+  padding: clamp(36px, 4.5vw, 64px) clamp(24px, 4vw, 64px)
     clamp(40px, 5vw, 72px) clamp(64px, 6vw, 104px);
 }
 
@@ -1495,7 +1496,8 @@ button.organic-control:focus-visible {
   }
 
   .storefront-notebook-content {
-    padding: 28px 16px 40px 54px;
+    scroll-margin-top: 84px;
+    padding: 36px 16px 40px 54px;
   }
 }
 
@@ -1527,6 +1529,10 @@ button.organic-control:focus-visible {
 
 .product-image-frame {
   border-radius: 1.5rem 1.2rem 1.65rem 1.3rem / 1.25rem 1.5rem 1.2rem 1.55rem;
+}
+
+.product-image-frame.product-image-frame--rect {
+  border-radius: 1.25rem;
 }
 
 .storefront-notebook-content form,
