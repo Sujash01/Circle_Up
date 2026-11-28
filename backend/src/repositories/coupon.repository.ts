@@ -1,16 +1,18 @@
 import { ConflictError, ServiceUnavailableError, NotFoundError } from '../errors/AppError.js';
 import { getSupabaseAdminClient } from '../services/supabase.service.js';
+import type { CouponRedemption } from '@circleup/shared';
 
 export type CouponDiscountType = 'PERCENTAGE' | 'FLAT' | 'FREE_SHIPPING' | 'BOGO';
 export interface CouponRecord {
   id: string; code: string; description: string; discountType: CouponDiscountType; value: number;
   minOrderAmount: number; maxDiscountAmount?: number; usageLimit?: number; usageCount: number;
-  perCustomerLimit: number; isActive: boolean; startsAt?: string; expiresAt?: string;
+  perCustomerLimit: number; isActive: boolean; startsAt?: string | null; expiresAt?: string | null;
   targetTier: string; appliesTo: string; applicableProductIds: string[];
   canCombineWithOrderDiscounts: boolean; canCombineWithShippingDiscounts: boolean;
   showInHeader: boolean; headerBannerText?: string; headerCtaLabel: string; headerPriority: number;
   autoApply: boolean; showInExitIntent: boolean; popupHeadline?: string; popupSubtext?: string;
   popupBadgeText?: string; targetPages: string[]; cooldownHours: number; captureEmailOrWhatsapp: boolean;
+  assignedCustomerId?: string | null; assignedCustomerEmail?: string | null; issueReason?: string | null;
   createdAt: string; updatedAt: string; type: CouponDiscountType; maxDiscount?: number; minCartSubtotal: number;
 }
 
@@ -47,6 +49,9 @@ export function mapCouponRow(row: Record<string, unknown>): CouponRecord {
     popupBadgeText: row.popup_badge_text == null ? undefined : String(row.popup_badge_text),
     targetPages: (row.target_pages as string[] | null) || ['all'], cooldownHours: Number(row.cooldown_hours ?? 24),
     captureEmailOrWhatsapp: Boolean(row.capture_email_or_whatsapp),
+    assignedCustomerId: row.assigned_customer_id == null ? null : String(row.assigned_customer_id),
+    assignedCustomerEmail: row.assigned_customer_email == null ? null : String(row.assigned_customer_email),
+    issueReason: row.issue_reason == null ? null : String(row.issue_reason),
     createdAt: String(row.created_at || ''), updatedAt: String(row.updated_at || ''),
     type: discountType,
     maxDiscount: row.max_discount_paise == null ? undefined : Number(row.max_discount_paise),
@@ -66,10 +71,13 @@ function toRow(input: CouponInput): Record<string, unknown> {
     auto_apply: 'autoApply', show_in_exit_intent: 'showInExitIntent', popup_headline: 'popupHeadline',
     popup_subtext: 'popupSubtext', popup_badge_text: 'popupBadgeText', target_pages: 'targetPages',
     cooldown_hours: 'cooldownHours', capture_email_or_whatsapp: 'captureEmailOrWhatsapp',
+    assigned_customer_id: 'assignedCustomerId', assigned_customer_email: 'assignedCustomerEmail',
+    issue_reason: 'issueReason',
   };
   const row: Record<string, unknown> = {};
   for (const [column, field] of Object.entries(fields)) if (input[field] !== undefined) row[column] = input[field];
   if (row.code !== undefined) row.code = String(row.code).trim().toUpperCase();
+  if (typeof row.assigned_customer_email === 'string') row.assigned_customer_email = row.assigned_customer_email.trim().toLowerCase();
   if (row.discount_type !== undefined) {
     const value = String(row.discount_type).trim().toUpperCase();
     row.discount_type = value === 'FIXED' || value === 'FLAT_AMOUNT' ? 'FLAT' : value;
@@ -80,7 +88,7 @@ function toRow(input: CouponInput): Record<string, unknown> {
 export const couponRepository = {
   async listPromotions(): Promise<CouponRecord[]> {
     const { data, error } = await getSupabaseAdminClient().from('coupons')
-      .select('code, description, discount_type, discount_value, is_active, starts_at, ends_at, usage_limit, usage_count, target_tier, applies_to, show_in_header, header_banner_text, header_cta_label, auto_apply, show_in_exit_intent, popup_headline, popup_subtext, popup_badge_text, target_pages, cooldown_hours')
+      .select('code, description, discount_type, discount_value, is_active, starts_at, ends_at, usage_limit, usage_count, target_tier, applies_to, show_in_header, header_banner_text, header_cta_label, auto_apply, show_in_exit_intent, popup_headline, popup_subtext, popup_badge_text, target_pages, cooldown_hours, assigned_customer_id, assigned_customer_email')
       .eq('is_active', true)
       .or('show_in_header.eq.true,show_in_exit_intent.eq.true,auto_apply.eq.true')
       .order('header_priority', { ascending: false })
@@ -118,5 +126,82 @@ export const couponRepository = {
     const { data, error } = await byIdentifier(getSupabaseAdminClient().from('coupons').delete(), id).select('id').maybeSingle();
     if (error) throw unavailable();
     if (!data) throw new NotFoundError('Coupon not found.', 'COUPON_NOT_FOUND');
+  },
+  async countCustomerUsage(code: string, customerId?: string, customerEmail?: string): Promise<number> {
+    if (!customerId && !customerEmail) return 0;
+    const normalizedCode = code.trim().toUpperCase();
+    const client = getSupabaseAdminClient();
+    let query = client
+      .from('orders')
+      .select('id', { count: 'exact', head: true })
+      .eq('promo_code', normalizedCode)
+      .neq('status', 'CANCELLED');
+    if (customerId && customerEmail) {
+      query = query.or(`customer_id.eq.${customerId},customer_email.ilike.${customerEmail.trim().toLowerCase()}`);
+    } else if (customerId) {
+      query = query.eq('customer_id', customerId);
+    } else if (customerEmail) {
+      query = query.ilike('customer_email', customerEmail.trim().toLowerCase());
+    }
+    const { count, error } = await query;
+    if (error) return 0;
+    return Number(count ?? 0);
+  },
+  async listRedemptions(couponId?: string): Promise<CouponRedemption[]> {
+    const client = getSupabaseAdminClient();
+    let query = client
+      .from('coupon_redemptions')
+      .select('*')
+      .order('redeemed_at', { ascending: false })
+      .limit(200);
+    if (couponId) {
+      query = query.eq('coupon_id', couponId);
+    }
+    const { data, error } = await query;
+    if (!error && Array.isArray(data)) {
+      return data.map((row) => ({
+        id: String(row.id),
+        couponId: row.coupon_id == null ? null : String(row.coupon_id),
+        couponCode: String(row.coupon_code),
+        orderId: String(row.order_id),
+        orderNumber: String(row.order_number),
+        customerId: row.customer_id == null ? null : String(row.customer_id),
+        customerEmail: row.customer_email == null ? null : String(row.customer_email),
+        customerName: row.customer_name == null ? null : String(row.customer_name),
+        discountPaise: Number(row.discount_paise ?? 0),
+        orderTotalPaise: row.order_total_paise == null ? undefined : Number(row.order_total_paise),
+        redeemedAt: String(row.redeemed_at),
+      }));
+    }
+
+    // Fallback to orders table when coupon_redemptions migration has not yet been applied
+    let fallbackQuery = client
+      .from('orders')
+      .select('id, order_number, customer_id, customer_email, customer_name, promo_code, discount_amount, total_amount, created_at')
+      .not('promo_code', 'is', null)
+      .neq('status', 'CANCELLED')
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (couponId) {
+      const coupon = await client.from('coupons').select('code').eq('id', couponId).maybeSingle();
+      if (coupon.data?.code) {
+        fallbackQuery = fallbackQuery.eq('promo_code', String(coupon.data.code).toUpperCase());
+      }
+    }
+    const fallback = await fallbackQuery;
+    if (fallback.error || !Array.isArray(fallback.data)) throw unavailable();
+    return fallback.data.map((row) => ({
+      id: String(row.id),
+      couponId: couponId ?? null,
+      couponCode: String(row.promo_code || ''),
+      orderId: String(row.id),
+      orderNumber: String(row.order_number || ''),
+      customerId: row.customer_id == null ? null : String(row.customer_id),
+      customerEmail: row.customer_email == null ? null : String(row.customer_email),
+      customerName: row.customer_name == null ? null : String(row.customer_name),
+      discountPaise: Number(row.discount_amount ?? 0),
+      orderTotalPaise: Number(row.total_amount ?? 0),
+      redeemedAt: String(row.created_at || ''),
+    }));
   },
 };

@@ -38,4 +38,22 @@ describe('coupon checkout migration validation', () => {
     expect(replacement).toContain('where key_hash = p_key_hash');
     expect(replacement).toContain('response_payload = v_response_payload');
   });
+
+  it('adds customer restriction, redemption audit table, and atomic redemption logging in 20261216000000', () => {
+    const sql = readFileSync(
+      resolve(migrations, '20261216000000_coupons_customer_restriction_and_redemptions.sql'),
+      'utf8',
+    ).replace(/\r\n/g, '\n');
+    expect(sql).toContain('add column if not exists assigned_customer_id uuid');
+    expect(sql).toContain('add column if not exists assigned_customer_email text');
+    expect(sql).toContain('add column if not exists issue_reason text');
+    expect(sql).toContain('create table if not exists public.coupon_redemptions');
+    expect(sql).toContain("'code', 'COUPON_NOT_ELIGIBLE'");
+    expect(sql).toContain("'code', 'COUPON_UNSUPPORTED_SCOPE'");
+    expect(sql).toContain('v_discount := (v_eligible_subtotal * v_coupon.discount_value) / 100;');
+    expect(sql).not.toContain('pg_catalog.round((v_eligible_subtotal');
+    expect(sql).toContain('if p_customer_id is null or p_customer_id <> v_coupon.assigned_customer_id then');
+    expect(sql).toContain('insert into public.coupon_redemptions');
+    expect(sql).toMatch(/from public\.coupons[\s\S]*?for update;/);
+  });
 });

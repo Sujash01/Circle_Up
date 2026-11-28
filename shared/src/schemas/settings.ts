@@ -24,6 +24,9 @@ export const siteSettingsSchema = z.object({
   ),
   announcementLink: z.string().default('/new-arrivals'),
   isAnnouncementActive: z.boolean().default(true),
+  announcementCouponCode: z.string().default(''),
+  announcementStartsAt: z.string().nullable().optional(),
+  announcementEndsAt: z.string().nullable().optional(),
   marqueePhrases: z.array(z.string()).default([
     'Thrifted with care',
     'Rentals for every occasion',
@@ -78,6 +81,9 @@ export const siteSettingsUpdateSchema = z.object({
   announcementText: z.string().optional(),
   announcementLink: z.union([storefrontLinkSchema, z.literal('')]).optional(),
   isAnnouncementActive: z.boolean().optional(),
+  announcementCouponCode: z.string().trim().max(64).optional(),
+  announcementStartsAt: z.string().nullable().optional(),
+  announcementEndsAt: z.string().nullable().optional(),
   marqueePhrases: z.array(z.string()).optional(),
   categoryTiles: z.array(categoryTileSchema).optional(),
   customDrop: customDropOptionSchema.partial().strict().optional(),
@@ -98,4 +104,17 @@ export const siteSettingsUpdateSchema = z.object({
 );
 
 export type SiteSettingsUpdate = z.infer<typeof siteSettingsUpdateSchema>;
+
+export const announcementUpdateSchema = z.object({
+  announcementText: z.string().trim().max(240),
+  announcementLink: z.union([storefrontLinkSchema, z.literal('')]).default('/new-arrivals'),
+  isAnnouncementActive: z.boolean(),
+  announcementCouponCode: z.string().trim().max(64).optional().default(''),
+  announcementStartsAt: z.string().nullable().optional(),
+  announcementEndsAt: z.string().nullable().optional(),
+}).strict().refine(
+  (d) => !d.announcementStartsAt || !d.announcementEndsAt || new Date(d.announcementEndsAt) > new Date(d.announcementStartsAt),
+  { path: ['announcementEndsAt'], message: 'Announcement end date must be after start date.' },
+);
+export type AnnouncementUpdate = z.infer<typeof announcementUpdateSchema>;
 

@@ -152,7 +152,11 @@ adminRouter.get('/activity', requireAdminAuth('activity:view'), adminSettingsCon
 
 // === COUPONS ===
 adminRouter.get('/coupons', requireAdminAuth('coupons:view'), adminCouponController.list);
+adminRouter.get('/coupons/redemptions', requireAdminAuth('coupons:view'), adminCouponController.listRedemptions);
+adminRouter.get('/coupons/announcement', requireAdminAuth('coupons:view'), adminCouponController.getAnnouncement);
 adminRouter.post('/coupons', requireAdminAuth('coupons:manage'), verifyAdminCsrf, adminCouponController.create);
+adminRouter.post('/coupons/issue-customer', requireAdminAuth('coupons:manage'), verifyAdminCsrf, adminCouponController.issueCustomerCoupon);
+adminRouter.put('/coupons/announcement', requireAdminAuth('coupons:manage'), verifyAdminCsrf, adminCouponController.updateAnnouncement);
 adminRouter.put('/coupons/:id', requireAdminAuth('coupons:manage'), verifyAdminCsrf, adminCouponController.update);
 adminRouter.delete(
   '/coupons/:id',

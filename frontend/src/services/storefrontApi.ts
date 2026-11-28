@@ -276,10 +276,18 @@ export const storefrontApi = {
   /**
    * Real-time coupon discount validation (THRIFT10, CIRCLE20, etc.).
    */
-  async validateCoupon(code: string, subtotalInPaise: number, signal?: AbortSignal): Promise<CouponValidateResult> {
+  async validateCoupon(
+    code: string,
+    subtotalInPaise: number,
+    signal?: AbortSignal,
+    context?: { customerId?: string; customerEmail?: string; productIds?: string[] },
+  ): Promise<CouponValidateResult> {
     const res = await axios.post<{ data: CouponValidateResult }>('/api/coupons/validate', {
       code,
       subtotalInPaise,
+      ...(context?.customerId ? { customerId: context.customerId } : {}),
+      ...(context?.customerEmail ? { customerEmail: context.customerEmail } : {}),
+      ...(context?.productIds?.length ? { productIds: context.productIds } : {}),
     }, { signal });
     return couponValidateResultSchema.parse(res.data.data);
   },

@@ -14,7 +14,11 @@ export const couponController = {
   async validate(req: Request, res: Response, next: NextFunction) {
     try {
       const parsed = couponValidatePayloadSchema.parse(req.body);
-      const result = await couponService.validateCoupon(parsed.code, parsed.subtotalInPaise);
+      const result = await couponService.validateCoupon(parsed.code, parsed.subtotalInPaise, {
+        customerId: parsed.customerId,
+        customerEmail: parsed.customerEmail,
+        productIds: parsed.productIds,
+      });
       return sendSuccess(res, result);
     } catch (error) {
       next(error);

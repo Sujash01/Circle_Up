@@ -142,14 +142,24 @@ export function CartPage() {
   const checkoutDialogRef = useRef<HTMLDialogElement>(null);
   const checkoutTitleRef = useRef<HTMLHeadingElement>(null);
 
+  const checkoutEmail = formData.email.trim();
+  const authUserId = authUser?.id;
+  const authUserEmail = authUser?.email;
+  const cartProductIds = cart.items.map((item) => item.productId).filter(Boolean);
+
   useEffect(() => {
     if (itemCount === 0 || (!manualCode && automaticCodes.length === 0)) return;
     const controller = new AbortController();
     const inputs = { requestedCode: manualCode, automaticCodes, subtotal };
+    const effectiveEmail = checkoutEmail || authUserEmail || undefined;
     const validate = async () => {
       try {
         for (const code of manualCode ? [manualCode] : automaticCodes) {
-          const result = await storefrontApi.validateCoupon(code, subtotal, controller.signal);
+          const result = await storefrontApi.validateCoupon(code, subtotal, controller.signal, {
+            customerId: authUserId,
+            customerEmail: effectiveEmail,
+            productIds: cartProductIds,
+          });
           if (controller.signal.aborted) return;
           if (result.valid || manualCode) {
             setPromoPreview({
@@ -170,7 +180,7 @@ export function CartPage() {
     };
     void validate();
     return () => controller.abort();
-  }, [manualCode, automaticCodes, subtotal, itemCount]);
+  }, [manualCode, automaticCodes, subtotal, itemCount, authUserId, authUserEmail, checkoutEmail, cartProductIds.join(',')]);
 
   useEffect(() => {
     document.title = 'Shopping Bag — CircleUp';

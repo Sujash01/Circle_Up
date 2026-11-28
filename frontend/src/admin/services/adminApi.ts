@@ -542,6 +542,44 @@ export const adminApi = {
     }
   },
 
+  async getCouponRedemptions(couponId?: string) {
+    try {
+      const res = await adminClient.get<{ data: import('@circleup/shared').CouponRedemption[] }>('/coupons/redemptions', {
+        params: couponId ? { couponId } : undefined,
+      });
+      return res.data.data;
+    } catch (err) {
+      throw normalizeApiError(err);
+    }
+  },
+
+  async issueCustomerCoupon(data: import('@circleup/shared').CustomerCouponIssueInput) {
+    try {
+      const res = await adminClient.post<{ data: Coupon }>('/coupons/issue-customer', data);
+      return res.data.data;
+    } catch (err) {
+      throw normalizeApiError(err);
+    }
+  },
+
+  async getAnnouncementSettings() {
+    try {
+      const res = await adminClient.get<{ data: import('@circleup/shared').AnnouncementUpdate }>('/coupons/announcement');
+      return res.data.data;
+    } catch (err) {
+      throw normalizeApiError(err);
+    }
+  },
+
+  async updateAnnouncementSettings(data: import('@circleup/shared').AnnouncementUpdate) {
+    try {
+      const res = await adminClient.put<{ data: SiteSettings }>('/coupons/announcement', data);
+      return res.data.data;
+    } catch (err) {
+      throw normalizeApiError(err);
+    }
+  },
+
   // === RENTALS ===
   async getRentalBookings(page: number) {
     try {

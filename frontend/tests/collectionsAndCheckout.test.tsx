@@ -289,7 +289,12 @@ describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
       await act(async () => root.render(
         <Provider store={store}><StoreProvider><MemoryRouter><CartPage /></MemoryRouter></StoreProvider></Provider>,
       ));
-      expect(validateCoupon).toHaveBeenCalledWith('DROP', 100100, expect.any(AbortSignal));
+      expect(validateCoupon).toHaveBeenCalledWith(
+        'DROP',
+        100100,
+        expect.any(AbortSignal),
+        expect.objectContaining({ productIds: ['test-brand-new-1'] }),
+      );
       expect(host.textContent).toContain('₹90');
       expect(host.textContent).toContain('₹1,089.99');
       const enquiry = host.querySelector<HTMLAnchorElement>('a[href^="https://wa.me/"]');
