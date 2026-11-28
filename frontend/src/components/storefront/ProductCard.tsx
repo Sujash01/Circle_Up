@@ -69,7 +69,10 @@ export function ProductCard({
               height={800}
               loading="lazy"
               decoding="async"
-              className="product-tile-image block h-full w-full rounded-xl object-cover object-center transition-transform duration-700 ease-out group-hover:scale-[1.03]"
+              className={cn(
+                'product-tile-image block h-full w-full rounded-xl object-cover object-center transition-transform duration-700 ease-out group-hover:scale-[1.03]',
+                aspectClass,
+              )}
               onLoad={(event) => event.currentTarget.classList.add('is-loaded')}
               onError={(event) => event.currentTarget.classList.add('is-loaded')}
             />

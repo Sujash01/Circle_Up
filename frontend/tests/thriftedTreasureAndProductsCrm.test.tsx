@@ -2,7 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { productService } from '../src/services/productService';
+import { ProductDetailPage } from '../src/features/public/ProductDetailPage';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 
@@ -33,6 +35,7 @@ vi.mock('../src/context/StoreContext', () => ({
   useStore: () => ({
     isWishlisted: () => false,
     toggleWishlist: vi.fn(),
+    addToCart: vi.fn(),
   }),
 }));
 
@@ -72,7 +75,7 @@ describe('Thrifted Treasure image presentation & CRM ProductsPage regression', (
     mocks.showToast.mockReset();
   });
 
-  it('renders Thrifted Treasure ProductCard with rectangular frame and object-cover without arch/nested wrapper', () => {
+  it('renders Thrifted Treasure ProductCard with square 1:1 viewport and object-cover without arch/nested wrapper', () => {
     const html = renderToStaticMarkup(
       <MemoryRouter>
         <ProductCard product={sampleProduct()} aspectClass="aspect-square" imageShape="rect" />
@@ -81,19 +84,63 @@ describe('Thrifted Treasure image presentation & CRM ProductsPage regression', (
     expect(html).toContain('product-image-frame--rect');
     expect(html).toContain('aspect-square');
     expect(html).toContain('object-cover');
+    expect(html).toContain('object-center');
     expect(html).not.toContain('blob-arch');
     expect(html).not.toContain('p-1.5');
   });
 
-  it('uses clean rectangular full-bleed frames on ThriftedTreasurePage and ProductDetailPage', () => {
+  it('renders Thrifted Treasure ProductDetailPage with 1:1 square edge-to-edge object-cover viewport', async () => {
+    const treasure = sampleProduct({
+      id: 'tt-detail-1',
+      slug: 'vintage-brass-radio',
+      images: ['https://example.com/radio-1.jpg', 'https://example.com/radio-2.jpg'],
+    });
+    productService.setProducts([treasure]);
+
+    const host = document.createElement('div');
+    const root = createRoot(host);
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/product/vintage-brass-radio']}>
+          <Routes>
+            <Route path="/product/:slug" element={<ProductDetailPage />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+      await Promise.resolve();
+    });
+
+    const mainImg = host.querySelector('img[alt="Vintage Brass Radio view 1"]') as HTMLImageElement | null;
+    expect(mainImg).not.toBeNull();
+    expect(mainImg?.className).toContain('aspect-square');
+    expect(mainImg?.className).toContain('object-cover');
+    expect(mainImg?.className).toContain('object-center');
+    expect(mainImg?.className).toContain('rounded-2xl');
+    expect(mainImg?.className).not.toContain('object-contain');
+
+    const viewport = mainImg?.parentElement;
+    expect(viewport?.className).toContain('aspect-square');
+    expect(viewport?.className).toContain('rounded-2xl');
+    expect(viewport?.className).not.toContain('p-2');
+    expect(viewport?.className).not.toContain('p-3');
+
+    const thumbImg = host.querySelector('button[aria-label="View image 2"] img') as HTMLImageElement | null;
+    expect(thumbImg?.className).toContain('aspect-square');
+    expect(thumbImg?.className).toContain('object-cover');
+    expect(thumbImg?.parentElement?.className).toContain('aspect-square');
+    expect(thumbImg?.parentElement?.className).not.toContain('p-1');
+
+    root.unmount();
+  });
+
+  it('uses clean square frames on ThriftedTreasurePage and preserves non-treasure ProductDetailPage', () => {
     const srcDir = path.resolve(__dirname, '../src');
     const treasureSrc = fs.readFileSync(path.join(srcDir, 'features/public/ThriftedTreasurePage.tsx'), 'utf8');
     const detailSrc = fs.readFileSync(path.join(srcDir, 'features/public/ProductDetailPage.tsx'), 'utf8');
 
     expect(treasureSrc).toContain('aspectClass="aspect-square"');
     expect(treasureSrc).toContain('imageShape="rect"');
-    expect(detailSrc).toContain('rounded-2xl');
-    expect(detailSrc).toContain('className="h-full w-full rounded-xl object-contain"');
+    expect(detailSrc).toContain("product.category === 'thrifted-treasure'");
     expect(detailSrc).not.toContain('shape-arch');
     expect(detailSrc).not.toContain('wavy-oval');
   });

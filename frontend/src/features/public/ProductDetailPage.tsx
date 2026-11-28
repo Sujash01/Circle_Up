@@ -344,42 +344,67 @@ export function ProductDetailPage() {
       <section className="grid gap-10 lg:grid-cols-[1.08fr_0.92fr] items-start">
         {/* Image gallery */}
         <div className="space-y-4">
-          <div className="relative aspect-[4/5] w-full overflow-hidden rounded-2xl border border-foreground/15 bg-tile flex items-center justify-center p-2 sm:p-3 shadow-xs">
-            <img
-              src={product.images[activeImageIdx] ?? product.images[0]}
-              alt={`${product.name} view ${activeImageIdx + 1}`}
-              loading="eager"
-              decoding="async"
-              className="h-full w-full rounded-xl object-contain"
-            />
-          </div>
-
-          {product.images.length > 1 && (
-            <div className="flex gap-3 overflow-x-auto pb-1">
-              {product.images.map((imgSrc, idx) => (
-                <button
-                  key={`${product.id}-thumb-${idx}`}
-                  type="button"
-                  onClick={() => setActiveImageIdx(idx)}
-                  aria-label={`View image ${idx + 1}`}
+          {(() => {
+            const isThriftedTreasure = product.category === 'thrifted-treasure';
+            return (
+              <>
+                <div
                   className={cn(
-                    'w-20 aspect-[4/5] shrink-0 overflow-hidden rounded-xl border bg-tile p-1 transition-all',
-                    activeImageIdx === idx
-                      ? 'border-2 border-primary opacity-100 shadow-xs'
-                      : 'border-foreground/15 opacity-70 hover:opacity-100',
+                    'relative w-full overflow-hidden rounded-2xl border border-foreground/15 bg-tile shadow-xs',
+                    isThriftedTreasure
+                      ? 'aspect-square'
+                      : 'aspect-[4/5] flex items-center justify-center p-2 sm:p-3',
                   )}
                 >
                   <img
-                    src={imgSrc}
-                    alt=""
-                    loading="lazy"
+                    src={product.images[activeImageIdx] ?? product.images[0]}
+                    alt={`${product.name} view ${activeImageIdx + 1}`}
+                    loading="eager"
                     decoding="async"
-                    className="h-full w-full rounded-lg object-contain"
+                    className={cn(
+                      'block h-full w-full',
+                      isThriftedTreasure
+                        ? 'aspect-square rounded-2xl object-cover object-center'
+                        : 'rounded-xl object-contain',
+                    )}
                   />
-                </button>
-              ))}
-            </div>
-          )}
+                </div>
+
+                {product.images.length > 1 && (
+                  <div className="flex gap-3 overflow-x-auto pb-1">
+                    {product.images.map((imgSrc, idx) => (
+                      <button
+                        key={`${product.id}-thumb-${idx}`}
+                        type="button"
+                        onClick={() => setActiveImageIdx(idx)}
+                        aria-label={`View image ${idx + 1}`}
+                        className={cn(
+                          'w-20 shrink-0 overflow-hidden rounded-xl border bg-tile transition-all',
+                          isThriftedTreasure ? 'aspect-square' : 'aspect-[4/5] p-1',
+                          activeImageIdx === idx
+                            ? 'border-2 border-primary opacity-100 shadow-xs'
+                            : 'border-foreground/15 opacity-70 hover:opacity-100',
+                        )}
+                      >
+                        <img
+                          src={imgSrc}
+                          alt=""
+                          loading="lazy"
+                          decoding="async"
+                          className={cn(
+                            'block h-full w-full',
+                            isThriftedTreasure
+                              ? 'aspect-square rounded-xl object-cover object-center'
+                              : 'rounded-lg object-contain',
+                          )}
+                        />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
 
         {/* Product storytelling & controls */}
