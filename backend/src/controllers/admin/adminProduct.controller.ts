@@ -9,6 +9,9 @@ import {
   productTypeSchema,
   productVariantSchema,
   productImageSchema,
+  NEW_PRODUCT_MIN_STOCK,
+  NEW_PRODUCT_MIN_STOCK_MESSAGE,
+  requiresNewProductMinStock,
   type ProductListQuery,
 } from '@circleup/shared';
 import { adminProductService } from '../../services/adminProduct.service.js';
@@ -138,6 +141,15 @@ export const adminProductController = {
   async create(req: Request, res: Response, next: NextFunction) {
     try {
       const payload = parseOrThrow(adminProductCreateSchema, req.body, 'Invalid product creation payload.');
+      const totalStock =
+        payload.variants.length > 0
+          ? payload.variants.reduce((sum, v) => sum + v.stock, 0)
+          : payload.stock;
+      if (requiresNewProductMinStock(payload) && totalStock < NEW_PRODUCT_MIN_STOCK) {
+        throw new BadRequestError(NEW_PRODUCT_MIN_STOCK_MESSAGE, 'VALIDATION_ERROR', [
+          { field: 'stock', message: NEW_PRODUCT_MIN_STOCK_MESSAGE },
+        ]);
+      }
       const product = await adminProductService.create(payload as Record<string, unknown>);
       await auditService.record({
         actor: req.adminUser,

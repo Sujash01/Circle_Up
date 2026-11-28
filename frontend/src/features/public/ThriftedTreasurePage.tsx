@@ -1,15 +1,17 @@
 import { useMemo, useState } from 'react';
 import { EmptyState } from '@/components/storefront/EmptyState';
 import { ProductCard } from '@/components/storefront/ProductCard';
+import { cn } from '@/lib/utils';
 import { productService, useCatalogVersion, type ProductSortOption } from '@/services/productService';
 
 export function ThriftedTreasurePage() {
   const catalogVersion = useCatalogVersion();
   const meta = productService.getCategoryMeta('thrifted-treasure')!;
   const [sort, setSort] = useState<ProductSortOption>('newest');
+  const [selectedSubcategory, setSelectedSubcategory] = useState<string>('all');
 
   // Show dedicated Thrifted Treasure items plus small one-of-a-kind tagged finds
-  const treasures = useMemo(() => {
+  const allTreasures = useMemo(() => {
     void catalogVersion;
     const base = productService.queryProducts({
       category: 'thrifted-treasure',
@@ -24,6 +26,22 @@ export function ThriftedTreasurePage() {
       );
     return [...base, ...smallFinds];
   }, [sort, catalogVersion]);
+
+  const subcategories = useMemo(() => {
+    const preset = meta.subcategories || [];
+    const dynamic = allTreasures
+      .filter((p) => p.category === 'thrifted-treasure' && p.subcategory?.trim())
+      .map((p) => p.subcategory.trim());
+    return Array.from(new Set([...preset, ...dynamic]));
+  }, [allTreasures, meta.subcategories]);
+
+  const treasures = useMemo(() => {
+    if (selectedSubcategory === 'all') return allTreasures;
+    const target = selectedSubcategory.toLowerCase();
+    return allTreasures.filter(
+      (p) => (p.subcategory || '').trim().toLowerCase() === target,
+    );
+  }, [allTreasures, selectedSubcategory]);
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto">
@@ -56,6 +74,36 @@ export function ThriftedTreasurePage() {
           </select>
         </div>
       </header>
+
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Filter Thrifted Treasure by type">
+        <button
+          type="button"
+          onClick={() => setSelectedSubcategory('all')}
+          className={cn(
+            'rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors cursor-pointer',
+            selectedSubcategory === 'all'
+              ? 'border-primary bg-primary text-primary-foreground'
+              : 'border-foreground/20 bg-card/50 text-cocoa hover:border-primary/50',
+          )}
+        >
+          All Treasures
+        </button>
+        {subcategories.map((sub) => (
+          <button
+            key={sub}
+            type="button"
+            onClick={() => setSelectedSubcategory(sub)}
+            className={cn(
+              'rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors cursor-pointer',
+              selectedSubcategory === sub
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'border-foreground/20 bg-card/50 text-cocoa hover:border-primary/50',
+            )}
+          >
+            {sub}
+          </button>
+        ))}
+      </div>
 
       {treasures.length === 0 ? (
         <EmptyState

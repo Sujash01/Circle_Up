@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import crypto from 'node:crypto';
 import { hasPermission } from '@circleup/shared';
-import { adminAuthService, type AdminSessionData } from '../services/adminAuth.service.js';
+import { adminAuthService, refreshSessionTokenIfNeeded, type AdminSessionData } from '../services/adminAuth.service.js';
 import { ForbiddenError, UnauthorizedError } from '../errors/AppError.js';
 
 declare global {
@@ -14,7 +14,7 @@ declare global {
 }
 
 export function requireAdminAuth(allowedRoleOrPermission?: 'owner' | 'staff' | string | string[]) {
-  return (req: Request, _res: Response, next: NextFunction): void => {
+  return (req: Request, res: Response, next: NextFunction): void => {
     // Read session from signed cookie or Bearer token
     const token =
       req.cookies?.admin_session ||
@@ -48,6 +48,18 @@ export function requireAdminAuth(allowedRoleOrPermission?: 'owner' | 'staff' | s
               return next(new ForbiddenError(`Permission denied: missing "${allowedRoleOrPermission}" permission.`, 'FORBIDDEN_PERMISSION'));
             }
           }
+        }
+      }
+      if (req.cookies?.admin_session && !req.originalUrl.includes('/auth/logout')) {
+        const refreshed = refreshSessionTokenIfNeeded(session);
+        if (refreshed) {
+          res.cookie('admin_session', refreshed.token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: refreshed.maxAgeMs,
+            path: '/',
+          });
         }
       }
       req.adminUser = session;

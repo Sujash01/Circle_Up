@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
-import { adminAuthService } from '../../services/adminAuth.service.js';
+import { adminAuthService, IDLE_TIMEOUT_MS, SESSION_TTL_MS } from '../../services/adminAuth.service.js';
 import { auditService } from '../../services/audit.service.js';
 import { sendCreated, sendSuccess } from '../../utils/apiResponse.js';
 import { adminLoginSchema } from '@circleup/shared';
@@ -33,7 +33,7 @@ export const adminAuthController = {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
-        maxAge: 24 * 60 * 60 * 1000,
+        maxAge: SESSION_TTL_MS,
         path: '/',
       });
 
@@ -46,7 +46,7 @@ export const adminAuthController = {
             role: result.user.role as 'owner' | 'staff',
             permissions: result.user.permissions || [],
             csrfToken: result.csrfToken,
-            expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+            expiresAt: Date.now() + SESSION_TTL_MS,
             sessionId: result.sessionId,
           },
           action: 'ADMIN_LOGIN',
@@ -58,9 +58,15 @@ export const adminAuthController = {
         // Non-blocking audit record failure during login
       }
 
+      const now = Date.now();
       return sendSuccess(res, {
         user: result.user,
         csrfToken: result.csrfToken,
+        session: {
+          expiresAt: now + SESSION_TTL_MS,
+          idleTimeoutMs: IDLE_TIMEOUT_MS,
+          idleExpiresAt: now + IDLE_TIMEOUT_MS,
+        },
       });
     } catch (error) {
       next(error);
@@ -89,6 +95,7 @@ export const adminAuthController = {
 
   async me(req: Request, res: Response, next: NextFunction) {
     try {
+      const lastActiveAt = req.adminUser?.lastActiveAt || Date.now();
       return sendSuccess(res, {
         user: {
           id: req.adminUser?.userId,
@@ -98,6 +105,13 @@ export const adminAuthController = {
           permissions: req.adminUser?.permissions || [],
         },
         csrfToken: req.adminUser?.csrfToken,
+        session: req.adminUser
+          ? {
+              expiresAt: req.adminUser.expiresAt,
+              idleTimeoutMs: IDLE_TIMEOUT_MS,
+              idleExpiresAt: lastActiveAt + IDLE_TIMEOUT_MS,
+            }
+          : undefined,
       });
     } catch (error) {
       next(error);

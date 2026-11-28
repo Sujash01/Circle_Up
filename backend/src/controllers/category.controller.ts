@@ -10,7 +10,11 @@ const DEFAULT_CATEGORIES = [
   { slug: 'mens-bottomwear', name: "Men's Bottomwear (Unisex)", subcategories: ['Cargo', 'Pants', 'Denim'] },
   { slug: 'accessories', name: 'Accessories', subcategories: ['Handbags', 'Slings', 'Scarves', 'Belts'] },
   { slug: 'rentals', name: 'Rentals', subcategories: ['Occasion Co-ords', 'Statement Blazers'] },
-  { slug: 'thrifted-treasure', name: 'Thrifted Treasure', subcategories: ['1-of-1 Archival'] },
+  {
+    slug: 'thrifted-treasure',
+    name: 'Thrifted Treasure',
+    subcategories: ['Books', 'Toys', 'Electronics & Radio', 'Collectibles', 'Home & Living', 'One-Off Finds', 'Other'],
+  },
   { slug: 'handcrafted', name: 'Handcrafted', subcategories: ['Artisan Knits', 'Bags'] },
   { slug: 'ethnic-wear', name: 'Ethnic Wear', subcategories: ['Kurtas', 'Dupattas'] },
 ];

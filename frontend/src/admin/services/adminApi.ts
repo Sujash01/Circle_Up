@@ -67,6 +67,27 @@ adminClient.interceptors.request.use((config) => {
   return config;
 });
 
+adminClient.interceptors.response.use(
+  (response) => {
+    const url = String(response?.config?.url || '');
+    if (!url.includes('/auth/logout') && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('circleup:admin-session-activity'));
+    }
+    return response;
+  },
+  (error) => {
+    const status = error?.response?.status;
+    const url = String(error?.config?.url || '');
+    if (status === 401 && !url.includes('/auth/')) {
+      setAdminCsrfToken('');
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('circleup:admin-session-expired'));
+      }
+    }
+    return Promise.reject(error);
+  },
+);
+
 export interface AdminProductFormValues {
   name: string;
   slug?: string;
@@ -144,7 +165,13 @@ export const adminApi = {
   // === AUTH ===
   async login(credentials: { email: string; password: string }) {
     try {
-      const res = await adminClient.post<{ data: { user: AdminUser; csrfToken: string } }>('/auth/login', credentials);
+      const res = await adminClient.post<{
+        data: {
+          user: AdminUser;
+          csrfToken: string;
+          session?: { expiresAt: number; idleTimeoutMs: number; idleExpiresAt: number };
+        };
+      }>('/auth/login', credentials);
       if (res.data.data.csrfToken) {
         setAdminCsrfToken(res.data.data.csrfToken);
       }
@@ -167,7 +194,13 @@ export const adminApi = {
 
   async getMe() {
     try {
-      const res = await adminClient.get<{ data: { user: AdminUser; csrfToken: string } }>('/auth/me');
+      const res = await adminClient.get<{
+        data: {
+          user: AdminUser;
+          csrfToken: string;
+          session?: { expiresAt: number; idleTimeoutMs: number; idleExpiresAt: number };
+        };
+      }>('/auth/me');
       if (res.data.data.csrfToken) {
         setAdminCsrfToken(res.data.data.csrfToken);
       }

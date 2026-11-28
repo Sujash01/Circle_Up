@@ -122,3 +122,17 @@ export const productListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(48).optional(),
 });
 export type ProductListQuery = z.infer<typeof productListQuerySchema>;
+
+export const NEW_PRODUCT_MIN_STOCK = 15;
+export const NEW_PRODUCT_MIN_STOCK_MESSAGE = 'Minimum stock quantity for a new product is 15.';
+
+export function requiresNewProductMinStock(input: {
+  category?: string | null;
+  condition?: string | null;
+  productType?: string | null;
+}): boolean {
+  if (input.category === 'thrifted-treasure' || input.category === 'rentals') {
+    return false;
+  }
+  return input.condition === 'New With Tags' || input.productType === 'Fresh Find';
+}

@@ -20,7 +20,40 @@ import {
   resolveSizeChartForCategory,
   extractCategoryCodeFromSerial,
   convertRupeesToPaise,
+  NEW_PRODUCT_MIN_STOCK,
+  NEW_PRODUCT_MIN_STOCK_MESSAGE,
+  requiresNewProductMinStock,
 } from '@circleup/shared';
+
+interface ProductDraftSnapshot {
+  savedAt: string;
+  name: string;
+  slug: string;
+  autoSlug: boolean;
+  serialNumber: string;
+  description: string;
+  priceRupees: string;
+  originalPriceRupees: string;
+  compareAtPriceRupees: string;
+  stock: string;
+  categoryCode: string;
+  sizeCategory: string;
+  measurementsData: Record<string, string>;
+  category: string;
+  subcategory: string;
+  condition: string;
+  gender: string;
+  badge: string;
+  tagsStr: string;
+  featured: boolean;
+  chestPick: boolean;
+  status: string;
+  selectedSizes: string[];
+  sizeStocks: Record<string, number>;
+  variantPrices: Record<string, number | undefined>;
+  variantMeasurements: Record<string, Record<string, string>>;
+  images: ImageItem[];
+}
 
 interface ImageItem {
   url: string;
@@ -37,6 +70,9 @@ export function ProductFormPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [stockError, setStockError] = useState('');
+  const [pendingDraft, setPendingDraft] = useState<ProductDraftSnapshot | null>(null);
+  const draftStorageKey = `circleup_admin_product_draft:${isEditing && id ? `edit:${id}` : 'new'}`;
 
   // Form Fields
   const [name, setName] = useState('');
@@ -244,6 +280,136 @@ export function ProductFormPage() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [isDirty]);
 
+  // Check for saved draft (never auto-overwrite actively edited or loaded fields)
+  useEffect(() => {
+    if (isLoading || isDirty) return;
+    try {
+      const raw = localStorage.getItem(draftStorageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as ProductDraftSnapshot;
+      if (parsed && typeof parsed === 'object' && typeof parsed.savedAt === 'string') {
+        setPendingDraft(parsed);
+      }
+    } catch {
+      // Ignore corrupt draft storage
+    }
+  }, [draftStorageKey, isLoading, isDirty]);
+
+  // Auto-save form draft (strictly form fields, never auth tokens) when dirty
+  useEffect(() => {
+    if (!isDirty || isLoading || isSaving) return;
+    const timer = window.setTimeout(() => {
+      try {
+        const snapshot: ProductDraftSnapshot = {
+          savedAt: new Date().toISOString(),
+          name,
+          slug,
+          autoSlug,
+          serialNumber,
+          description,
+          priceRupees,
+          originalPriceRupees,
+          compareAtPriceRupees,
+          stock,
+          categoryCode,
+          sizeCategory,
+          measurementsData,
+          category,
+          subcategory,
+          condition,
+          gender,
+          badge,
+          tagsStr,
+          featured,
+          chestPick,
+          status,
+          selectedSizes,
+          sizeStocks,
+          variantPrices,
+          variantMeasurements,
+          images,
+        };
+        localStorage.setItem(draftStorageKey, JSON.stringify(snapshot));
+      } catch {
+        // Ignore storage quota errors
+      }
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [
+    isDirty,
+    isLoading,
+    isSaving,
+    draftStorageKey,
+    name,
+    slug,
+    autoSlug,
+    serialNumber,
+    description,
+    priceRupees,
+    originalPriceRupees,
+    compareAtPriceRupees,
+    stock,
+    categoryCode,
+    sizeCategory,
+    measurementsData,
+    category,
+    subcategory,
+    condition,
+    gender,
+    badge,
+    tagsStr,
+    featured,
+    chestPick,
+    status,
+    selectedSizes,
+    sizeStocks,
+    variantPrices,
+    variantMeasurements,
+    images,
+  ]);
+
+  const handleRestoreDraft = () => {
+    if (!pendingDraft) return;
+    setName(pendingDraft.name ?? '');
+    setSlug(pendingDraft.slug ?? '');
+    setAutoSlug(Boolean(pendingDraft.autoSlug));
+    setSerialNumber(pendingDraft.serialNumber ?? '');
+    setDescription(pendingDraft.description ?? '');
+    setPriceRupees(pendingDraft.priceRupees ?? '');
+    setOriginalPriceRupees(pendingDraft.originalPriceRupees ?? '');
+    setCompareAtPriceRupees(pendingDraft.compareAtPriceRupees ?? '');
+    setStock(pendingDraft.stock ?? '1');
+    setCategoryCode(pendingDraft.categoryCode ?? 'SET');
+    setSizeCategory(pendingDraft.sizeCategory ?? 'top-bralette');
+    setMeasurementsData(pendingDraft.measurementsData ?? {});
+    setCategory(pendingDraft.category ?? 'womens-one-piece');
+    setSubcategory(pendingDraft.subcategory ?? '');
+    setCondition(pendingDraft.condition ?? 'Mint');
+    setGender(pendingDraft.gender ?? 'Women');
+    setBadge(pendingDraft.badge ?? '');
+    setTagsStr(pendingDraft.tagsStr ?? '');
+    setFeatured(Boolean(pendingDraft.featured));
+    setChestPick(Boolean(pendingDraft.chestPick));
+    setStatus(pendingDraft.status ?? 'AVAILABLE');
+    setSelectedSizes(Array.isArray(pendingDraft.selectedSizes) ? pendingDraft.selectedSizes : ['M']);
+    setSizeStocks(pendingDraft.sizeStocks ?? { M: 1 });
+    setVariantPrices(pendingDraft.variantPrices ?? {});
+    setVariantMeasurements(pendingDraft.variantMeasurements ?? {});
+    setImages(Array.isArray(pendingDraft.images) ? pendingDraft.images : []);
+    setPendingDraft(null);
+    setIsDirty(true);
+    showToast('Unsaved product draft restored.', 'info');
+  };
+
+  const handleDiscardDraft = () => {
+    try {
+      localStorage.removeItem(draftStorageKey);
+    } catch {
+      // ignore
+    }
+    setPendingDraft(null);
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -350,6 +516,18 @@ export function ProductFormPage() {
       return;
     }
 
+    const parsedManualStock = Number(stock);
+    const totalVariantStock = selectedSizes.length > 0
+      ? selectedSizes.reduce((sum, s) => sum + Math.max(0, Number(sizeStocks[s] ?? 0)), 0)
+      : Math.max(0, Number.isFinite(parsedManualStock) ? parsedManualStock : 0);
+
+    if (!isEditing && requiresNewProductMinStock({ category, condition }) && totalVariantStock < NEW_PRODUCT_MIN_STOCK) {
+      setStockError(NEW_PRODUCT_MIN_STOCK_MESSAGE);
+      showToast(NEW_PRODUCT_MIN_STOCK_MESSAGE, 'error');
+      return;
+    }
+    setStockError('');
+
     if (images.length === 0) {
       showToast('Please add at least one product photo.', 'error');
       return;
@@ -392,11 +570,6 @@ export function ProductFormPage() {
       .filter(([_, val]) => Boolean(val && val.trim()))
       .map(([k, v]) => `${k}: ${v.trim().endsWith('"') ? v.trim() : `${v.trim()}"`}`)
       .join(' · ');
-
-    const parsedManualStock = Number(stock);
-    const totalVariantStock = selectedSizes.length > 0
-      ? selectedSizes.reduce((sum, s) => sum + Math.max(0, Number(sizeStocks[s] ?? 0)), 0)
-      : Math.max(0, Number.isFinite(parsedManualStock) ? parsedManualStock : 0);
 
     const payload: AdminProductFormValues = {
       name: name.trim(),
@@ -458,6 +631,12 @@ export function ProductFormPage() {
           : isEditing ? `Product ${name} updated successfully.` : `Thrift piece ${name} added to catalog.`,
         cleanupFailed ? 'info' : 'success',
       );
+      try {
+        localStorage.removeItem(draftStorageKey);
+      } catch {
+        // ignore
+      }
+      setPendingDraft(null);
       setIsDirty(false);
       navigate('/admin/products');
     } catch (err: unknown) {
@@ -476,7 +655,7 @@ export function ProductFormPage() {
     );
   }
 
-  const STANDARD_SIZES = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'Free Size'];
+  const STANDARD_SIZES = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'Free Size', 'One Size'];
   const NUMERIC_SIZES = ['28', '30', '32', '34', '36', '38'];
   const PRESET_SIZES = [...STANDARD_SIZES, ...NUMERIC_SIZES];
   const CUSTOM_SELECTED_SIZES = selectedSizes.filter((s) => !PRESET_SIZES.includes(s));
@@ -501,6 +680,33 @@ export function ProductFormPage() {
           {isEditing ? `Editing: ${serialNumber}` : 'New Piece'}
         </span>
       </div>
+
+      {pendingDraft && (
+        <div
+          role="status"
+          className="rounded-2xl border border-[#8b5a3e]/30 bg-amber-50/90 px-4 py-3 text-xs text-[#1e2a1c] flex flex-wrap items-center justify-between gap-3 shadow-xs"
+        >
+          <span>
+            Unsaved product draft found{pendingDraft.name ? ` ("${pendingDraft.name}")` : ''}. Would you like to restore it?
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleRestoreDraft}
+              className="px-3 py-1.5 rounded-xl bg-[#1e2a1c] text-[#f8f4e2] font-semibold hover:bg-[#1e2a1c]/90"
+            >
+              Restore Draft
+            </button>
+            <button
+              type="button"
+              onClick={handleDiscardDraft}
+              className="px-3 py-1.5 rounded-xl border border-[#1e2a1c]/20 bg-white font-semibold hover:bg-[#1e2a1c]/5"
+            >
+              Discard Draft
+            </button>
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-8" onChange={() => setIsDirty(true)}>
         {/* Section 1: Basic Info */}
@@ -657,10 +863,36 @@ export function ProductFormPage() {
                 type="number"
                 required
                 min="0"
+                readOnly={selectedSizes.length > 1}
                 value={stock}
-                onChange={(e) => setStock(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-[#1e2a1c]/20 bg-white text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#1e2a1c]"
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  setStock(raw);
+                  setStockError('');
+                  const onlySize = selectedSizes[0];
+                  if (selectedSizes.length === 1 && onlySize) {
+                    const parsed = Math.max(0, Number(raw) || 0);
+                    setSizeStocks({ ...sizeStocks, [onlySize]: parsed });
+                  }
+                  setIsDirty(true);
+                }}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-[#1e2a1c]/20 bg-white text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#1e2a1c] read-only:bg-[#1e2a1c]/5"
               />
+              {selectedSizes.length > 1 && (
+                <p className="text-[0.65rem] text-[#1e2a1c]/60 mt-1">
+                  Auto-summed from per-size stock below.
+                </p>
+              )}
+              {!isEditing && requiresNewProductMinStock({ category, condition }) && (
+                <p className="text-[0.65rem] text-[#8b5a3e] font-semibold mt-1">
+                  New products require a minimum total stock of {NEW_PRODUCT_MIN_STOCK}.
+                </p>
+              )}
+              {stockError && (
+                <p role="alert" className="text-xs font-semibold text-red-700 mt-1">
+                  {stockError}
+                </p>
+              )}
             </div>
           </div>
 
@@ -939,9 +1171,34 @@ export function ProductFormPage() {
                 type="text"
                 value={subcategory}
                 onChange={(e) => setSubcategory(e.target.value)}
-                placeholder="e.g. Corsets, Co-ords, Knitwear"
+                placeholder={
+                  category === 'thrifted-treasure'
+                    ? 'e.g. Books, Toys, Electronics & Radio, Collectibles, Home & Living'
+                    : 'e.g. Corsets, Co-ords, Knitwear'
+                }
                 className="w-full px-3 py-2 rounded-xl border border-[#1e2a1c]/20 bg-white text-xs focus:outline-none"
               />
+              {category === 'thrifted-treasure' && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {['Books', 'Toys', 'Electronics & Radio', 'Collectibles', 'Home & Living', 'One-Off Finds', 'Other'].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => {
+                        setSubcategory(preset);
+                        setIsDirty(true);
+                      }}
+                      className={`px-2 py-0.5 rounded-full text-[0.65rem] font-semibold border transition-colors ${
+                        subcategory === preset
+                          ? 'bg-[#1e2a1c] text-[#f8f4e2] border-[#1e2a1c]'
+                          : 'bg-[#1e2a1c]/5 text-[#1e2a1c] border-[#1e2a1c]/15 hover:bg-[#1e2a1c]/10'
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div>
@@ -1066,6 +1323,7 @@ export function ProductFormPage() {
               type="button"
               onClick={() => {
                 if (isDirty && !window.confirm('You have unsaved changes. Leave anyway?')) return;
+                handleDiscardDraft();
                 navigate('/admin/products');
               }}
               className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold"

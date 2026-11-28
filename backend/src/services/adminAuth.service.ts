@@ -43,9 +43,29 @@ function parseTtlMs(ttl: string | undefined, fallbackMs: number): number {
   }
 }
 
-// Enforce shorter session TTL (2 hours max) and 15-minute idle timeout
-const SESSION_TTL_MS = parseTtlMs(env.JWT_ADMIN_ACCESS_TTL as string | undefined, 2 * 60 * 60 * 1000);
-export const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+// Enforce bounded session TTL (at least 2h idle timeout, default 8h) and 2-hour sliding idle timeout
+export const IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+export const SESSION_TTL_MS = Math.max(
+  IDLE_TIMEOUT_MS,
+  parseTtlMs(env.JWT_ADMIN_ACCESS_TTL as string | undefined, 8 * 60 * 60 * 1000),
+);
+export const IDLE_REFRESH_INTERVAL_MS = 60 * 1000;
+
+export function refreshSessionTokenIfNeeded(
+  session: AdminSessionData,
+  now = Date.now(),
+): { token: string; maxAgeMs: number } | null {
+  const remainingMs = session.expiresAt - now;
+  if (remainingMs <= 0) return null;
+  if (session.lastActiveAt && now - session.lastActiveAt < IDLE_REFRESH_INTERVAL_MS) {
+    return null;
+  }
+  const refreshedToken = signSessionToken({
+    ...session,
+    lastActiveAt: now,
+  });
+  return { token: refreshedToken, maxAgeMs: remainingMs };
+}
 
 export function validateAdminPassword(password: string): void {
   if (!password || password.length < 8) {
@@ -175,7 +195,7 @@ export const adminAuthService = {
     const session = verifySessionToken(token);
     if (!session) return null;
     if (session.lastActiveAt && (Date.now() - session.lastActiveAt > IDLE_TIMEOUT_MS)) {
-      return null; // Expired due to 15-minute inactivity
+      return null; // Expired due to inactivity
     }
     const client = await requiredClient();
     const { data, error } = await databaseCall(() => client.from('admin_auth_sessions').select('id,expires_at,revoked_at,admin_users!inner(id,email,full_name,role,permissions,is_active)').eq('id', session.sessionId).eq('token_hash', SESSION_HASH(token)).is('revoked_at', null).gt('expires_at', new Date().toISOString()).maybeSingle());

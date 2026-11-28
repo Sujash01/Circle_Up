@@ -51,7 +51,7 @@ const envSchema = z.object({
   JWT_ACCESS_SECRET: z.string().default(''),
   JWT_ADMIN_ACCESS_SECRET: z.string().default(''),
   JWT_ACCESS_TTL: z.string().default('15m'),
-  JWT_ADMIN_ACCESS_TTL: z.string().default('10m'),
+  JWT_ADMIN_ACCESS_TTL: z.string().default('8h'),
   SESSION_SECRET: z.string().default(''),
   GUEST_ORDER_TOKEN_SECRET: z.string().default(''),
   SUPABASE_JWT_SECRET: z.string().optional(),

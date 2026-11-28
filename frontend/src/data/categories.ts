@@ -65,8 +65,8 @@ export const CATEGORIES: CategoryMeta[] = [
   {
     slug: 'thrifted-treasure',
     title: 'Thrifted Treasure',
-    subtitle: 'Smaller curiosities, retro toys, one-of-a-kind trinkets, and unmistakable archive discoveries.',
-    subcategories: ['One-Off Finds', 'Retro Toys & Trinkets', 'Classic Accents', 'Small Carryalls', 'Retro Keepsakes'],
+    subtitle: 'Curated books, retro toys, vintage radios & electronics, collectibles, home & living, and one-off archive discoveries.',
+    subcategories: ['Books', 'Toys', 'Electronics & Radio', 'Collectibles', 'Home & Living', 'One-Off Finds', 'Other'],
   },
   {
     slug: 'jewellery',
