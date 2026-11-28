@@ -40,6 +40,7 @@ const NAV_GROUPS = [
       { label: 'Accessories', to: '/accessories' },
       { label: 'Footwear', to: '/footwear' },
       { label: 'Handcrafted', to: '/handcrafted' },
+      { label: 'Thrifted Treasure', to: '/thrifted-treasure' },
       { label: 'Rentals', to: '/rentals' },
     ],
   },

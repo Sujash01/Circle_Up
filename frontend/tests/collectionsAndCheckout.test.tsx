@@ -594,8 +594,13 @@ describe('Brand New & Thrifted Collections and Checkout Hardening', () => {
       'Accessories',
       'Footwear',
       'Handcrafted',
+      'Thrifted Treasure',
       'Rentals',
     ]);
+    const treasureLink = Array.from(columns[1]!.querySelectorAll('li a')).find(
+      (a) => a.textContent?.trim() === 'Thrifted Treasure',
+    );
+    expect(treasureLink?.getAttribute('href')).toBe('/thrifted-treasure');
 
     // Check CircleUp World items order
     const circleUpWorldLinks = Array.from(columns[2]!.querySelectorAll('li a')).map((a) =>
